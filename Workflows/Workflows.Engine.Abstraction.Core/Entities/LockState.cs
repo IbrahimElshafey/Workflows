@@ -1,0 +1,16 @@
+﻿using System;
+using Workflows.Handler.InOuts.Entities.EntityBehaviour;
+namespace Workflows.Handler.InOuts.Entities
+{
+    public class LockState : IEntity<int>
+    {
+        public int Id { get; internal set; }
+
+        public DateTime Created { get; internal set; }
+
+        public int? ServiceId { get; internal set; }
+
+        public string Name { get; internal set; }
+        public string ServiceName { get; internal set; }
+    }
+}

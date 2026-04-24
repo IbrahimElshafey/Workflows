@@ -1,0 +1,92 @@
+﻿@using MessagePack;
+@using Workflows.Handler.UiService.InOuts;
+@model             SignalsViewMode
+<div class="w3-margin">
+
+    <header class="w3-text-indigo">
+        <h2 class="w3-margin-top"><b>Pushed Calls</b></h2>
+    </header>
+    <div class="w3-container">
+        <div class="w3-row-padding w3-margin"
+             style="margin-left: -16px !important;margin-right: -16px !important;">
+            <div class="w3-col l5">
+                <b class="w3-text-indigo">Search</b>
+                <input value="@Model.SearchTerm" id="searchTerm" class="w3-input w3-border" type="text" required="" placeholder="Search by Method URN">
+            </div>
+            <div class="w3-col l3">
+                <b class="w3-text-indigo">Service</b>
+                <select class="w3-select" name="selectedService" id="selectedService">
+                    <option value="" disabled selected>Choose a Service</option>
+                    @foreach (var service in Model.Services)
+                    {
+                        <option value="@service.Id"
+                            selected="@(service.Id==Model.SelectedService)">
+                            @service.AssemblyName
+                        </option>
+                    }
+                </select>
+            </div>
+            <div class="w3-col l2">
+                <span class="w3-text-light-gray">s</span>
+                <input type="button" class="w3-input w3-button w3-indigo" value="Search"
+                       onclick="searchSignals()" />
+            </div>
+            <div class="w3-col l2">
+                <span class="w3-text-light-gray">s</span>
+                <input type="button" class="w3-input w3-button w3-indigo" value="Reset"
+                       onclick="resetSignals()" />
+            </div>
+        </div>
+        @if (Model.Calls.Any())
+        {
+            <table class="w3-table-all">
+                <thead>
+                    <tr class="w3-indigo">
+                        <th>Method</th>
+                        <th>Input & Output</th>
+                        @*  <th>Processing</th>
+                    <th>Expected</th>*@
+                        <th>Matched</th>
+                        <th>Not Matched</th>
+                        <th width="120px">Pushed</th>
+                    </tr>
+                </thead>
+                @foreach (var item in Model.Calls)
+                {
+                    <tr>
+                        <td>
+                            <ul>
+                                <li>
+                                    <a href="~/RF/Signal/Details?signalId=@item.Signal.Id" target="_blank" class="w3-text-blue">@item.Signal.MethodData.MethodUrn</a>
+                                </li>
+                                <li><b>Method: </b>@item.Signal.MethodData.MethodName</li>
+                                <li><b>Class: </b>@item.Signal.MethodData.ClassName</li>
+                                <li><b>Assembly: </b>@item.Signal.MethodData.AssemblyName</li>
+                            </ul>
+                        </td>
+                        <td class="JsonObject">@MessagePackSerializer.ConvertToJson(item.Signal.DataValue)</td>
+                        @*  <td>
+                @((item.MatchedCount + item.NotMatchedCount) == item.ExpectedMatchCount ?
+                "Finished" :
+                "In Progress")
+                </td>
+                <td>@item.ExpectedMatchCount</td>*@
+                        <td>@item.MatchedCount</td>
+                        <td>@item.NotMatchedCount</td>
+                        <td>@item.Signal.Created.ToLocalTime()</td>
+                    </tr>
+                }
+            </table>
+            @*<button class="w3-button w3-indigo w3-margin-top">Show More...</button>*@
+        }
+        else
+        {
+            <div class="w3-display-middle w3-padding-64">
+                <h1 class="w3-text-red">No Pushed Calls</h1>
+            </div>
+        }
+
+    </div>
+
+
+</div>

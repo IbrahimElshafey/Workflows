@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Version>1.0.6</Version>
+    <PackageOutputPath>D:\Nuget</PackageOutputPath>
+    <GeneratePackageOnBuild>False</GeneratePackageOnBuild>
+    <Description>A library that allows you to publish methods to a resumable workflow service by decorating them with the [PublishMethod] attribute.</Description>
+    <!--<Nullable>enable</Nullable>-->
+	 
+	</PropertyGroup>
+	<PropertyGroup>
+		<LangVersion>10.0</LangVersion>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="AspectInjector" Version="2.9.0" />
+		<PackageReference Include="Ensure.That" Version="10.1.0" />
+		<PackageReference Include="MessagePack" Version="3.1.4" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.7" />
+		<PackageReference Include="Microsoft.Extensions.Http" Version="10.0.7" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
+		<PackageReference Include="System.Text.Json" Version="10.0.7" />
+	</ItemGroup>
+</Project>

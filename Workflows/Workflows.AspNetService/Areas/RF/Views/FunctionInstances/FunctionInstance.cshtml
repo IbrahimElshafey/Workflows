@@ -1,0 +1,105 @@
+﻿@using Workflows.Handler.UiService.InOuts;
+@using Workflows.Handler.InOuts
+@model WorkflowInstanceDetails
+@{
+    ViewBag.Title = $"Workflow Instance [{Model.InstanceId}] {Model.WorkflowUrn}";
+}
+<style>
+    .workflow-instance-label {
+        display: none !important;
+    }
+</style>
+<div class="w3-container w3-margin">
+    <header class="w3-text-blue-gray">
+        <h2 class="w3-margin-top">
+            <b>
+                <span class="w3-text-indigo">@Model.WorkflowUrn</span>
+                Instance <span class="w3-text-indigo">@Model.InstanceId</span>  Details
+            </b>
+        </h2>
+    </header>
+    <header class="w3-text-indigo">
+        <h4 class="w3-margin-top"><b>Details</b></h4>
+    </header>
+    <table class="w3-table">
+        <tr>
+            <th width="250px"><b>Workflow Name:</b></th>
+            <th>@Model.WorkflowName</th>
+        </tr>
+        <tr>
+            <td><b>Status:</b></td>
+            <td class="@Model.Status">@Model.Status</td>
+        </tr>
+        <tr>
+            <td><b>State Object:</b></td>
+            <td class="jsonContainer">
+                <pre class="JsonObject">
+                        @Model.InstanceData
+                </pre>
+            </td>
+        </tr>
+        <tr>
+            <td><b>Creation Date:</b></td>
+            <td>@Model.Created.ToLocalTime()</td>
+        </tr>
+        <tr>
+            <td><b>Last Modified:</b></td>
+            <td>@Model.Modified.ToLocalTime()</td>
+        </tr>
+        <tr>
+            <td><b>Errors Count:</b></td>
+            <td>@Model.ErrorsCount</td>
+        </tr>
+    </table>
+    <br />
+    <input class="w3-button w3-indigo" type="button"
+           onclick="location.href='/RF/WorkflowInstances/AllInstances?workflowId=@Model.WorkflowId&workflowName=@Model.WorkflowUrn'"
+           value="All Workflow Intstances" />
+
+    @*Waits*@
+    <header class="w3-text-indigo">
+        <h4 class="w3-margin-top"><b>Waits Tree</b></h4>
+    </header>
+    <ul class="w3-ul">
+        @foreach (var wait in Model.Waits)
+        {
+            @Html.DisplayFor(x => wait,wait.GetType().Name.Replace("Entity",""))
+        }
+    </ul>
+
+    @*Logs*@
+    <header class="w3-text-indigo">
+        <h4 class="w3-margin-top"><b>Log History</b></h4>
+    </header>
+    <div class="w3-container">
+        <div class="w3-row w3-margin w3-padding">
+
+            <div class="w3-col l2" style="width:300px">
+                <input style="accent-color: green;"
+                       class="w3-check w3-indigo" type="checkbox" checked="checked" onchange="toggleShow('.log-item-Warning')">
+                <label>Hide/Show @Model.Logs.Count(x=>x.LogType==LogType.Warning) Warning</label>
+            </div>
+            <div class="w3-col l2" style="width:300px">
+                <input style="accent-color: green;"
+                       class="w3-check w3-indigo" type="checkbox" checked="checked" onchange="toggleShow('.log-item-Info')">
+                <label>Hide/Show @Model.Logs.Count(x=>x.LogType==LogType.Info) Info</label>
+            </div>
+        </div>
+        @if (Model.Logs.Any())
+        {
+            <div class="w3-margin">
+                @foreach (var logItem in Model.Logs)
+                {
+                    @Html.DisplayFor(x => logItem)
+                }
+            </div>
+        }
+        else
+        {
+            <div class="w3-margin w3-padding-64">
+                <h1 class="w3-text-red w3-center">No Logs</h1>
+            </div>
+        }
+
+    </div>
+</div>

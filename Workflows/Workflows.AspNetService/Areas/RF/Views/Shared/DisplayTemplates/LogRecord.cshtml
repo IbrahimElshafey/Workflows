@@ -1,0 +1,17 @@
+﻿@using Workflows.Handler.Helpers;
+@using Workflows.Handler.InOuts.Entities;
+@using Workflows.Handler.InOuts;
+@model LogRecord
+@{
+    var type = Model.TypeClass();
+}
+<div class="w3-panel @type.Class log-item-@Model.LogType">
+    <h5><b>@(StatusCodes.NameOf(Model.StatusCode) ?? type.Title) [@Model.Created.ToLocalTime()]</b></h5>
+    <p>
+        <pre style="white-space: pre-line">@Model.Message</pre>
+        @if (Model.EntityType == EntityType.WorkflowInstanceLog)
+        {
+            <a class="workflow-instance-label" target="_blank" style="display:block;" href="~/RF/WorkflowInstances/WorkflowInstance?instanceId=@Model.EntityId">In Workflow Instance #@Model.EntityId</a>
+        }
+    </p>
+</div>
