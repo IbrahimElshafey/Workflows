@@ -1,15 +1,18 @@
 ﻿using AspectInjector.Broker;
 using EnsureThat;
 using System;
+using Workflows.Publisher.Helpers;
+using Workflows;
+using Workflows.Publisher;
 
-namespace Workflows.Sender.Helpers
+namespace Workflows.Publisher.Helpers
 {
     /// <summary>
     ///     Add this to the method you want to 
     ///     push it's call to the a resumable workflow service.
     /// </summary>  
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
-    [Injection(typeof(PublishMethodAspect), Inherited = true)]
+    [Injection(typeof(Helpers.PublishMethodAspect), Inherited = true)]
     public sealed class PublishMethodAttribute : Attribute
     {
         public PublishMethodAttribute(string methodUrn, params string[] toServices)

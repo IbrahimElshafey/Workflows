@@ -3,7 +3,10 @@ using Workflows.Handler.InOuts;
 using Workflows.Handler.InOuts.Entities;
 using System.Runtime.CompilerServices;
 
-using System;using System.Threading.Tasks; namespace Workflows.Handler
+using System;
+using System.Threading.Tasks;
+using System.Linq;
+namespace Workflows.Handler
 {
     public abstract partial class WorkflowContainer
     {

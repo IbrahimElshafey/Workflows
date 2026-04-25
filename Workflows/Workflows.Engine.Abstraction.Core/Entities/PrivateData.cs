@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Workflows.Handler.InOuts.Entities.EntityBehaviour;
 namespace Workflows.Handler.InOuts.Entities
 {
@@ -50,8 +51,8 @@ namespace Workflows.Handler.InOuts.Entities
         {
             switch (Value)
             {
-                case JObject jobject:
-                    return jobject[propName].ToObject<T>();
+                //case JObject jobject:
+                //    return jobject[propName].ToObject<T>();
                 case object closureObject:
                     return (T)closureObject.GetType().GetField(propName).GetValue(closureObject);
                 default: return default;
@@ -60,7 +61,7 @@ namespace Workflows.Handler.InOuts.Entities
 
         internal object AsType(Type closureClass)
         {
-            Value = Value is JObject jobject ? jobject.ToObject(closureClass) : Value;
+            //Value = Value is JObject jobject ? jobject.ToObject(closureClass) : Value;
             return Value ?? Activator.CreateInstance(closureClass);
         }
     }

@@ -1,15 +1,18 @@
-﻿using Workflows.Sender.InOuts;
+﻿using Workflows.Publisher.InOuts;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Workflows.Publisher.Abstraction;
+using Workflows;
+using Workflows.Publisher;
 
-namespace Workflows.Sender.Abstraction
+namespace Workflows.Publisher.Abstraction
 {
     public interface IFailedRequestStore
     {
-        Task Add(FailedRequest request);
-        Task Update(FailedRequest request);
-        Task Remove(FailedRequest request);
+        Task Add(InOuts.FailedRequest request);
+        Task Update(InOuts.FailedRequest request);
+        Task Remove(InOuts.FailedRequest request);
         Task<bool> HasRequests();
-        IEnumerable<FailedRequest> GetRequests();
+        IEnumerable<InOuts.FailedRequest> GetRequests();
     }
 }

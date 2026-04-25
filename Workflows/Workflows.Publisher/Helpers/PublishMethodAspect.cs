@@ -1,21 +1,24 @@
 ﻿using AspectInjector.Broker;
 using Microsoft.Extensions.Logging;
-using Workflows.Sender.Abstraction;
-using Workflows.Sender.InOuts;
+using Workflows.Publisher.Abstraction;
+using Workflows.Publisher.InOuts;
 using System;
 using System.Linq;
 using System.Reflection;
+using Workflows.Publisher.Helpers;
+using Workflows;
+using Workflows.Publisher;
 
-namespace Workflows.Sender.Helpers
+namespace Workflows.Publisher.Helpers
 {
     [Aspect(Scope.PerInstance, Factory = typeof(Extensions))]
     public class PublishMethodAspect
     {
-        private MethodCall _methodCall;
-        private readonly ILogger<PublishMethodAspect> _logger;
-        private readonly ISignalSender _callSender;
+        private InOuts.MethodCall _methodCall;
+        private readonly ILogger<Helpers.PublishMethodAspect> _logger;
+        private readonly Abstraction.ISignalSender _callSender;
 
-        public PublishMethodAspect(ILogger<PublishMethodAspect> logger, ISignalSender callSender)
+        public PublishMethodAspect(ILogger<Helpers.PublishMethodAspect> logger, Abstraction.ISignalSender callSender)
         {
             _logger = logger;
             _callSender = callSender;
@@ -40,9 +43,9 @@ namespace Workflows.Sender.Helpers
                 throw new Exception(
                     $"You can't apply attribute [{nameof(PublishMethodAttribute)}] to method " +
                     $"[{metadata.GetFullName()}] since return type is void, you can change it to object and return null.");
-            _methodCall = new MethodCall
+            _methodCall = new InOuts.MethodCall
             {
-                MethodData = new MethodData
+                MethodData = new InOuts.MethodData
                 {
                     MethodUrn = publishMethodAttribute.MethodUrn,
                     AssemblyName = "[From Client] " + Assembly.GetEntryAssembly()?.GetName().Name,

@@ -1,28 +1,31 @@
 ﻿using MessagePack;
 using MessagePack.Resolvers;
 using Microsoft.Extensions.Logging;
-using Workflows.Sender.Abstraction;
-using Workflows.Sender.Helpers;
-using Workflows.Sender.InOuts;
+using Workflows.Publisher.Abstraction;
+using Workflows.Publisher.Helpers;
+using Workflows.Publisher.InOuts;
 using System;
 using System.Net.Http;
 using System.Reflection;
 using System.Threading.Tasks;
+using Workflows.Publisher.Implementation;
+using Workflows;
+using Workflows.Publisher;
 
-namespace Workflows.Sender.Implementation
+namespace Workflows.Publisher.Implementation
 {
-    public class HttpCallSender : ISignalSender
+    public class HttpCallSender : Abstraction.ISignalSender
     {
-        private readonly ISenderSettings _settings;
+        private readonly Abstraction.ISenderSettings _settings;
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly ILogger<HttpCallSender> _logger;
-        private readonly IFailedRequestHandler _failedRequestHandler;
+        private readonly ILogger<Implementation.HttpCallSender> _logger;
+        private readonly Abstraction.IFailedRequestHandler _failedRequestHandler;
 
         public HttpCallSender(
-            ISenderSettings settings,
+            Abstraction.ISenderSettings settings,
             IHttpClientFactory httpClientFactory,
-            ILogger<HttpCallSender> logger,
-            IFailedRequestHandler failedRequestHandler)
+            ILogger<Implementation.HttpCallSender> logger,
+            Abstraction.IFailedRequestHandler failedRequestHandler)
         {
             _settings = settings;
             _httpClientFactory = httpClientFactory;
@@ -37,9 +40,9 @@ namespace Workflows.Sender.Implementation
             params string[] toServices)
         {
             var minfo = methodToPush.Method;
-            await Send(new MethodCall
+            await Send(new InOuts.MethodCall
             {
-                MethodData = new MethodData
+                MethodData = new InOuts.MethodData
                 {
                     MethodUrn = methodUrn,
                     AssemblyName = "[From Client] " + Assembly.GetEntryAssembly()?.GetName().Name,
@@ -52,14 +55,14 @@ namespace Workflows.Sender.Implementation
             });
         }
 
-        public async Task Send(MethodCall methodCall)
+        public async Task Send(InOuts.MethodCall methodCall)
         {
             //D:\GAFT\Workflows\Workflows.AspNetService\WorkflowsController.cs
             foreach (var service in methodCall.ToServices)
             {
                 var serviceUrl = _settings.ServicesRegistry[service];
                 string actionUrl =
-                    $"{serviceUrl}{Constants.WorkflowsControllerUrl}/{Constants.ExternalCallAction}";
+                    $"{serviceUrl}{Helpers.Constants.WorkflowsControllerUrl}/{Helpers.Constants.ExternalCallAction}";
                 byte[] body = null;
                 try
                 {
@@ -74,7 +77,7 @@ namespace Workflows.Sender.Implementation
                 }
                 catch (Exception ex)
                 {
-                    var failedRequest = new FailedRequest(Guid.NewGuid(), DateTime.UtcNow, actionUrl, body);
+                    var failedRequest = new InOuts.FailedRequest(Guid.NewGuid(), DateTime.UtcNow, actionUrl, body);
                     _logger.LogError(ex, $"Error occurred when publish method call {methodCall}");
                     _ = _failedRequestHandler.EnqueueFailedRequest(failedRequest);
                 }

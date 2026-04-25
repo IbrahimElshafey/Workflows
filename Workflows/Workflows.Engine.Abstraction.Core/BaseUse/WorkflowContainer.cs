@@ -2,6 +2,7 @@
 using Workflows.Handler.InOuts.Entities;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Linq;
 
 using System;
 using System.Threading.Tasks;
@@ -18,13 +19,13 @@ namespace Workflows.Handler
         {
             return Task.CompletedTask;
         }
-        [IgnoreMember] internal MethodInfo CurrentWorkflow { get; set; }
+        internal MethodInfo CurrentWorkflow { get; set; }
 
         protected void AddInfoLog(string message) => this.AddLog(message, LogType.Info, Helpers.StatusCodes.Custom);
         protected void AddWarningLog(string message) => this.AddLog(message, LogType.Warning, Helpers.StatusCodes.Custom);
         protected void AddErrorLog(string message, Exception ex = null) => this.AddError(message, Helpers.StatusCodes.Custom, ex);
 
-        [IgnoreMember][NotMapped] public List<LogRecord> Logs { get; set; } = new();
+        public List<LogRecord> Logs { get; set; } = new List<LogRecord>();
 
         public EntityType EntityType => EntityType.ServiceLog;
 
@@ -49,7 +50,7 @@ namespace Workflows.Handler
                 {
                     inputs[i] =
                         serviceProvider.GetService(parameters[i].ParameterType) ??
-                        ActivatorUtilities.CreateInstance(serviceProvider, parameters[i].ParameterType);
+                        Activator.CreateInstance(parameters[i].ParameterType);
                 }
             }
             CallSetDependencies(inputs, setDependenciesMi, parameters);
@@ -68,7 +69,7 @@ namespace Workflows.Handler
             parameters.AddRange(depsParams);
             var call = Expression.Call(instance, mi, depsParams);
             var lambda = Expression.Lambda(call, parameters);
-            var compiledWorkflow = lambda.CompileFast();
+            var compiledWorkflow = lambda.Compile();
             var paramsAll = new List<object>(inputs.Length)
             {
                 this

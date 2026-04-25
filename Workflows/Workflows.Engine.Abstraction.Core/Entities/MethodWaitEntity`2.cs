@@ -1,12 +1,12 @@
-﻿
-using System;
+﻿using System;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading.Tasks;
-using Workflows.Handler.Attributes;
 using Workflows.Handler.BaseUse;
-
 using Workflows.Handler.Expressions;
+using Workflows.Handler.Helpers;
+
 namespace Workflows.Handler.InOuts.Entities
 {
     public class MethodWaitEntity<TInput, TOutput> : MethodWaitEntity
@@ -18,12 +18,12 @@ namespace Workflows.Handler.InOuts.Entities
 
         private void Initiate(MethodInfo method)
         {
-            var methodAttribute =
-                method.GetCustomAttribute(typeof(EmitSignalAttribute));
+            var methodAttribute = method.GetCustomAttributes()
+                .FirstOrDefault(attr => attr.TypeId?.ToString() == AttributeTypeIds.EmitSignal);
 
             if (methodAttribute == null)
                 throw new Exception(
-                    $"You must add attribute [{nameof(EmitSignalAttribute)}] to method [{method.GetFullName()}]");
+                    $"You must add attribute [EmitSignal] to method [{method.GetFullName()}]");
 
             MethodData = new MethodData(method);
             Name = $"#Wait Method `{method.Name}`";

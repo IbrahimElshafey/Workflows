@@ -1,11 +1,14 @@
-﻿using Workflows.Sender.InOuts;
+﻿using Workflows.Publisher.InOuts;
 using System.Threading.Tasks;
+using Workflows.Publisher.Abstraction;
+using Workflows;
+using Workflows.Publisher;
 
-namespace Workflows.Sender.Abstraction
+namespace Workflows.Publisher.Abstraction
 {
     public interface IFailedRequestHandler
     {
-        Task EnqueueFailedRequest(FailedRequest failedRequest);
+        Task EnqueueFailedRequest(InOuts.FailedRequest failedRequest);
         Task HandleFailedRequests();
     }
 }

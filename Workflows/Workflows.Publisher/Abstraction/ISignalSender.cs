@@ -1,8 +1,11 @@
-﻿using Workflows.Sender.InOuts;
+﻿using Workflows.Publisher.InOuts;
 using System;
 using System.Threading.Tasks;
+using Workflows.Publisher.Abstraction;
+using Workflows;
+using Workflows.Publisher;
 
-namespace Workflows.Sender.Abstraction
+namespace Workflows.Publisher.Abstraction
 {
     public interface ISignalSender
     {
@@ -16,6 +19,6 @@ namespace Workflows.Sender.Abstraction
             TOutput output,
             string methodUrn,
             params string[] toServices);
-        Task Send(MethodCall MethodCall);
+        Task Send(InOuts.MethodCall MethodCall);
     }
 }

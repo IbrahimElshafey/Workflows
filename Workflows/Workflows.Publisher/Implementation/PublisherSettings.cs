@@ -1,14 +1,17 @@
 ﻿using EnsureThat;
-using Workflows.Sender.Abstraction;
+using Workflows.Publisher.Abstraction;
 using System;
 using System.Collections.Generic;
+using Workflows.Publisher.Implementation;
+using Workflows;
+using Workflows.Publisher;
 
-namespace Workflows.Sender.Implementation
+namespace Workflows.Publisher.Implementation
 {
-    public class SenderSettings : ISenderSettings
+    public class PublisherSettings : Abstraction.ISenderSettings
     {
 
-        public SenderSettings(Dictionary<string, string> servicesRegistry, TimeSpan checkFailedRequestEvery = default)
+        public PublisherSettings(Dictionary<string, string> servicesRegistry, TimeSpan checkFailedRequestEvery = default)
         {
             Ensure.That(servicesRegistry).IsNotNull();
             Ensure.That(servicesRegistry).HasItems();

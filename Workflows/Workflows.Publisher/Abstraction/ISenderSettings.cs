@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using Workflows.Publisher.Abstraction;
+using Workflows;
+using Workflows.Publisher;
 
-namespace Workflows.Sender.Abstraction;
+namespace Workflows.Publisher.Abstraction;
 
 public interface ISenderSettings
 {

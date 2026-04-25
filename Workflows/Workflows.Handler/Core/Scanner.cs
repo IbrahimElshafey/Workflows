@@ -8,7 +8,6 @@ using Workflows.Handler.InOuts;
 using Workflows.Handler.InOuts.Entities;
 using System.ComponentModel;
 using System.Reflection;
-
 namespace Workflows.Handler.Core;
 
 internal class Scanner

@@ -18,7 +18,7 @@ namespace Workflows.Handler.InOuts.Entities
         /// Method must be handled by it's service only, like TimeWait method will not be redirected to other services.
         /// </summary>
         public bool IsLocalOnly { get; internal set; }
-        public List<MethodIdentifier> WaitMethodIdentifiers { get; internal set; } = new();
+        public List<MethodIdentifier> WaitMethodIdentifiers { get; internal set; } = new List<MethodIdentifier>();
         public List<MethodWaitEntity> WaitRequestsForGroup { get; internal set; }
 
         public DateTime Created { get; internal set; }

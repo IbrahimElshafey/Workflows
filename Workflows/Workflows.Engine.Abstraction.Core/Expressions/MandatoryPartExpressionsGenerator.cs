@@ -3,6 +3,7 @@ using System.Linq.Expressions;
 using static Workflows.Handler.Expressions.MatchExpressionWriter;
 using static System.Linq.Expressions.Expression;
 using System.Collections.Generic;
+using System.Linq;
 namespace Workflows.Handler.Expressions
 {
     internal class MandatoryPartExpressionsGenerator : ExpressionVisitor

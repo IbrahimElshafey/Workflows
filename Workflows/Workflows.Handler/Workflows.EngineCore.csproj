@@ -58,4 +58,8 @@
 	  <ProjectReference Include="..\Workflows.Engine.Abstraction.Core\Workflows.Engine.Abstraction.Core.csproj" />
 	</ItemGroup>
 
+	<ItemGroup>
+	  <Folder Include="Expressions\" />
+	</ItemGroup>
+
 </Project>

@@ -12,22 +12,17 @@ namespace Workflows.Handler.InOuts.Entities
 
         }
 
-        [NotMapped]
         public string AfterMatchAction { get; protected set; }
 
-        [NotMapped]
         public LambdaExpression MatchExpression { get; protected set; }
 
-        [NotMapped]
         public string CancelMethodAction { get; protected set; }
         public MethodWaitType MethodWaitType { get; internal set; } = MethodWaitType.NormalMethod;
         public string MandatoryPart { get; internal set; }
 
-        [NotMapped]
         internal WaitTemplate Template { get; set; }
         public int TemplateId { get; internal set; }
 
-        [NotMapped]
         internal MethodIdentifier MethodToWait { get; set; }
 
         internal int? MethodToWaitId { get; set; }
@@ -35,17 +30,12 @@ namespace Workflows.Handler.InOuts.Entities
         internal MethodsGroup MethodGroupToWait { get; set; }
         internal int MethodGroupToWaitId { get; set; }
 
-        [NotMapped]
         internal MethodData MethodData { get; set; }
 
-        //todo:remove unmapped props
-        [NotMapped]
         public object Input { get; internal set; }
 
-        [NotMapped]
         public object Output { get; internal set; }
 
-        [NotMapped]
         public MatchExpressionParts MatchExpressionParts { get; protected set; }
 
         internal bool ExecuteAfterMatchAction()
@@ -84,9 +74,9 @@ namespace Workflows.Handler.InOuts.Entities
                 if (WasFirst && MatchExpression == null)
                     return true;
                 if (MethodToWait.MethodInfo ==
-                    CoreExtensions.GetMethodInfo<LocalRegisteredMethods>(x => x.TimeWait))
+                    CoreExtensions.GetMethodInfo<LocalRegisteredMethods>(x => (object)x.TimeWait(null)))
                     return true;
-                var check = MatchExpression.CompileFast();
+                var check = MatchExpression.Compile();
                 var closureType = MatchExpression.Parameters[3].Type;
                 var closure = GetClosure(closureType);
                 return (bool)check.DynamicInvoke(Input, Output, CurrentWorkflow, closure);

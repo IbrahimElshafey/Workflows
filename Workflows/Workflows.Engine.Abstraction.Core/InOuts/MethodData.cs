@@ -4,13 +4,14 @@ using System.Security.Cryptography;
 using System.Text;
 
 using System;
+using Workflows.Handler.Helpers;
+using System.Linq;
 namespace Workflows.Handler.InOuts
 {
     public class MethodData
     {
         private MethodInfo _methodInfo;
 
-        [JsonConstructor]
         public MethodData(
             string assemblyName,
             string className,
@@ -53,12 +54,12 @@ namespace Workflows.Handler.InOuts
         {
             var pushCallAttribute = methodInfo
               .GetCustomAttributes()
-              .FirstOrDefault(attribute => attribute is EmitSignalAttribute) as EmitSignalAttribute;
+              .FirstOrDefault(attribute => attribute.TypeId == (object)AttributeTypeIds.EmitSignal);
 
             if (pushCallAttribute == null) return;
 
-            CanPublishFromExternal = pushCallAttribute.FromExternal;
-            IsLocalOnly = pushCallAttribute.IsLocalOnly;
+            //CanPublishFromExternal = pushCallAttribute.FromExternal;
+            //IsLocalOnly = pushCallAttribute.IsLocalOnly;
         }
 
         public string MethodUrn { get; set; }
@@ -75,7 +76,7 @@ namespace Workflows.Handler.InOuts
                 attribute =>
                     attribute is WorkflowAttribute ||
                     attribute is SubWorkflowAttribute ||
-                    attribute is EmitSignalAttribute
+                    attribute.TypeId == (object)AttributeTypeIds.EmitSignal
                 );
 
             return (trackId as ITrackingIdentifier)?.MethodUrn ?? MethodInfo.Name;

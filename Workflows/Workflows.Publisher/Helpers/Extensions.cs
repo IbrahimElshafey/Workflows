@@ -1,32 +1,35 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Workflows.Sender.Abstraction;
-using Workflows.Sender.Implementation;
+using Workflows.Publisher.Abstraction;
+using Workflows.Publisher.Implementation;
 using System;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Workflows.Publisher.Helpers;
+using Workflows;
+using Workflows.Publisher;
 
-namespace Workflows.Sender.Helpers
+namespace Workflows.Publisher.Helpers
 {
     public static class Extensions
     {
         private static IServiceProvider _serviceProvider;
 
-        public static void AddWorkflowsSender(this IServiceCollection services, ISenderSettings settings)
+        public static void AddWorkflowsPublisher(this IServiceCollection services, Abstraction.ISenderSettings settings)
         {
-            services.AddSingleton<IFailedRequestHandler, FailedRequestHandler>();
+            services.AddSingleton<Abstraction.IFailedRequestHandler, Implementation.FailedRequestHandler>();
             //services.AddSingleton<IFailedRequestRepo, InMemoryFailedRequestRepo>();
-            services.AddSingleton<IFailedRequestStore, OnDiskFailedRequestRepo>();
-            services.AddSingleton(typeof(ISenderSettings), settings);
+            services.AddSingleton<Abstraction.IFailedRequestStore, Implementation.OnDiskFailedRequestRepo>();
+            services.AddSingleton(typeof(Abstraction.ISenderSettings), settings);
             services.AddHttpClient();
-            services.AddSingleton(typeof(ISignalSender), settings.SignalSenderType);
+            services.AddSingleton(typeof(Abstraction.ISignalSender), settings.SignalSenderType);
         }
 
-        public static void UseWorkflowsSender(this IHost app)
+        public static void UseWorkflowsPublisher(this IHost app)
         {
             _serviceProvider = app.Services;
-            var failedRequestsHandler = app.Services.GetService<IFailedRequestHandler>();
+            var failedRequestsHandler = app.Services.GetService<Abstraction.IFailedRequestHandler>();
             failedRequestsHandler.HandleFailedRequests();
         }
 

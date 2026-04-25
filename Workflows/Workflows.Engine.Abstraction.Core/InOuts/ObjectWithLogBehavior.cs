@@ -1,6 +1,7 @@
 ﻿using Workflows.Handler.InOuts.Entities;
 
 using System;
+using System.Linq;
 namespace Workflows.Handler.InOuts
 {
     internal static class ObjectWithLogBehavior

@@ -1,6 +1,5 @@
 ﻿using Workflows.Handler.Attributes;
 using Workflows.Handler.BaseUse;
-
 namespace TestApi1.Examples;
 
 public class WaitManyWorkflowsExample : ProjectApprovalExample
@@ -31,7 +30,7 @@ public class WaitManyWorkflowsExample : ProjectApprovalExample
                 .MatchIf((input, output) => output == true)
                 .AfterMatch((input, output) => CurrentProject = input);
         WriteMessage("After project submitted.");
-        yield return WaitGroup(new[] 
+        yield return WaitGroup(new[]
         {
             WaitSubWorkflow(ManagerThreeSubWorkflow()),
             WaitSubWorkflow(ManagerOneCallSubManagerTwo()),
@@ -51,7 +50,7 @@ public class WaitManyWorkflowsExample : ProjectApprovalExample
                 .AfterMatch((input, output) => CurrentProject = input);
         WriteMessage("After project submitted.");
         yield return
-            WaitGroup(new[] 
+            WaitGroup(new[]
             {
                 WaitSubWorkflow(WaitManagerOneAndTwoSubWorkflow()),
                 WaitSubWorkflow(ManagerThreeSubWorkflow()),

@@ -1,31 +1,35 @@
 ﻿using Microsoft.Extensions.Logging;
-using Workflows.Sender.Abstraction;
-using Workflows.Sender.InOuts;
+using Workflows.Publisher.Abstraction;
+using Workflows.Publisher.InOuts;
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
-namespace Workflows.Sender.Implementation
+using Workflows.Publisher.Implementation;
+using Workflows;
+using Workflows.Publisher;
+
+namespace Workflows.Publisher.Implementation
 {
-    public class FailedRequestHandler : IFailedRequestHandler
+    public class FailedRequestHandler : Abstraction.IFailedRequestHandler
     {
-        private readonly ISenderSettings _settings;
+        private readonly Abstraction.ISenderSettings _settings;
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly ILogger<FailedRequestHandler> _logger;
-        private readonly IFailedRequestStore _failedRequestRepo;
+        private readonly ILogger<Implementation.FailedRequestHandler> _logger;
+        private readonly Abstraction.IFailedRequestStore _failedRequestRepo;
 
         public FailedRequestHandler(
-           ISenderSettings settings,
+           Abstraction.ISenderSettings settings,
            IHttpClientFactory httpClientFactory,
-           ILogger<FailedRequestHandler> logger,
-           IFailedRequestStore failedRequestRepo)
+           ILogger<Implementation.FailedRequestHandler> logger,
+           Abstraction.IFailedRequestStore failedRequestRepo)
         {
             _settings = settings;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
             _failedRequestRepo = failedRequestRepo;
         }
-        public async Task EnqueueFailedRequest(FailedRequest failedRequest)
+        public async Task EnqueueFailedRequest(InOuts.FailedRequest failedRequest)
         {
             try
             {
@@ -66,7 +70,7 @@ namespace Workflows.Sender.Implementation
             }
         }
 
-        private async Task CallRequest(FailedRequest request)
+        private async Task CallRequest(InOuts.FailedRequest request)
         {
             try
             {

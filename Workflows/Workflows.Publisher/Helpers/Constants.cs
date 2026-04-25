@@ -1,4 +1,8 @@
-﻿namespace Workflows.Sender.Helpers
+﻿using Workflows.Publisher.Helpers;
+using Workflows;
+using Workflows.Publisher;
+
+namespace Workflows.Publisher.Helpers
 {
     public static class Constants
     {

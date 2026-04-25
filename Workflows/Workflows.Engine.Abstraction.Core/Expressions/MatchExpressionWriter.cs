@@ -2,6 +2,7 @@
 using Workflows.Handler.InOuts;
 using System.Linq.Expressions;
 using static System.Linq.Expressions.Expression;
+using System.Linq;
 
 using System;
 using System.Collections.Generic;
@@ -15,7 +16,7 @@ namespace Workflows.Handler.Expressions
     {
         private LambdaExpression _matchExpression;
         private readonly object _currentWorkflowInstance;
-        private readonly List<ExpressionPart> _expressionParts = new();
+        private readonly List<ExpressionPart> _expressionParts = new List<ExpressionPart>();
 
         /// <summary>
         /// Gets the analyzed and transformed match expression parts.
@@ -30,7 +31,7 @@ namespace Workflows.Handler.Expressions
         /// <param name="workflowInstance">The current workflow instance for closure resolution.</param>
         public MatchExpressionWriter(LambdaExpression matchExpression, object workflowInstance)
         {
-            MatchExpressionParts = new();
+            MatchExpressionParts = new MatchExpressionParts();
             _matchExpression = matchExpression;
         
             // Early exit if no expression to process
@@ -87,7 +88,7 @@ namespace Workflows.Handler.Expressions
             // Capture the actual closure instance for later use
             if (closure != null)
             {
-                var value = Lambda<Func<object>>(closure).CompileFast().Invoke();
+                var value = Lambda<Func<object>>(closure).Compile().Invoke();
                 if (value != null)
                     MatchExpressionParts.Closure = value;
             }
@@ -197,9 +198,9 @@ namespace Workflows.Handler.Expressions
                 if (node.NodeType == ExpressionType.Equal)
                 {
                     if (CanConvertToSimpleString(node.Left) && IsInputOutputExpression(node.Right, out _))
-                        _expressionParts.Add(new(node, node.Right, node.Left));
+                        _expressionParts.Add(new ExpressionPart(node, node.Right, node.Left));
                     else if (CanConvertToSimpleString(node.Right) && IsInputOutputExpression(node.Left, out _))
-                        _expressionParts.Add(new(node, node.Left, node.Right));
+                        _expressionParts.Add(new ExpressionPart(node, node.Left, node.Right));
                 }
 
                 // Translate boolean properties to explicit comparisons:
@@ -243,7 +244,7 @@ namespace Workflows.Handler.Expressions
                 try
                 {
                     var workflowType = typeof(Func<,>).MakeGenericType(_matchExpression.Parameters[2].Type, typeof(object));
-                    var getExpValue = Lambda(workflowType, Convert(expression, typeof(object)), _matchExpression.Parameters[2]).CompileFast();
+                    var getExpValue = Lambda(workflowType, Convert(expression, typeof(object)), _matchExpression.Parameters[2]).Compile();
                     return getExpValue.DynamicInvoke(_currentWorkflowInstance);
                 }
                 catch (Exception ex)
@@ -280,7 +281,7 @@ namespace Workflows.Handler.Expressions
                 operand.Type == typeof(bool) &&
                 IsInputOutputExpression(operand, out _) &&
                 (operand is ParameterExpression || operand is MemberExpression) &&
-                otherOperand is not ConstantExpression &&
+                !(otherOperand is ConstantExpression) &&
                 !booleanArthimaticOp.Contains(node.NodeType);
         
             // Translate to: operand == true
@@ -331,7 +332,7 @@ namespace Workflows.Handler.Expressions
                 try
                 {
                     // Compile and evaluate: if result is false, this part is mandatory
-                    var compiled = Lambda<Func<bool>>(expression).CompileFast();
+                    var compiled = Lambda<Func<bool>>(expression).Compile();
                     expressionPart.IsMandatory = !compiled();
                 }
                 catch (Exception)
@@ -401,7 +402,7 @@ namespace Workflows.Handler.Expressions
 
             // If expression evaluates to true, mandatory parts alone are sufficient
             var transformedBody = replacer.Visit(_matchExpression.Body);
-            var compiled = Lambda<Func<bool>>(transformedBody).CompileFast();
+            var compiled = Lambda<Func<bool>>(transformedBody).Compile();
             MatchExpressionParts.IsMandatoryPartFullMatch = compiled();
         }
 

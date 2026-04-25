@@ -5,6 +5,10 @@ using System.Collections.Generic;
 
 using System;
 using System.Threading.Tasks;
+using System.Linq;
+using Workflows.Handler.Abstraction.Serialization;
+using static Workflows.Handler.Helpers.Dependencies;
+using Workflows.Handler.Core;
 namespace Workflows.Handler.InOuts.Entities
 {
     public abstract class WaitEntity : IEntity<long>, IEntityWithUpdate, IEntityWithDelete, IBeforeSaveEntity, IAfterChangesSaved
@@ -20,7 +24,6 @@ namespace Workflows.Handler.InOuts.Entities
         public bool IsRoot { get; internal set; }
         public int RootWorkflowId { get; internal set; }
 
-        [NotMapped]
         public dynamic ExtraData { get; internal set; }
         public byte[] ExtraDataValue { get; internal set; }
 
@@ -67,13 +70,11 @@ namespace Workflows.Handler.InOuts.Entities
         public PrivateData ClosureData { get; internal set; }
         public long? ClosureDataId { get; internal set; }
 
-        [NotMapped]
         public object ClosureObject { get; private set; }
 
 
         public string Path { get; internal set; }
 
-        [NotMapped]
         internal WorkflowContainer CurrentWorkflow { get; set; }
 
         internal bool CanBeParent => this is WorkflowWaitEntity || this is WaitsGroupEntity;
@@ -155,12 +156,6 @@ namespace Workflows.Handler.InOuts.Entities
             if (CurrentWorkflow == null)
                 LoadUnmappedProps();
             var workflowRunner = new WorkflowRunner(this);
-            //if (workflowRunner.WorkflowExistInCode is false)
-            //{
-            //    var errorMsg = $"Resumable workflow ({RequestedByWorkflow.MethodName}) not exist in code";
-            //    WorkflowInstance.AddError(errorMsg, StatusCodes.MethodValidation, null);
-            //    throw new Exception(errorMsg);
-            //}
 
             try
             {
@@ -327,16 +322,16 @@ namespace Workflows.Handler.InOuts.Entities
 
         public void BeforeSave()
         {
-            var converter = new BinarySerializer();
             if (ExtraData != null)
-                ExtraDataValue = converter.ConvertToBinary(ExtraData);
+                ExtraDataValue = Dependencies.BinarySerializer.Serialize(ExtraData);
         }
 
         public void LoadUnmappedProps()
         {
-            var converter = new BinarySerializer();
             if (ExtraDataValue != null)
-                ExtraData = converter.ConvertToObject<dynamic>(ExtraDataValue);
+                ExtraData = Dependencies.BinarySerializer.Deserialize<dynamic>(ExtraDataValue);
+            if (ExtraDataValue != null)
+                ExtraData = Dependencies.BinarySerializer.Deserialize<dynamic>(ExtraDataValue);
             if (WorkflowInstance?.StateObject != null && CurrentWorkflow == null)
                 CurrentWorkflow = (WorkflowContainer)WorkflowInstance.StateObject;
         }
@@ -398,7 +393,7 @@ namespace Workflows.Handler.InOuts.Entities
         {
             if (ClosureData?.Value == null) Activator.CreateInstance(closureType);
             var matchClosure = ClosureData?.Value;
-            matchClosure = matchClosure is JObject jobject ? jobject.ToObject(closureType) : matchClosure;
+            //matchClosure = matchClosure is JObject jobject ? jobject.ToObject(closureType) : matchClosure;
             return matchClosure ?? Activator.CreateInstance(closureType);
         }
 
@@ -409,13 +404,13 @@ namespace Workflows.Handler.InOuts.Entities
             var closure = ClosureData?.Value;
             if (locals == null && closure == null)
                 return null;
-            var result = new JObject();
-            if (locals != null && locals.ToString() != "{}")
-                result["Locals"] = locals as JToken;
-            if (closure != null && closure.ToString() != "{}")
-                result["Closure"] = closure as JToken;
-            if (result?.ToString() != "{}")
-                return result.ToString(Formatting.Indented)?.Replace("<", "").Replace(">", "");
+            //var result = new JObject();
+            //if (locals != null && locals.ToString() != "{}")
+            //    result["Locals"] = locals as JToken;
+            //if (closure != null && closure.ToString() != "{}")
+            //    result["Closure"] = closure as JToken;
+            //if (result?.ToString() != "{}")
+            //    return result.ToString(Formatting.Indented)?.Replace("<", "").Replace(">", "");
             return null;
         }
 

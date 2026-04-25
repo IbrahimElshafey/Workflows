@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 
 using System;
 using System.Collections.Generic;
+using Workflows.Handler.Helpers;
 namespace Workflows.Handler
 {
     public abstract partial class WorkflowContainer

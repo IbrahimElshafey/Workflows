@@ -35,8 +35,8 @@ namespace Workflows.Handler.Expressions
 
             if (cancelAction != null)
                 sb.Append(cancelAction);
-
-            return MD5.HashData(Encoding.Unicode.GetBytes(sb.ToString()));
+            var md5 = new MD5CryptoServiceProvider();
+            return md5.ComputeHash(Encoding.Unicode.GetBytes(sb.ToString()));
         }
 
     }

@@ -1,6 +1,9 @@
 ﻿using System;
+using Workflows.Publisher.InOuts;
+using Workflows;
+using Workflows.Publisher;
 
-namespace Workflows.Sender.InOuts
+namespace Workflows.Publisher.InOuts
 {
     public class FailedRequest
     {

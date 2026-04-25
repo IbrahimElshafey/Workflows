@@ -1,6 +1,7 @@
 ﻿using Workflows.Handler.InOuts.Entities.EntityBehaviour;
 using System.Reflection;
 using System;
+using Workflows.Handler.Helpers;
 namespace Workflows.Handler.InOuts.Entities
 {
     public abstract class BasicMethodIdentifier : IEntity<int>, IEntityWithUpdate

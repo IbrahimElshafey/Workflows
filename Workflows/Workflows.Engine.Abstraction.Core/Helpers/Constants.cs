@@ -1,6 +1,10 @@
-﻿namespace Workflows.Handler.Helpers
+﻿using Workflows.Handler.Abstraction.Serialization;
+using Workflows.Handler.Expressions;
+
+namespace Workflows.Handler.Helpers
 {
-    internal static class Constants
+
+    public static class Constants
     {
         public const string TimeWaitMethodUrn = "LocalRegisteredMethods.TimeWait";
         //public const string TimeWaitName = $"#{nameof(LocalRegisteredMethods.TimeWait)}#";

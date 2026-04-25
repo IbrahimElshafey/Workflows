@@ -4,6 +4,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System;
 using System.Collections.Generic;
+using Workflows.Handler.Expressions;
+using Workflows.Handler.Helpers;
 namespace Workflows.Handler.InOuts.Entities
 {
     public class WaitTemplate : IEntity<int>, IBeforeSaveEntity
@@ -22,12 +24,10 @@ namespace Workflows.Handler.InOuts.Entities
 
         public string CancelMethodAction { get; internal set; }
 
-        [NotMapped]
         public LambdaExpression MatchExpression { get; internal set; }
 
         public List<string> CallMandatoryPartPaths { get; internal set; }
 
-        [NotMapped]
         public LambdaExpression InstanceMandatoryPartExpression { get; internal set; }
         internal string InstanceMandatoryPartExpressionValue { get; set; }
 
@@ -46,15 +46,12 @@ namespace Workflows.Handler.InOuts.Entities
         {
             try
             {
-                var serializer = new ExpressionSerializer();
                 if (expressionsLoaded && !forceReload) return;
 
                 if (MatchExpressionValue != null)
-                    MatchExpression = (LambdaExpression)serializer.Deserialize(MatchExpressionValue).ToExpression();
-                //if (CallMandatoryPartPaths != null)
-                //    CallMandatoryPartExpression = (LambdaExpression)serializer.Deserialize(CallMandatoryPartPaths).ToExpression();
+                    MatchExpression = Dependencies.ExpressionSerializer.Deserialize(MatchExpressionValue);
                 if (InstanceMandatoryPartExpressionValue != null)
-                    InstanceMandatoryPartExpression = (LambdaExpression)serializer.Deserialize(InstanceMandatoryPartExpressionValue).ToExpression();
+                    InstanceMandatoryPartExpression = Dependencies.ExpressionSerializer.Deserialize(InstanceMandatoryPartExpressionValue);
 
             }
             catch (Exception e)
@@ -67,9 +64,8 @@ namespace Workflows.Handler.InOuts.Entities
 
         internal static byte[] CalcHash(LambdaExpression matchExpression, LambdaExpression setDataExpression)
         {
-            var serializer = new ExpressionSerializer();
-            var matchBytes = Encoding.UTF8.GetBytes(serializer.Serialize(matchExpression.ToExpressionSlim()));
-            var setDataBytes = Encoding.UTF8.GetBytes(serializer.Serialize(setDataExpression.ToExpressionSlim()));
+            var matchBytes = Encoding.UTF8.GetBytes(Dependencies.ExpressionSerializer.Serialize(matchExpression));
+            var setDataBytes = Encoding.UTF8.GetBytes(Dependencies.ExpressionSerializer.Serialize(setDataExpression));
             using var md5 = MD5.Create();
             var mergedHash = new byte[matchBytes.Length + setDataBytes.Length];
             Array.Copy(matchBytes, mergedHash, matchBytes.Length);
@@ -80,13 +76,10 @@ namespace Workflows.Handler.InOuts.Entities
 
         public void BeforeSave()
         {
-            var serializer = new ExpressionSerializer();
             if (MatchExpression != null)
-                MatchExpressionValue = serializer.Serialize(MatchExpression.ToExpressionSlim());
-            //if (CallMandatoryPartExpression != null)
-            //    CallMandatoryPartPaths = serializer.Serialize(CallMandatoryPartExpression.ToExpressionSlim());
+                MatchExpressionValue = Dependencies.ExpressionSerializer.Serialize(MatchExpression);
             if (InstanceMandatoryPartExpression != null)
-                InstanceMandatoryPartExpressionValue = serializer.Serialize(InstanceMandatoryPartExpression.ToExpressionSlim());
+                InstanceMandatoryPartExpressionValue = Dependencies.ExpressionSerializer.Serialize(InstanceMandatoryPartExpression);
         }
     }
 }

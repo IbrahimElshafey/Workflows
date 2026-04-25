@@ -1,5 +1,7 @@
 ﻿
 using System;
+using System.Linq;
+using Workflows.Handler.Abstraction.Serialization;
 
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -11,7 +13,24 @@ namespace Workflows.Handler.Expressions
 
     internal class MandatoryPartResolver
     {
-        private static readonly ConcurrentDictionary<string, Func<JObject, JObject, string?>> _cache = new();
+        private static IJsonSerializer _jsonSerializer;
+        private static IObjectNavigator _objectNavigator;
+
+        /// <summary>
+        /// Sets the JSON serializer implementation to use
+        /// </summary>
+        public static void SetJsonSerializer(IJsonSerializer jsonSerializer)
+        {
+            _jsonSerializer = jsonSerializer ?? throw new ArgumentNullException(nameof(jsonSerializer));
+        }
+
+        /// <summary>
+        /// Sets the object navigator implementation to use
+        /// </summary>
+        public static void SetObjectNavigator(IObjectNavigator objectNavigator)
+        {
+            _objectNavigator = objectNavigator ?? throw new ArgumentNullException(nameof(objectNavigator));
+        }
 
         /// <summary>
         /// Builds the MandatoryPart match value from an incoming call.
@@ -20,25 +39,22 @@ namespace Workflows.Handler.Expressions
         /// </summary>
         public static string BuildFromCall(object input, object output, List<string> paths)
         {
-            var inputObj = JObject.FromObject(input);
-            var outputObj = JObject.FromObject(output);
+            if (_objectNavigator == null)
+                throw new InvalidOperationException("Object navigator not configured. Call SetObjectNavigator first.");
+            if (_jsonSerializer == null)
+                throw new InvalidOperationException("JSON serializer not configured. Call SetJsonSerializer first.");
 
             var values = paths.Select(path =>
-                _cache.GetOrAdd(path, BuildAccessor)(inputObj, outputObj));
+            {
+                var dot = path.IndexOf('.');
+                var prefix = path[..dot];       // "input" or "output"
+                var token = path[(dot + 1)..]; // "ProjectId" or "Order.RegionId"
 
-            return JsonSerializer.Serialize(values);
-        }
+                var targetObj = prefix == "output" ? output : input;
+                return _objectNavigator.GetValue(targetObj, token);
+            });
 
-        private static Func<JObject, JObject, string?> BuildAccessor(string path)
-        {
-            var dot = path.IndexOf('.');
-            var prefix = path[..dot];        // "input" or "output"
-            var token = path[(dot + 1)..];  // "ProjectId" or "Order.RegionId"
-
-            return (inputObj, outputObj) =>
-                (prefix == "output" ? outputObj : inputObj)
-                    .SelectToken(token)        // handles nested paths free of charge
-                    ?.ToString();
+            return _jsonSerializer.Serialize(values);
         }
     }
 }

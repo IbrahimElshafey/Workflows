@@ -1,4 +1,5 @@
-﻿using Workflows.Handler.BaseUse;
+﻿using System.Linq;
+using Workflows.Handler.BaseUse;
 using Workflows.Handler.Helpers;
 namespace Workflows.Handler.InOuts.Entities
 {

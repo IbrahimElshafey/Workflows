@@ -396,7 +396,7 @@ namespace Workflows.Handler.UiService
                         x.methodWait.WorkflowInstanceId,
                         x.methodWait.Created,
                         x.methodWait.MandatoryPart,
-                        MatchStatus.ExpectedMatch,
+                        MatchStatus.PotentialMatch,
                         ExecutionStatus.NotStartedYet,
                         ExecutionStatus.NotStartedYet,
                         new TemplateDisplay(x.MatchExpressionValue, x.CallMandatoryPartPaths)

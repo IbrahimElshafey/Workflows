@@ -1,4 +1,8 @@
-﻿namespace Workflows.Sender.InOuts
+﻿using Workflows.Publisher.InOuts;
+using Workflows;
+using Workflows.Publisher;
+
+namespace Workflows.Publisher.InOuts
 {
     public class MethodData
     {

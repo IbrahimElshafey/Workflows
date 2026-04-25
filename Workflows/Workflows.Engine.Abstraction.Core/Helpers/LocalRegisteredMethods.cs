@@ -5,7 +5,6 @@ namespace Workflows.Handler.Helpers
 {
     public class LocalRegisteredMethods
     {
-        [EmitSignal(Constants.TimeWaitMethodUrn, IsLocalOnly = true, FromExternal = false)]
         [DisplayName("{0}")]
         public bool TimeWait(TimeWaitInput timeWaitInput)
         {

@@ -1,11 +1,21 @@
 ﻿using System.Collections.Generic;
-using Workflows.Handler.Expressions;
 using Workflows.Handler.InOuts.Entities;
+using System;
+using System.Linq;
+using Workflows.Engine.Abstraction.Core.Abstraction.Serialization;
 namespace Workflows.Handler.UiService.InOuts
 {
     public class TemplateDisplay
     {
-        private readonly ExpressionSerializer _serializer;
+        private static ExpressionSerializer _serializerInstance;
+
+        /// <summary>
+        /// Sets the ExpressionSerializer implementation to use
+        /// </summary>
+        public static void SetExpressionSerializer(ExpressionSerializer serializer)
+        {
+            _serializerInstance = serializer ?? throw new ArgumentNullException(nameof(serializer));
+        }
 
         public string MatchExpression { get; }
         public string MandatoryPartExpression { get; }
@@ -17,7 +27,9 @@ namespace Workflows.Handler.UiService.InOuts
 
         public TemplateDisplay(string matchExpressionValue, List<string> callMandatoryPartPaths)
         {
-            _serializer = new ExpressionSerializer();
+            if (_serializerInstance == null)
+                throw new InvalidOperationException("ExpressionSerializer not configured. Call SetExpressionSerializer first.");
+
             MatchExpression = GetMatch(matchExpressionValue);
             //MandatoryPartExpression = List<string> callMandatoryPartPaths joined as string
             if (callMandatoryPartPaths?.Any() == true)
@@ -28,7 +40,9 @@ namespace Workflows.Handler.UiService.InOuts
 
         public TemplateDisplay(string matchExpressionValue, string instanceMandatoryPartExpressionValue)
         {
-            _serializer = new ExpressionSerializer();
+            if (_serializerInstance == null)
+                throw new InvalidOperationException("ExpressionSerializer not configured. Call SetExpressionSerializer first.");
+
             MatchExpression = GetMatch(matchExpressionValue);
             MandatoryPartExpression = GetMandatoryParts(instanceMandatoryPartExpressionValue);
         }
@@ -36,7 +50,7 @@ namespace Workflows.Handler.UiService.InOuts
         string GetMatch(string matchExpressionValue)
         {
             if (matchExpressionValue == null) return string.Empty;
-            var result = _serializer.Deserialize(matchExpressionValue).ToCSharpString();
+            var result = _serializerInstance.Deserialize(matchExpressionValue).ToString();
             result = result.Split("=>")[1];
             return result;
         }
@@ -44,7 +58,7 @@ namespace Workflows.Handler.UiService.InOuts
         string GetMandatoryParts(string instanceMandatoryPartExpressionValue)
         {
             if (instanceMandatoryPartExpressionValue == null) return string.Empty;
-            var result = _serializer.Deserialize(instanceMandatoryPartExpressionValue).ToCSharpString();
+            var result = _serializerInstance.Deserialize(instanceMandatoryPartExpressionValue).ToString();
             result = result.Replace("new object[]", "");
             result = result.Split("=>")[1];
             result = result.Replace("(object)", "");

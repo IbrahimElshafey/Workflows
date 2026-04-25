@@ -2,6 +2,8 @@
 using Workflows.Handler.BaseUse;
 using Workflows.Handler.Helpers;
 using System.Reflection;
+using System.Collections.Generic;
+using System.Linq;
 namespace Workflows.Handler.InOuts.Entities
 {
     public sealed class WorkflowWaitEntity : WaitEntity
@@ -11,12 +13,10 @@ namespace Workflows.Handler.InOuts.Entities
 
         }
 
-        //todo:delete this property
-        [NotMapped]
         public WaitEntity FirstWait { get;  internal set; }
         internal IAsyncEnumerator<Wait> Runner { get; set; }
 
-        [NotMapped] public MethodInfo WorkflowInfo { get;  internal set; }
+        public MethodInfo WorkflowInfo { get;  internal set; }
 
         internal override bool IsCompleted() => ChildWaits.Any(x => x.Status == WaitStatus.Waiting) is false;
 

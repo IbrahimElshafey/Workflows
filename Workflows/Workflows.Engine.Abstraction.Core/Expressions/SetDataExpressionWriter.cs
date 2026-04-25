@@ -3,6 +3,7 @@ using static System.Linq.Expressions.Expression;
 
 using System;
 using System.Collections.Generic;
+using Workflows.Handler.Helpers;
 namespace Workflows.Handler.Expressions
 {
     public class SetDataExpressionWriter : ExpressionVisitor
@@ -63,14 +64,14 @@ namespace Workflows.Handler.Expressions
             {
                 if (binaryExpression.Left is MemberExpression dataMemeber)
                 {
-                    var dataAccess = dataMemeber.GetDataParamterAccess(_workflowInstanceArg);
+                    var dataAccess = dataMemeber.GetDataParameterAccess(_workflowInstanceArg);
                     if (dataAccess.IsWorkflowData)
                         return Assign(dataAccess.NewExpression, binaryExpression.Right);
                 }
 
                 if (binaryExpression.Right is MemberExpression rightDataMemeber)
                 {
-                    var dataAccess = rightDataMemeber.GetDataParamterAccess(_workflowInstanceArg);
+                    var dataAccess = rightDataMemeber.GetDataParameterAccess(_workflowInstanceArg);
                     if (dataAccess.IsWorkflowData)
                         return Assign(dataAccess.NewExpression, binaryExpression.Left);
                 }
