@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 
 using System;
@@ -9,10 +10,12 @@ namespace Workflows.Handler.BaseUse
     public class GroupWait : Wait
     {
         internal WaitsGroupDto WaitsGroupEntity { get; }
+        internal IReadOnlyList<Wait> ChildWaitsRuntime { get; }
 
-        internal GroupWait(WaitsGroupDto wait) : base(wait)
+        internal GroupWait(WaitsGroupDto wait, IReadOnlyList<Wait> childWaits = null) : base(wait)
         {
             WaitsGroupEntity = wait;
+            ChildWaitsRuntime = childWaits;
         }
 
         public int CompletedCount => WaitsGroupEntity.ChildWaits?.Count(x => x.Status == WaitStatus.Completed) ?? 0;

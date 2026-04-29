@@ -51,8 +51,9 @@ namespace Workflows.Handler
                     InCodeLine = inCodeLine,
                     CallerName = callerName,
                     Created = DateTime.UtcNow
-                })
-;
+                },
+                waits)
+            ;
             group.CurrentWorkflow = this;
             group.WaitData.ChildWaits.ForEach(wait => wait.ParentWaitId = group.WaitData.Id);
             return group;

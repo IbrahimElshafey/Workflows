@@ -64,4 +64,8 @@
     <Folder Include="$(MSBuildThisFileDirectory)GitHubDocs\IMG\" />
     <Folder Include="$(MSBuildThisFileDirectory)~Old\" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)refs\FunctionRunner.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)refs\WaitEntity.cs" />
+  </ItemGroup>
 </Project>

@@ -22,6 +22,7 @@ namespace Workflows.Abstraction.DTOs
         public DateTime Created { get; internal set; }
 
         public Guid Id { get; internal set; } = new Guid();
+        public PresistStatus PresistStatus {  get; internal set; }
 
 
         public int InCodeLine { get; internal set; }

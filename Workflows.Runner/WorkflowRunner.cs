@@ -88,6 +88,16 @@ namespace Workflows.Runner
                 }
 
                 incomingWait.Status = WaitStatus.Completed;
+                incomingWait.PresistStatus = PresistStatus.Updated;
+
+                if (!TryProceedExecution(runContext.WorkflowState, incomingWait))
+                {
+                    result.Message = "Signal matched, but workflow is still waiting for grouped or nested waits.";
+                    runContext.WorkflowState.StateObject = _objectSerializer.Serialize(workflowInstance, SerializationScope.InternalState);
+                    result.WorkflowState = runContext.WorkflowState;
+                    _runResultSender.SendWorkflowRunResult(runId, result).GetAwaiter().GetResult();
+                    return runId;
+                }
 
                 var nextWait = AdvanceWorkflow(workflowInstance, incomingWait);
                 if (nextWait == null)
@@ -100,6 +110,11 @@ namespace Workflows.Runner
                 else
                 {
                     var nextWaitDto = nextWait.ToDto();
+                    nextWaitDto.ParentWaitId = incomingWait.ParentWaitId;
+                    nextWaitDto.RequestedByWorkflowId = incomingWait.RequestedByWorkflowId;
+                    nextWaitDto.RootWorkflowId = incomingWait.RootWorkflowId;
+                    nextWaitDto.WorkflowStateId = runContext.WorkflowState.Id;
+
                     PrepareWaitForPersistence(nextWait, nextWaitDto);
                     nextWaitDto.Status = WaitStatus.Waiting;
                     runContext.WorkflowState.Waits = new List<WaitBaseDto> { nextWaitDto };
@@ -178,6 +193,83 @@ namespace Workflows.Runner
                     string.Equals(x.SignalIdentifier, signal.SignalIdentifier, StringComparison.OrdinalIgnoreCase));
         }
 
+        private static bool TryProceedExecution(WorkflowStateDto workflowState, WaitBaseDto currentWait)
+        {
+            var parent = GetParentWait(workflowState, currentWait);
+            while (parent != null)
+            {
+                if (parent is WaitsGroupDto || parent is SubWorkflowWaitDto)
+                {
+                    if (!IsWaitCompleted(parent))
+                        return false;
+
+                    parent.Status = WaitStatus.Completed;
+                    parent.PresistStatus = PresistStatus.Updated;
+                    CancelSubWaits(parent);
+                }
+
+                currentWait = parent;
+                parent = GetParentWait(workflowState, currentWait);
+            }
+
+            return true;
+        }
+
+        private static WaitBaseDto GetParentWait(WorkflowStateDto workflowState, WaitBaseDto currentWait)
+        {
+            if (workflowState?.Waits == null || currentWait?.ParentWaitId == null)
+                return null;
+
+            var parentId = currentWait.ParentWaitId.Value;
+            return workflowState.Waits
+                .Flatten(x => x.ChildWaits)
+                .FirstOrDefault(x => x.Id == parentId);
+        }
+
+        private static bool IsWaitCompleted(WaitBaseDto wait)
+        {
+            if (wait == null)
+                return false;
+
+            if (wait is WaitsGroupDto group)
+                return IsGroupWaitCompleted(group);
+
+            if (wait is SubWorkflowWaitDto subWorkflow)
+                return subWorkflow.ChildWaits?.Any(x => x.Status == WaitStatus.Waiting) is false;
+
+            return wait.Status == WaitStatus.Completed;
+        }
+
+        private static bool IsGroupWaitCompleted(WaitsGroupDto group)
+        {
+            switch (group.WaitType)
+            {
+                case WaitType.GroupWaitAll:
+                    return group.ChildWaits?.All(x => x.Status == WaitStatus.Completed) is true;
+
+                case WaitType.GroupWaitFirst:
+                    return group.ChildWaits?.Any(x => x.Status == WaitStatus.Completed) is true;
+
+                case WaitType.GroupWaitWithExpression:
+                    return group.ChildWaits?.Any(x => x.Status == WaitStatus.Waiting) is false;
+
+                default:
+                    return group.ChildWaits?.Any(x => x.Status == WaitStatus.Waiting) is false;
+            }
+        }
+
+        private static void CancelSubWaits(WaitBaseDto wait)
+        {
+            if (wait?.ChildWaits == null)
+                return;
+
+            foreach (var child in wait.ChildWaits.Flatten(x => x.ChildWaits).Where(x => x != wait && x.Status == WaitStatus.Waiting))
+            {
+                child.Status = WaitStatus.Canceled;
+                child.PresistStatus = PresistStatus.Updated;
+            }
+        }
+
         private bool EvaluateSignalMatch(SignalWaitDto incomingWait, SignalDto signal, object workflowInstance)
         {
             if (incomingWait == null || signal == null) return false;
@@ -192,7 +284,7 @@ namespace Workflows.Runner
 
             try
             {
-                var closure = ResolvePrivateDataValue(incomingWait.Locals);
+                var closure = ResolvePrivateDataValue(incomingWait.ClosureData);
                 var evaluator = _matchExpressionCache.GetOrCompile(
                     serializedExpression,
                     () => _expressionSerializer.Deserialize(serializedExpression));
@@ -225,11 +317,16 @@ namespace Workflows.Runner
             if (workflowStream is not IAsyncEnumerable<Wait> asyncEnumerable)
                 throw new InvalidOperationException($"Workflow method [{incomingWait.CallerName}] must return IAsyncEnumerable<Wait>.");
 
-            var runner = asyncEnumerable.GetAsyncEnumerator();
+            var runner = ResolvePrivateDataValue(incomingWait.Locals) as IAsyncEnumerator<Wait> ?? asyncEnumerable.GetAsyncEnumerator();
             RestoreEnumeratorState(runner, container, incomingWait);
 
             var hasNext = runner.MoveNextAsync().AsTask().GetAwaiter().GetResult();
-            return hasNext ? runner.Current : null;
+            if (!hasNext)
+                return null;
+
+            var nextWait = runner.Current;
+            CaptureRunnerState(runner, incomingWait, nextWait);
+            return nextWait;
         }
 
         private void RestoreEnumeratorState(IAsyncEnumerator<Wait> runner, WorkflowContainer workflowInstance, SignalWaitDto incomingWait)
@@ -243,12 +340,12 @@ namespace Workflows.Runner
                 .FirstOrDefault(x => x.Name.EndsWith(Constants.CompilerCallerSuffix, StringComparison.Ordinal));
             thisField?.SetValue(runner, workflowInstance);
 
-            var localsValue = ResolvePrivateDataValue(incomingWait.Locals);
-            if (localsValue != null)
+            var closureValue = ResolvePrivateDataValue(incomingWait.ClosureData);
+            if (closureValue != null)
             {
                 var closureField = runnerType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                     .FirstOrDefault(x => x.FieldType.Name.StartsWith(Constants.CompilerClosurePrefix, StringComparison.Ordinal));
-                closureField?.SetValue(runner, localsValue);
+                closureField?.SetValue(runner, closureValue);
             }
         }
 
@@ -265,12 +362,34 @@ namespace Workflows.Runner
             return privateData.Value;
         }
 
-        //todo: handle other wait types and their specific properties (grouping, timers, subflows, etc.)
         private void PrepareWaitForPersistence(Wait wait, WaitBaseDto waitDto)
         {
-            if (wait is not ISignalWait signalWait || waitDto is not SignalWaitDto signalWaitDto)
+            if (wait == null || waitDto == null)
                 return;
 
+            waitDto.PresistStatus = PresistStatus.New;
+
+            if (wait is ISignalWait signalWait && waitDto is SignalWaitDto signalWaitDto)
+                PrepareSignalWaitForPersistence(signalWait, signalWaitDto);
+
+            if (wait is GroupWait groupWait && waitDto is WaitsGroupDto waitsGroupDto)
+                PrepareGroupWaitForPersistence(groupWait, waitsGroupDto);
+
+            if (wait is SubWorkflowWait subWorkflowWait && waitDto is SubWorkflowWaitDto subWorkflowWaitDto)
+                PrepareSubWorkflowWaitForPersistence(subWorkflowWait, subWorkflowWaitDto);
+
+            if (waitDto.ChildWaits == null)
+                return;
+
+            foreach (var child in waitDto.ChildWaits)
+            {
+                child.ParentWaitId = waitDto.Id;
+                child.PresistStatus = PresistStatus.New;
+            }
+        }
+
+        private void PrepareSignalWaitForPersistence(ISignalWait signalWait, SignalWaitDto signalWaitDto)
+        {
             try
             {
                 var transformed = _matchExpressionTransformer.Transform(signalWait);
@@ -289,8 +408,92 @@ namespace Workflows.Runner
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to transform and serialize expressions for wait {WaitName}.", waitDto.WaitName);
+                _logger.LogWarning(ex, "Failed to transform and serialize expressions for wait {WaitName}.", signalWaitDto.WaitName);
             }
+        }
+
+        private void PrepareGroupWaitForPersistence(GroupWait groupWait, WaitsGroupDto waitsGroupDto)
+        {
+            if (waitsGroupDto.ChildWaits == null || waitsGroupDto.ChildWaits.Count == 0)
+                return;
+
+            var runtimeChildren = groupWait.ChildWaitsRuntime;
+            if (runtimeChildren == null || runtimeChildren.Count == 0)
+                return;
+
+            var count = Math.Min(runtimeChildren.Count, waitsGroupDto.ChildWaits.Count);
+            for (var i = 0; i < count; i++)
+            {
+                var runtimeChild = runtimeChildren[i];
+                var childDto = waitsGroupDto.ChildWaits[i];
+
+                childDto.ParentWaitId = waitsGroupDto.Id;
+                PrepareWaitForPersistence(runtimeChild, childDto);
+            }
+        }
+
+        private void PrepareSubWorkflowWaitForPersistence(SubWorkflowWait subWorkflowWait, SubWorkflowWaitDto subWorkflowWaitDto)
+        {
+            if (subWorkflowWait.FirstWait == null)
+                return;
+
+            var firstWaitDto = subWorkflowWait.FirstWait;
+            subWorkflowWaitDto.ChildWaits = new List<WaitBaseDto> { firstWaitDto };
+
+            PrepareWaitDtoTreeForPersistence(firstWaitDto, subWorkflowWaitDto.Id);
+        }
+
+        private void PrepareWaitDtoTreeForPersistence(WaitBaseDto waitDto, Guid? parentWaitId)
+        {
+            if (waitDto == null)
+                return;
+
+            waitDto.ParentWaitId = parentWaitId;
+            waitDto.PresistStatus = PresistStatus.New;
+
+            if (waitDto.ChildWaits == null || waitDto.ChildWaits.Count == 0)
+                return;
+
+            foreach (var child in waitDto.ChildWaits)
+                PrepareWaitDtoTreeForPersistence(child, waitDto.Id);
+        }
+
+        private void CaptureRunnerState(IAsyncEnumerator<Wait> runner, SignalWaitDto previousWait, Wait nextWait)
+        {
+            if (nextWait?.ToDto() is not WaitBaseDto nextWaitDto)
+                return;
+
+            var runnerType = runner.GetType();
+            var stateField = runnerType.GetField(Constants.CompilerStateFieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (stateField?.GetValue(runner) is int state)
+                nextWaitDto.StateAfterWait = state;
+
+            nextWaitDto.Locals = SerializePrivateData(runner);
+
+            var closureField = runnerType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .FirstOrDefault(x => x.FieldType.Name.StartsWith(Constants.CompilerClosurePrefix, StringComparison.Ordinal));
+            var closureValue = closureField?.GetValue(runner);
+            if (closureValue != null)
+            {
+                nextWaitDto.ClosureData = SerializePrivateData(closureValue);
+            }
+            else if (previousWait?.ClosureData != null)
+            {
+                nextWaitDto.ClosureData = previousWait.ClosureData;
+            }
+        }
+
+        private PrivateData SerializePrivateData(object value)
+        {
+            if (value == null)
+                return null;
+
+            return new PrivateData
+            {
+                Value = _objectSerializer.Serialize(value, SerializationScope.InternalState),
+                TypeName = value.GetType().AssemblyQualifiedName ?? value.GetType().FullName,
+                Created = DateTime.UtcNow
+            };
         }
     }
 }
