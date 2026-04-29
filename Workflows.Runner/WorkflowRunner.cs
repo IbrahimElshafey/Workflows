@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,21 +18,23 @@ namespace Workflows.Runner
     internal class WorkflowRunner : IWorkflowRunner
     {
         private readonly MatchExpressionTransformer _matchExpressionTransformer;
-        private readonly Abstraction.Runner.IExpressionSerializer _expressionSerializer;
+        private readonly IExpressionSerializer _expressionSerializer;
         private readonly MatchExpressionCache _matchExpressionCache;
         private readonly IObjectSerializer _objectSerializer;
         private readonly RunWorkflowSettings _settings;
         private readonly IWorkflowRunResultSender _runResultSender;
         private readonly ILogger<WorkflowRunner> _logger;
+        private readonly IServiceProvider _serviceProvider;
 
         public WorkflowRunner(
             MatchExpressionTransformer matchExpressionTransformer,
-            Abstraction.Runner.IExpressionSerializer expressionSerializer,
+            IExpressionSerializer expressionSerializer,
             MatchExpressionCache matchExpressionCache,
             IObjectSerializer objectSerializer,
             RunWorkflowSettings settings,
             IWorkflowRunResultSender runResultSender,
-            ILogger<WorkflowRunner> logger)
+            ILogger<WorkflowRunner> logger,
+            IServiceProvider serviceProvider)
         {
             _matchExpressionTransformer = matchExpressionTransformer ?? throw new ArgumentNullException(nameof(matchExpressionTransformer));
             _expressionSerializer = expressionSerializer ?? throw new ArgumentNullException(nameof(expressionSerializer));
@@ -40,6 +43,7 @@ namespace Workflows.Runner
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _runResultSender = runResultSender ?? throw new ArgumentNullException(nameof(runResultSender));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         }
 
         public WorkflowRunId RunWorkflow(WorkflowRunContext runContext)
@@ -73,7 +77,7 @@ namespace Workflows.Runner
                     _runResultSender.SendWorkflowRunResult(runId, result).GetAwaiter().GetResult();
                     return runId;
                 }
-
+                //todo:it may be one or more wait matching signal in this stage (1 of million)
                 result.IncomingWait = incomingWait;
 
                 if (!EvaluateSignalMatch(incomingWait, runContext.Signal, workflowInstance))
@@ -147,10 +151,11 @@ namespace Workflows.Runner
         private object HydrateWorkflowInstance(Type workflowType, object stateObject)
         {
             if (stateObject == null)
-                return Activator.CreateInstance(workflowType);
+                return ActivatorUtilities.CreateInstance(_serviceProvider, workflowType);
 
             if (stateObject is string serializedState)
-            {
+            {  
+                //todo: why InternalState use?
                 return _objectSerializer.Deserialize(serializedState, workflowType, SerializationScope.InternalState);
             }
 
@@ -260,6 +265,7 @@ namespace Workflows.Runner
             return privateData.Value;
         }
 
+        //todo: handle other wait types and their specific properties (grouping, timers, subflows, etc.)
         private void PrepareWaitForPersistence(Wait wait, WaitBaseDto waitDto)
         {
             if (wait is not ISignalWait signalWait || waitDto is not SignalWaitDto signalWaitDto)

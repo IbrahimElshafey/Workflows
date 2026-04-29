@@ -11,6 +11,7 @@ namespace Workflows.Abstraction.DTOs
         /// <summary>
         /// Serialized class instance that contain the resumable workflow instance data
         /// </summary>
+        //todo: better to keep it string and same for PrivateData
         public object StateObject { get; internal set; }
 
         public List<WaitBaseDto> Waits { get; internal set; } = new();
