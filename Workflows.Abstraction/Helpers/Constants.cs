@@ -1,6 +1,4 @@
-﻿using System.Reflection;
-
-namespace Workflows.Handler.Helpers
+﻿namespace Workflows.Abstraction.Helpers
 {
     internal static class Constants
     {

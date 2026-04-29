@@ -1,5 +1,4 @@
-﻿using System;
-using Workflows.Abstraction.Enums;
+﻿using Workflows.Abstraction.Enums;
 
 namespace Workflows.Runner
 {

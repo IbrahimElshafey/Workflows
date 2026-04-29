@@ -4,7 +4,6 @@ using System.Text.RegularExpressions;
 
 using System;
 using System.Collections.Generic;
-using Workflows.Handler.Helpers;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.DTOs;
 namespace Workflows.Handler
@@ -20,7 +19,7 @@ namespace Workflows.Handler
             var runner = workflow.GetAsyncEnumerator();
             var runnerName = runner.GetType().Name;
             var workflowName = Regex.Match(runnerName, "<(.+)>").Groups[1].Value;
-            var workflowInfo = GetType().GetMethod(workflowName, CoreExtensions.DeclaredWithinTypeFlags());
+            var workflowInfo = GetType().GetMethod(workflowName, Abstraction.Helpers.CoreExtensions.DeclaredWithinTypeFlags());
             var result = new SubWorkflowWait(new SubWorkflowWaitDto
             {
                 WaitName = name ?? $"#Wait Workflow `{workflowName}`",

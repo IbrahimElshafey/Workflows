@@ -1,10 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Generic;
-using System.Linq.Expressions;
-using Workflows.Abstraction;
+using Workflows.Abstraction.Common;
 using Workflows.Abstraction.DTOs;
-using Workflows.Handler.BaseUse;
+using Workflows.Abstraction.Runner;
 using Workflows.Runner.ExpressionTransformers;
 
 namespace Workflows.Runner
@@ -13,14 +10,15 @@ namespace Workflows.Runner
     {
         public WorkflowRunner(
             MatchExpressionTransformer matchExpressionTransformer,
-            IExpressionSerializer expressionSerializer,
+            Abstraction.Runner.IExpressionSerializer expressionSerializer,
             IObjectSerializer objectSerializer,
             RunWorkflowSettings settings,
+            IWorkflowRunResultSender runResultSender,
             ILogger<WorkflowRunner> logger)
         {
-            
+
         }
-        public WorkflowRunResult RunWorkflow(WorkflowRunContext runContext)
+        public WorkflowRunId RunWorkflow(WorkflowRunContext runContext)
         {
             //see WaitsProcessor.ResumeExecution()
             return RunWorkflow(runContext);

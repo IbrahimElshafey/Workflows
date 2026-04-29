@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 namespace Workflows.Abstraction.DTOs
 {
     public class PrivateData 

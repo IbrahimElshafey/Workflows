@@ -1,7 +1,5 @@
 ﻿using System;
-using System.Linq;
 using Workflows.Abstraction.DTOs;
-using Workflows.Handler.Helpers;
 namespace Workflows.Handler.BaseUse
 {
     public class Wait
@@ -14,7 +12,8 @@ namespace Workflows.Handler.BaseUse
 
         internal WaitBaseDto WaitData { get; set; }
         internal Action CancelAction { get; set; }
-        internal WorkflowContainer CurrentWorkflow { get; set; }
+        public WorkflowContainer CurrentWorkflow { get; set; }
+
         /// <summary>
         /// Validate delegate that used for groupMatchFilter,AfterMatchAction,CancelAction and return:
         /// $"{method.DeclaringType.FullName}#{method.Name}"

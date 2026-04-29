@@ -1,16 +1,13 @@
 ﻿using System;
-using System.Linq;
 using System.Linq.Expressions;
-using System.Reflection;
-using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Handler.BaseUse
 {
-    public partial class SignalWait<SignalData> : Wait
+    public partial class SignalWait<SignalData> : Wait, ISignalWait
     {
         internal Action<SignalData> AfterMatchAction { get; set; }
-        
+
         internal SignalWait(SignalWaitDto data) : base(data) { Data = data; }
 
         internal SignalWaitDto Data { get; private set; }
@@ -18,6 +15,11 @@ namespace Workflows.Handler.BaseUse
 
         internal LambdaExpression MatchExpression { get; set; }
 
+        LambdaExpression ISignalWait.MatchExpression
+        {
+            get => MatchExpression;
+            set => MatchExpression = value;
+        }
 
         public SignalWait<SignalData> AfterMatch(Action<SignalData> afterMatchAction)
         {

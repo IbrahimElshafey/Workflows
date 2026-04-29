@@ -1,8 +1,4 @@
-﻿
-using System;
-using System.Linq;
-
-namespace Workflows.Abstraction.DTOs
+﻿namespace Workflows.Abstraction.DTOs
 {
     public class WorkflowRunContext
     {

@@ -7,12 +7,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="FastExpressionCompiler" Version="5.4.1" />
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
+    <PackageReference Include="Nuqleon.Linq.Expressions.Bonsai.Serialization" Version="1.0.0-beta.24" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
+    <ProjectReference Include="..\Workflows.Common\Workflows.Common.csproj" />
     <ProjectReference Include="..\Workflows.Definition\Workflows.Definition.csproj" />
   </ItemGroup>
 

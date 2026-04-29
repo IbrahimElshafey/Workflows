@@ -1,28 +1,29 @@
 ﻿using System;
+using ResumableFunctions.Handler.Expressions;
 using Workflows.Handler.BaseUse;
 
 namespace Workflows.Runner.ExpressionTransformers
 {
     internal class MatchExpressionTransformer
     {
-        internal MatchTransformationResult Transform(Wait wait)
+        internal MatchTransformationResult Transform(ISignalWait signalWait)
         {
-            var type = wait.GetType();
+            if (signalWait == null)
+                throw new ArgumentNullException(nameof(signalWait));
 
-            // Check if it's specifically a SignalWait<T>
-            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(SignalWait<>))
-            {
-                // Use 'dynamic' to let the DLR find the correct TransformInternal<T> at runtime
-                return TransformInternal((dynamic)wait);
-            }
+            var matchWriter = new MatchExpressionWriter(
+                signalWait.MatchExpression,
+                signalWait.CurrentWorkflow);
 
-            throw new ArgumentException($"Expected SignalWait<T> but received {type.Name}");
-        }
-        private MatchTransformationResult TransformInternal<T>(SignalWait<T> signalWait)
-        {
-            // Inside here, T is correctly identified (e.g., User, Order, etc.)
-            // You can now manipulate signalWait.Expression safely
-            return new MatchTransformationResult();
+            var result = matchWriter.MatchExpressionParts;
+            if (result?.MatchExpression == null)
+                return result;
+
+            var dynamicMatchVisitor = new DynamicMatchVisitor(result.MatchExpression);
+            result.GenericMatchExpression = dynamicMatchVisitor.Result;
+            result.IsGenericMatchFullMatch = result.GenericMatchExpression != null;
+
+            return result;
         }
     }
 }

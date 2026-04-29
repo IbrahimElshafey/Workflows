@@ -1,6 +1,4 @@
-﻿using Workflows.Handler.Helpers;
-using System.Reflection;
-namespace Workflows.Abstraction.DTOs
+﻿namespace Workflows.Abstraction.DTOs
 {
     public sealed class SubWorkflowWaitDto : WaitBaseDto
     {
