@@ -14,6 +14,7 @@ namespace Workflows.Runner
             */
             services.AddScoped<IWorkflowRunner, WorkflowRunner>();
             services.AddSingleton<MatchExpressionTransformer>();
+            services.AddSingleton<MatchExpressionCache>();
             services.AddSingleton<IExpressionSerializer, ExpressionSerializer>();
             return services;
         }
