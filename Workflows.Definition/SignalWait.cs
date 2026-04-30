@@ -5,7 +5,12 @@ using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Handler.BaseUse
 {
-    public partial class SignalWait<SignalData> : Wait, ISignalWait
+    /// <summary>
+    /// Represents a passive wait for an external signal event.
+    /// Signals do not initiate side effects, so they can be safely combined
+    /// with other passive waits in group scenarios.
+    /// </summary>
+    public partial class SignalWait<SignalData> : Wait, IPassiveWait, ISignalWait
     {
         internal Action<SignalData> AfterMatchAction { get; set; }
 

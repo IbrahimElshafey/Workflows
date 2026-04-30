@@ -6,6 +6,7 @@
         GroupWaitAll,
         GroupWaitFirst,
         GroupWaitWithExpression,
-        SubWorkflowWait
+        SubWorkflowWait,
+        CommandWait
     }
 }

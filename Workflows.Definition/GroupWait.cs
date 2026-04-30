@@ -7,7 +7,11 @@ using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Enums;
 namespace Workflows.Handler.BaseUse
 {
-    public class GroupWait : Wait
+    /// <summary>
+    /// Represents a composite group of passive waits that can be combined
+    /// using MatchAll(), MatchAny(), or custom MatchIf() logic.
+    /// </summary>
+    public class GroupWait : Wait, IPassiveWait
     {
         internal WaitsGroupDto WaitsGroupEntity { get; }
         internal IReadOnlyList<Wait> ChildWaitsRuntime { get; }

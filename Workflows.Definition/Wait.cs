@@ -4,20 +4,36 @@ using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 namespace Workflows.Handler.BaseUse
 {
+    /// <summary>
+    /// Base class for all wait types in the workflow engine.
+    /// Wraps a WaitInfrastructureDto (or derived) to provide runtime behavior and fluent configuration.
+    /// </summary>
     public class Wait
     {
-        public virtual WaitBaseDto ToDto() => WaitData;
-        internal Wait(WaitBaseDto wait)
+        public virtual WaitInfrastructureDto ToDto() => WaitData;
+        
+        internal Wait(WaitInfrastructureDto wait)
         {
             WaitData = wait;
         }
 
-        internal WaitBaseDto WaitData { get; set; }
+        /// <summary>
+        /// The underlying infrastructure DTO containing persistence and execution state.
+        /// </summary>
+        internal WaitInfrastructureDto WaitData { get; set; }
+        
+        /// <summary>
+        /// Action to execute if this wait is cancelled.
+        /// </summary>
         internal Action CancelAction { get; set; }
+        
+        /// <summary>
+        /// Reference to the workflow container that created this wait.
+        /// </summary>
         public WorkflowContainer CurrentWorkflow { get; set; }
 
         /// <summary>
-        /// Validate delegate that used for groupMatchFilter,AfterMatchAction,CancelAction and return:
+        /// Validate delegate that used for groupMatchFilter, AfterMatchAction, CancelAction and return:
         /// $"{method.DeclaringType.FullName}#{method.Name}"
         /// </summary>
         internal string ValidateCallback(Delegate callback, string methodName)

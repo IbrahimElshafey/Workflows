@@ -16,6 +16,6 @@
         /// Used for internal state machine closures (<>c__DisplayClass) and locals.
         /// Captures private fields, backing fields, and strict type metadata required for resumption.
         /// </summary>
-        InternalState
+        CompilerGeneratedClass
     }
 }

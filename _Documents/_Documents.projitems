@@ -14,6 +14,7 @@
     <None Include="$(MSBuildThisFileDirectory)DB\delete_tests_dbs.sql" />
     <None Include="$(MSBuildThisFileDirectory)GitHubDocs\BasicWaitTypes.md" />
     <None Include="$(MSBuildThisFileDirectory)GitHubDocs\WaitTypesUseCases.md" />
+    <None Include="$(MSBuildThisFileDirectory)SolutionEvaluation-InterfaceSegregation.md" />
     <None Include="$(MSBuildThisFileDirectory)_Phase-1\_Phase-1-plan.md" />
     <None Include="$(MSBuildThisFileDirectory)_Phase-2\-NoNeed\Visual Workflow Designer (Phase 4).md" />
     <None Include="$(MSBuildThisFileDirectory)_Phase-2\Architecture &amp; Interface Specification.md" />
