@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Handler.BaseUse
@@ -31,22 +32,25 @@ namespace Workflows.Handler.BaseUse
         {
             if (condition)
             {
-                MatchExpression = (Expression<Func<SignalData, bool>>)(_ => true);
+                MatchExpression = null;
             }
             return this;
         }
 
-        public SignalWait<SignalData> MatchIf(Expression<Func<SignalData, bool>> matchExpression)
+        public SignalWait<SignalData> MatchIf(
+            Expression<Func<SignalData, bool>> matchExpression,
+            [CallerFilePath] string callerFilePath = "",
+            [CallerLineNumber] int callerLineNumber = 0,
+            [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             MatchExpression = matchExpression;
+            Data.MatchExpressionHash = CalcMatchExpressionHash(callerFilePath,callerLineNumber,expression);
             return this;
         }
 
-        public SignalWait<SignalData> MatchIf(bool condition, Expression<Func<SignalData, bool>> matchExpression)
+        private object CalcMatchExpressionHash(string callerFilePath, int callerLineNumber, string? expression)
         {
-            if (condition)
-                MatchExpression = matchExpression;
-            return this;
+            throw new NotImplementedException();
         }
 
         public SignalWait<SignalData> NoActionAfterMatch()

@@ -5,6 +5,7 @@ namespace Workflows.Abstraction.DTOs
     public class SignalWaitDto : WaitBaseDto
     {
         public string MatchExpression { get; set; }
+        public object MatchExpressionHash { get; set; }
         /// <summary>
         /// Match expression rewritten agaist generic object like JObject or 
         /// </summary>

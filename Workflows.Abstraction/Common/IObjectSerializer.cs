@@ -27,6 +27,3 @@ namespace Workflows.Abstraction.Common
         object Deserialize(string serializedObj, Type type, Enums.SerializationScope scope = Enums.SerializationScope.Standard);
     }
 }
-namespace Workflows.Abstraction.Enums
-{
-}

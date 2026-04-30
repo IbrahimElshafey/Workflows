@@ -22,7 +22,7 @@ namespace Workflows.Runner
         private readonly MatchExpressionCache _matchExpressionCache;
         private readonly IObjectSerializer _objectSerializer;
         private readonly RunWorkflowSettings _settings;
-        private readonly IWorkflowRunResultSender _runResultSender;
+        private readonly IWorkflowRunnerClient _runResultSender;
         private readonly ILogger<WorkflowRunner> _logger;
         private readonly IServiceProvider _serviceProvider;
 
@@ -32,7 +32,7 @@ namespace Workflows.Runner
             MatchExpressionCache matchExpressionCache,
             IObjectSerializer objectSerializer,
             RunWorkflowSettings settings,
-            IWorkflowRunResultSender runResultSender,
+            IWorkflowRunnerClient runResultSender,
             ILogger<WorkflowRunner> logger,
             IServiceProvider serviceProvider)
         {
@@ -88,7 +88,7 @@ namespace Workflows.Runner
                 }
 
                 incomingWait.Status = WaitStatus.Completed;
-                incomingWait.PresistStatus = PresistStatus.Updated;
+                incomingWait.PersistStatus = PersistStatus.Updated;
 
                 if (!TryProceedExecution(runContext.WorkflowState, incomingWait))
                 {
@@ -204,7 +204,7 @@ namespace Workflows.Runner
                         return false;
 
                     parent.Status = WaitStatus.Completed;
-                    parent.PresistStatus = PresistStatus.Updated;
+                    parent.PersistStatus = PersistStatus.Updated;
                     CancelSubWaits(parent);
                 }
 
@@ -266,7 +266,7 @@ namespace Workflows.Runner
             foreach (var child in wait.ChildWaits.Flatten(x => x.ChildWaits).Where(x => x != wait && x.Status == WaitStatus.Waiting))
             {
                 child.Status = WaitStatus.Canceled;
-                child.PresistStatus = PresistStatus.Updated;
+                child.PersistStatus = PersistStatus.Updated;
             }
         }
 
@@ -367,7 +367,7 @@ namespace Workflows.Runner
             if (wait == null || waitDto == null)
                 return;
 
-            waitDto.PresistStatus = PresistStatus.New;
+            waitDto.PersistStatus = PersistStatus.New;
 
             if (wait is ISignalWait signalWait && waitDto is SignalWaitDto signalWaitDto)
                 PrepareSignalWaitForPersistence(signalWait, signalWaitDto);
@@ -384,7 +384,7 @@ namespace Workflows.Runner
             foreach (var child in waitDto.ChildWaits)
             {
                 child.ParentWaitId = waitDto.Id;
-                child.PresistStatus = PresistStatus.New;
+                child.PersistStatus = PersistStatus.New;
             }
         }
 
@@ -449,7 +449,7 @@ namespace Workflows.Runner
                 return;
 
             waitDto.ParentWaitId = parentWaitId;
-            waitDto.PresistStatus = PresistStatus.New;
+            waitDto.PersistStatus = PersistStatus.New;
 
             if (waitDto.ChildWaits == null || waitDto.ChildWaits.Count == 0)
                 return;

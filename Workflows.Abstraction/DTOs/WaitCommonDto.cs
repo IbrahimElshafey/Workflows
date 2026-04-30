@@ -7,29 +7,18 @@ namespace Workflows.Abstraction.DTOs
 {
     public abstract class WaitBaseDto
     {
-        public List<WaitBaseDto> ChildWaits { get; set; } = new();
-
-        public Guid? ParentWaitId { get; set; }
-
-        public Guid RequestedByWorkflowId { get; set; }
-
-        public Guid WorkflowStateId { get; set; }
 
         public string CallerName { get; internal set; }
+        public List<WaitBaseDto> ChildWaits { get; set; } = new();
 
         public PrivateData ClosureData { get; internal set; }
 
         public DateTime Created { get; internal set; }
 
         public Guid Id { get; internal set; } = new Guid();
-        public PresistStatus PresistStatus {  get; internal set; }
 
 
         public int InCodeLine { get; internal set; }
-
-        public bool IsFirst { get; internal set; }
-
-        public bool IsRoot { get; internal set; }
 
         /// <summary>
         /// Local variables in method at the wait point where current wait requested It's the runner class serialized we
@@ -37,10 +26,13 @@ namespace Workflows.Abstraction.DTOs
         /// </summary>
         public PrivateData Locals { get; internal set; }
 
-        public DateTime Modified { get; internal set; }
-
+        public Guid? ParentWaitId { get; set; }
 
         public string Path { get; internal set; }
+
+        public PersistStatus PersistStatus { get; internal set; }
+
+        public Guid RequestedByWorkflowId { get; set; }
 
         public Guid RootWorkflowId { get; internal set; }
 
@@ -52,5 +44,6 @@ namespace Workflows.Abstraction.DTOs
 
         public WaitType WaitType { get; internal set; }
 
+        public Guid WorkflowStateId { get; set; }
     }
 }

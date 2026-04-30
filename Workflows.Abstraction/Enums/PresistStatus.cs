@@ -1,6 +1,6 @@
 ﻿namespace Workflows.Abstraction.Enums
 {
-    public enum PresistStatus
+    public enum PersistStatus
     {
         New = 1,
         Presist = 2,

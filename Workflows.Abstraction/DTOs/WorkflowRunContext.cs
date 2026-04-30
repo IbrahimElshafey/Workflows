@@ -4,6 +4,7 @@
     {
         public SignalDto Signal { get; set; }
         public string WorkflowTypeName { get; set; }
+        public string WorkflowIdentifier { get; set; }
         public WorkflowStateDto WorkflowState { get; set; }
     }
 }

@@ -8,7 +8,7 @@ namespace Workflows.Abstraction.Runner
     /// Acts as the communication bridge to send execution results from the Runner 
     /// back to the Orchestrator for persistence and signal matching.
     /// </summary>
-    public interface IWorkflowRunResultSender
+    public interface IWorkflowRunnerClient
     {
         /// <summary>
         /// Asynchronously pushes the result of a workflow execution step to the Orchestrator.
