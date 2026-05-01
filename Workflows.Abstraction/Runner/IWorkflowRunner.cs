@@ -1,4 +1,5 @@
-﻿using Workflows.Abstraction.DTOs;
+﻿using System.Threading.Tasks;
+using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Abstraction.Runner
 {
@@ -14,6 +15,6 @@ namespace Workflows.Abstraction.Runner
         /// </summary>
         /// <param name="runContext">The state and signal data required to resume execution.</param>
         /// <returns>A <see cref="WorkflowRunId"/> identifying this specific execution attempt.</returns>
-        WorkflowRunId RunWorkflow(WorkflowRunContext runContext);
+        Task<WorkflowRunId> RunWorkflow(WorkflowRunContext runContext);
     }
 }

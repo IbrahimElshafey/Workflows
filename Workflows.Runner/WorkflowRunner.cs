@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using Workflows.Abstraction.Common;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Enums;
@@ -46,7 +47,7 @@ namespace Workflows.Runner
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         }
 
-        public WorkflowRunId RunWorkflow(WorkflowRunContext runContext)
+        public async Task<WorkflowRunId> RunWorkflow(WorkflowRunContext runContext)
         {
             if (runContext == null) throw new ArgumentNullException(nameof(runContext));
             if (runContext.WorkflowState == null) throw new ArgumentException("WorkflowState is required.", nameof(runContext));
@@ -74,7 +75,7 @@ namespace Workflows.Runner
                 if (incomingWait == null)
                 {
                     result.Message = "No matching waiting signal was found in workflow state.";
-                    _runResultSender.SendWorkflowRunResult(runId, result).GetAwaiter().GetResult();
+                    await  _runResultSender.SendWorkflowRunResult(runId, result);
                     return runId;
                 }
                 //todo:it may be one or more wait matching signal in this stage (1 of million)
@@ -90,14 +91,14 @@ namespace Workflows.Runner
                     TryProceedExecution(runContext.WorkflowState, incomingWait);
                     runContext.WorkflowState.StateObject = _objectSerializer.Serialize(workflowInstance, SerializationScope.CompilerGeneratedClass);
                     result.WorkflowState = runContext.WorkflowState;
-                    _runResultSender.SendWorkflowRunResult(runId, result).GetAwaiter().GetResult();
+                    await _runResultSender.SendWorkflowRunResult(runId, result);
                     return runId;
                 }
 
                 if (!EvaluateSignalMatch(incomingWait, runContext.Signal, workflowInstance))
                 {
                     result.Message = "Signal did not satisfy the exact wait match expression.";
-                    _runResultSender.SendWorkflowRunResult(runId, result).GetAwaiter().GetResult();
+                    await _runResultSender.SendWorkflowRunResult(runId, result);
                     return runId;
                 }
 
@@ -109,12 +110,12 @@ namespace Workflows.Runner
                     result.Message = "Signal matched, but workflow is still waiting for grouped or nested waits.";
                     runContext.WorkflowState.StateObject = _objectSerializer.Serialize(workflowInstance, SerializationScope.CompilerGeneratedClass);
                     result.WorkflowState = runContext.WorkflowState;
-                    _runResultSender.SendWorkflowRunResult(runId, result).GetAwaiter().GetResult();
+                    await _runResultSender.SendWorkflowRunResult(runId, result);
                     return runId;
                 }
 
                 WaitInfrastructureDto currentResumePoint = incomingWait;
-                var nextWait = AdvanceWorkflow(workflowInstance, currentResumePoint);
+                var nextWait = await AdvanceWorkflow(workflowInstance, currentResumePoint);
 
                 if (nextWait == null)
                 {
@@ -140,7 +141,7 @@ namespace Workflows.Runner
                 runContext.WorkflowState.StateObject = _objectSerializer.Serialize(workflowInstance, SerializationScope.CompilerGeneratedClass);
                 result.WorkflowState = runContext.WorkflowState;
 
-                _runResultSender.SendWorkflowRunResult(runId, result).GetAwaiter().GetResult();
+                await _runResultSender.SendWorkflowRunResult(runId, result);
                 return runId;
             }
             catch (Exception ex)
@@ -155,7 +156,7 @@ namespace Workflows.Runner
                 result.Message = ex.ToString();
                 result.WorkflowState = runContext.WorkflowState;
 
-                _runResultSender.SendWorkflowRunResult(runId, result).GetAwaiter().GetResult();
+                await _runResultSender.SendWorkflowRunResult(runId, result);
                 return runId;
             }
         }
@@ -327,7 +328,7 @@ namespace Workflows.Runner
             };
         }
 
-        private Wait AdvanceWorkflow(object workflowInstance, WaitInfrastructureDto incomingWait)
+        private async Task<Wait> AdvanceWorkflow(object workflowInstance, WaitInfrastructureDto incomingWait)
         {
             if (workflowInstance is not WorkflowContainer container)
                 throw new InvalidOperationException("Workflow instance must inherit from WorkflowContainer.");
@@ -349,7 +350,7 @@ namespace Workflows.Runner
             var runner = ResolvePrivateDataValue(incomingWait.Locals) as IAsyncEnumerator<Wait> ?? asyncEnumerable.GetAsyncEnumerator();
             RestoreEnumeratorState(runner, container, incomingWait);
 
-            var hasNext = runner.MoveNextAsync().AsTask().GetAwaiter().GetResult();
+            var hasNext = await runner.MoveNextAsync();
             if (!hasNext)
                 return null;
 
