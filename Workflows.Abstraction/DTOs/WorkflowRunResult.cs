@@ -13,6 +13,7 @@ namespace Workflows.Abstraction.DTOs
     /// <summary>
     /// Result of a workflow run operation containing execution status and state information.
     /// </summary>
+    //Todo: unify with WorkflowExecutionResult and consider renaming to WorkflowRunOutcome or similar for clarity.
     public class WorkflowRunResult
     {
         /// <summary>

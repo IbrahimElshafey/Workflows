@@ -3,6 +3,7 @@
     public class WorkflowRunContext
     {
         public SignalDto Signal { get; set; }
+        public WaitInfrastructureDto ActivatedWait { get; set; }
         public string WorkflowTypeName { get; set; }
         public string WorkflowIdentifier { get; set; }
         public WorkflowStateDto WorkflowState { get; set; }

@@ -13,7 +13,9 @@ namespace Workflows.Abstraction.DTOs
         /// The serialized command payload.
         /// Will be populated by the workflow runner when it has access to IObjectSerializer.
         /// </summary>
-        public string SerializedCommand { get; set; }
+        public object CommandData { get; set; }
+       
+        public object CommandResult { get; set; }
 
         /// <summary>
         /// Maximum number of retry attempts for command execution.
