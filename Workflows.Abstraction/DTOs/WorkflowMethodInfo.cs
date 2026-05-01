@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Workflows.Runner.Registration
+namespace Workflows.Abstraction.DTOs
 {
     public class WorkflowMethodInfo
     {

@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
-using Workflows.Handler.BaseUse;
+using System.Reflection;
 
-namespace Workflows.Runner.Registration
+namespace Workflows.Abstraction.DTOs
 {
     public class WorkflowRegistrationInput
     {
-        public WorkflowRegistrationInput(string workflowIdentifier, Func<IAsyncEnumerable<Wait>> workflowMethod)
+        public WorkflowRegistrationInput(string workflowIdentifier, MethodInfo workflowMethod)
         {
             WorkflowIdentifier = workflowIdentifier;
             WorkflowMethodInfo = GetWorkflowMethodInfo(workflowMethod);
@@ -14,7 +14,7 @@ namespace Workflows.Runner.Registration
 
         public string WorkflowIdentifier { get; }
         public WorkflowMethodInfo WorkflowMethodInfo { get; }
-        private WorkflowMethodInfo GetWorkflowMethodInfo(Func<IAsyncEnumerable<Wait>> workflowMethod)
+        private WorkflowMethodInfo GetWorkflowMethodInfo(MethodInfo workflowMethod)
         {
             throw new NotImplementedException();
         }

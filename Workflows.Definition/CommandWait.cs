@@ -12,6 +12,8 @@ namespace Workflows.Handler.BaseUse
     /// </summary>
     public class CommandWait<TCommand, TResult> : Wait, ICommandWait
     {
+        internal TResult CommandResult { get; set; }
+        internal TCommand CommandData { get; set; }
         internal Action<TResult> OnResultAction { get; set; }
         internal Action CompensationAction { get; set; }
 
@@ -29,9 +31,7 @@ namespace Workflows.Handler.BaseUse
         })
         {
             Data = (CommandWaitDto)WaitData;
-            // Serialize command data - caller will provide the serialization via a serializer instance
-            // This is deferred to the workflow runner which has access to the IObjectSerializer
-            Data.SerializedCommand = null; // Will be set by the workflow engine during execution
+            CommandData = data;
         }
 
         /// <summary>
@@ -90,6 +90,7 @@ namespace Workflows.Handler.BaseUse
         {
             if (compensationAction != null)
             {
+                //tod:revist this to not use Wait
                 CompensationAction = () =>
                 {
                     compensationAction().Wait();
