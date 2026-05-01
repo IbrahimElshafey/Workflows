@@ -18,6 +18,8 @@ namespace Workflows.Runner
 {
     internal class WorkflowRunner : IWorkflowRunner
     {
+        private readonly TypesCache _workflowTypeCache;
+
         private readonly MatchExpressionTransformer _matchExpressionTransformer;
         private readonly IExpressionSerializer _expressionSerializer;
         private readonly MatchExpressionCache _matchExpressionCache;
@@ -26,8 +28,10 @@ namespace Workflows.Runner
         private readonly IWorkflowRunnerClient _runResultSender;
         private readonly ILogger<WorkflowRunner> _logger;
         private readonly IServiceProvider _serviceProvider;
+        private readonly ICommandHandlerFactory _commandHandlerFactory;
 
         public WorkflowRunner(
+            TypesCache workflowTypeCache,
             MatchExpressionTransformer matchExpressionTransformer,
             IExpressionSerializer expressionSerializer,
             MatchExpressionCache matchExpressionCache,
@@ -35,8 +39,10 @@ namespace Workflows.Runner
             RunWorkflowSettings settings,
             IWorkflowRunnerClient runResultSender,
             ILogger<WorkflowRunner> logger,
-            IServiceProvider serviceProvider)
+            IServiceProvider serviceProvider,
+            ICommandHandlerFactory commandHandlerFactory)
         {
+            _workflowTypeCache = workflowTypeCache ?? throw new ArgumentNullException(nameof(workflowTypeCache));
             _matchExpressionTransformer = matchExpressionTransformer ?? throw new ArgumentNullException(nameof(matchExpressionTransformer));
             _expressionSerializer = expressionSerializer ?? throw new ArgumentNullException(nameof(expressionSerializer));
             _matchExpressionCache = matchExpressionCache ?? throw new ArgumentNullException(nameof(matchExpressionCache));
@@ -45,9 +51,10 @@ namespace Workflows.Runner
             _runResultSender = runResultSender ?? throw new ArgumentNullException(nameof(runResultSender));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+            _commandHandlerFactory = commandHandlerFactory ?? throw new ArgumentNullException(nameof(commandHandlerFactory));
         }
 
-        public async Task<WorkflowRunId> RunWorkflow(WorkflowRunContext runContext)
+        public async Task<WorkflowRunId> RunWorkflowAsync(WorkflowRunContext runContext)
         {
             if (runContext == null) throw new ArgumentNullException(nameof(runContext));
             if (runContext.WorkflowState == null) throw new ArgumentException("WorkflowState is required.", nameof(runContext));
@@ -66,39 +73,36 @@ namespace Workflows.Runner
                 Message = "Workflow is in progress."
             };
 
+            object workflowInstance = null;
+            var shouldSerializeState = false;
+
             try
             {
                 var workflowType = ResolveWorkflowType(runContext.WorkflowTypeName);
-                var workflowInstance = HydrateWorkflowInstance(workflowType, runContext.WorkflowState.StateObject);
+                workflowInstance = HydrateWorkflowInstance(workflowType, runContext.WorkflowState.StateObject);
 
                 var incomingWait = SelectIncomingSignalWait(runContext.WorkflowState, runContext.Signal);
                 if (incomingWait == null)
                 {
                     result.Message = "No matching waiting signal was found in workflow state.";
-                    await  _runResultSender.SendWorkflowRunResult(runId, result);
                     return runId;
                 }
-                //todo:it may be one or more wait matching signal in this stage (1 of million)
+
                 result.IncomingWait = incomingWait;
 
-                // Pre-evaluation check: if any of the wait's cancel tokens have already been
-                // cancelled, unwind this wait without evaluating the signal.
                 if (IsWaitCancelledByToken(incomingWait, runContext.WorkflowState))
                 {
                     incomingWait.Status = WaitStatus.Canceled;
                     incomingWait.PersistStatus = PersistStatus.Updated;
                     result.Message = "Wait was interrupted by a previously cancelled token.";
                     TryProceedExecution(runContext.WorkflowState, incomingWait);
-                    runContext.WorkflowState.StateObject = _objectSerializer.Serialize(workflowInstance, SerializationScope.CompilerGeneratedClass);
-                    result.WorkflowState = runContext.WorkflowState;
-                    await _runResultSender.SendWorkflowRunResult(runId, result);
+                    shouldSerializeState = true;
                     return runId;
                 }
 
                 if (!EvaluateSignalMatch(incomingWait, runContext.Signal, workflowInstance))
                 {
                     result.Message = "Signal did not satisfy the exact wait match expression.";
-                    await _runResultSender.SendWorkflowRunResult(runId, result);
                     return runId;
                 }
 
@@ -108,14 +112,11 @@ namespace Workflows.Runner
                 if (!TryProceedExecution(runContext.WorkflowState, incomingWait))
                 {
                     result.Message = "Signal matched, but workflow is still waiting for grouped or nested waits.";
-                    runContext.WorkflowState.StateObject = _objectSerializer.Serialize(workflowInstance, SerializationScope.CompilerGeneratedClass);
-                    result.WorkflowState = runContext.WorkflowState;
-                    await _runResultSender.SendWorkflowRunResult(runId, result);
+                    shouldSerializeState = true;
                     return runId;
                 }
 
-                WaitInfrastructureDto currentResumePoint = incomingWait;
-                var nextWait = await AdvanceWorkflow(workflowInstance, currentResumePoint);
+                var nextWait = await AdvanceWorkflow(workflowInstance, incomingWait, runContext);
 
                 if (nextWait == null)
                 {
@@ -138,36 +139,52 @@ namespace Workflows.Runner
                     result.IncomingWait = nextWaitDto;
                 }
 
-                runContext.WorkflowState.StateObject = _objectSerializer.Serialize(workflowInstance, SerializationScope.CompilerGeneratedClass);
-                result.WorkflowState = runContext.WorkflowState;
-
-                await _runResultSender.SendWorkflowRunResult(runId, result);
+                shouldSerializeState = true;
                 return runId;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error while running workflow instance {WorkflowStateId}.", runContext.WorkflowState.Id);
+                var actualException = ex is TargetInvocationException tie && tie.InnerException != null
+                    ? tie.InnerException
+                    : ex;
+
+                _logger.LogError(actualException, "Error while running workflow instance {WorkflowStateId}.", runContext.WorkflowState.Id);
                 runContext.WorkflowState.Status = WorkflowInstanceStatus.InError;
 
                 if (result.IncomingWait != null)
                     result.IncomingWait.Status = _settings.WaitStatusIfProcessingError;
 
                 result.Status = WorkflowInstanceStatus.InError;
-                result.Message = ex.ToString();
+                result.Message = actualException.ToString();
                 result.WorkflowState = runContext.WorkflowState;
 
-                await _runResultSender.SendWorkflowRunResult(runId, result);
                 return runId;
+            }
+            finally
+            {
+                if (shouldSerializeState && workflowInstance != null)
+                {
+                    runContext.WorkflowState.StateObject = _objectSerializer.Serialize(workflowInstance, SerializationScope.CompilerGeneratedClass);
+                }
+
+                result.WorkflowState = runContext.WorkflowState;
+                await _runResultSender.SendWorkflowRunResultAsync(runId, result);
             }
         }
 
-        private static Type ResolveWorkflowType(string workflowTypeName)
+        private Type ResolveWorkflowType(string workflowTypeName)
         {
             if (string.IsNullOrWhiteSpace(workflowTypeName))
                 throw new ArgumentException("WorkflowTypeName is required.", nameof(workflowTypeName));
 
-            var workflowType = Type.GetType(workflowTypeName);
-            if (workflowType != null) return workflowType;
+            return _workflowTypeCache.GetOrAdd(workflowTypeName, ResolveWorkflowTypeCore);
+        }
+
+        private static Type ResolveWorkflowTypeCore(string workflowTypeName)
+        {
+            var workflowType = Type.GetType(workflowTypeName, throwOnError: false, ignoreCase: true);
+            if (workflowType != null)
+                return workflowType;
 
             workflowType = AppDomain.CurrentDomain
                 .GetAssemblies()
@@ -186,7 +203,7 @@ namespace Workflows.Runner
                 return ActivatorUtilities.CreateInstance(_serviceProvider, workflowType);
 
             if (stateObject is string serializedState)
-            {  
+            {
                 //todo: why CompilerGeneratedClass use?
                 return _objectSerializer.Deserialize(serializedState, workflowType);
             }
@@ -328,7 +345,7 @@ namespace Workflows.Runner
             };
         }
 
-        private async Task<Wait> AdvanceWorkflow(object workflowInstance, WaitInfrastructureDto incomingWait)
+        private async Task<Wait> AdvanceWorkflow(object workflowInstance, WaitInfrastructureDto incomingWait, WorkflowRunContext runContext = null)
         {
             if (workflowInstance is not WorkflowContainer container)
                 throw new InvalidOperationException("Workflow instance must inherit from WorkflowContainer.");
@@ -350,13 +367,35 @@ namespace Workflows.Runner
             var runner = ResolvePrivateDataValue(incomingWait.Locals) as IAsyncEnumerator<Wait> ?? asyncEnumerable.GetAsyncEnumerator();
             RestoreEnumeratorState(runner, container, incomingWait);
 
-            var hasNext = await runner.MoveNextAsync();
-            if (!hasNext)
-                return null;
+            var previousWait = incomingWait;
 
-            var nextWait = runner.Current;
-            CaptureRunnerState(runner, incomingWait, nextWait);
-            return nextWait;
+            while (await runner.MoveNextAsync())
+            {
+                var nextWait = runner.Current;
+
+                if (nextWait is ICommandWait command)
+                {
+                    var handler = _commandHandlerFactory.GetHandler(command.HandlerKey);
+                    await handler.ExecuteAsync(command, runContext);
+
+                    if (command.ExecutionMode == CommandExecutionMode.Direct)
+                    {
+                        // Auto-advance: capture state so we can resume, but do not suspend
+                        CaptureRunnerState(runner, previousWait, nextWait);
+                        previousWait = nextWait.ToDto();
+                        continue;
+                    }
+
+                    // Slow mode: suspend — treat this wait as the next suspension point
+                    CaptureRunnerState(runner, previousWait, nextWait);
+                    return nextWait;
+                }
+
+                CaptureRunnerState(runner, previousWait, nextWait);
+                return nextWait;
+            }
+
+            return null;
         }
 
         private void RestoreEnumeratorState(IAsyncEnumerator<Wait> runner, WorkflowContainer workflowInstance, WaitInfrastructureDto incomingWait)
@@ -366,9 +405,24 @@ namespace Workflows.Runner
             var stateField = runnerType.GetField(Constants.CompilerStateFieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             stateField?.SetValue(runner, incomingWait.StateAfterWait);
 
-            var thisField = runnerType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                .FirstOrDefault(x => x.Name.EndsWith(Constants.CompilerCallerSuffix, StringComparison.Ordinal));
-            thisField?.SetValue(runner, workflowInstance);
+            try
+            {
+                var thisField = runnerType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .FirstOrDefault(x => x.Name.EndsWith(Constants.CompilerCallerSuffix, StringComparison.Ordinal));
+
+                if (thisField == null)
+                {
+                    _logger.LogWarning("Could not restore compiler-generated caller field ending with suffix {Suffix} on runner type {RunnerType}.", Constants.CompilerCallerSuffix, runnerType.FullName);
+                }
+                else
+                {
+                    thisField.SetValue(runner, workflowInstance);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed while restoring compiler-generated caller field for runner type {RunnerType}.", runnerType.FullName);
+            }
 
             var closureValue = ResolvePrivateDataValue(incomingWait.ClosureData);
             if (closureValue != null)
@@ -399,7 +453,6 @@ namespace Workflows.Runner
 
             waitDto.PersistStatus = PersistStatus.New;
 
-            // Copy cancel tokens from the runtime IPassiveWait to its DTO so they survive persistence.
             if (wait is IPassiveWait passiveWait && passiveWait.CancelTokens?.Count > 0)
                 waitDto.CancelTokens = passiveWait.CancelTokens;
 
@@ -422,10 +475,6 @@ namespace Workflows.Runner
             }
         }
 
-        /// <summary>
-        /// Returns true when any of the wait's <see cref="WaitInfrastructureDto.CancelTokens"/>
-        /// have already been recorded in <see cref="WorkflowStateDto.CancelledTokens"/>.
-        /// </summary>
         private static bool IsWaitCancelledByToken(WaitInfrastructureDto wait, WorkflowStateDto workflowState)
         {
             if (wait?.CancelTokens == null || wait.CancelTokens.Count == 0)

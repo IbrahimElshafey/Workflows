@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.Enums;
 
 namespace Workflows.Handler.BaseUse
 {
@@ -9,7 +10,7 @@ namespace Workflows.Handler.BaseUse
     /// Commands are side-effecting operations that must execute,
     /// so they cannot be mixed with passive waits in MatchAny() scenarios.
     /// </summary>
-    public class CommandWait<TCommand, TResult> : Wait, IActiveWait
+    public class CommandWait<TCommand, TResult> : Wait, ICommandWait
     {
         internal Action<TResult> OnResultAction { get; set; }
         internal Action CompensationAction { get; set; }
@@ -94,6 +95,31 @@ namespace Workflows.Handler.BaseUse
                     compensationAction().Wait();
                 };
             }
+            return this;
+        }
+
+        /// <inheritdoc/>
+        string ICommandWait.HandlerKey => Data.HandlerKey;
+
+        /// <inheritdoc/>
+        CommandExecutionMode ICommandWait.ExecutionMode => Data.ExecutionMode;
+
+        /// <summary>
+        /// Sets the handler key used to resolve the command handler from ICommandHandlerFactory.
+        /// </summary>
+        public CommandWait<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Direct)
+        {
+            Data.HandlerKey = key;
+            Data.ExecutionMode = mode;
+            return this;
+        }
+
+        /// <summary>
+        /// Sets the execution mode for this command (Fast or Slow).
+        /// </summary>
+        public CommandWait<TCommand, TResult> WithExecutionMode(CommandExecutionMode mode)
+        {
+            Data.ExecutionMode = mode;
             return this;
         }
     }

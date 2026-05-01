@@ -73,7 +73,7 @@ namespace Workflows.Handler
         /// This method enforces MatchAll() immediately to prevent the workflow author from changing it.
         /// </summary>
         protected GroupWait ExecuteParallel(
-            IActiveWait[] commands,
+            ICommandWait[] commands,
             string name = null,
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
@@ -83,7 +83,7 @@ namespace Workflows.Handler
                 throw new ArgumentNullException($"The parallel command group named [{name}] contains a command that is null.");
             }
 
-            // Convert IActiveWait markers to Wait instances for internal use
+            // Convert ICommandWait markers to Wait instances for internal use
             var waits = commands.Cast<Wait>().ToArray();
 
             var group = new GroupWait(
@@ -91,7 +91,7 @@ namespace Workflows.Handler
                 {
                     WaitName = name ?? $"#Parallel Commands `{inCodeLine}` by `{callerName}`",
                     ChildWaits = waits.Select(x => x.WaitData).ToList(),
-                    WaitType = WaitType.CommandsGroup\,
+                    WaitType = WaitType.CommandsGroup,
                     InCodeLine = inCodeLine,
                     CallerName = callerName,
                     Created = DateTime.UtcNow

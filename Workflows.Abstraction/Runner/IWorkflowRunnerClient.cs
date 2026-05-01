@@ -17,6 +17,6 @@ namespace Workflows.Abstraction.Runner
         /// <param name="result">The outcome of the execution, including new waits and updated state.</param>
         /// <param name="cancellationToken">A cancellation token to cancel the asynchronous operation.</param>
         /// <returns>A task representing the asynchronous send operation.</returns>
-        Task<SendId> SendWorkflowRunResult(WorkflowRunId runId, WorkflowRunResult result, CancellationToken cancellationToken = default);
+        Task<SendId> SendWorkflowRunResultAsync(WorkflowRunId runId, WorkflowRunResult result, CancellationToken cancellationToken = default);
     }
 }

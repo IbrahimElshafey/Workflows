@@ -1,4 +1,5 @@
 using System;
+using Workflows.Abstraction.Enums;
 
 namespace Workflows.Abstraction.DTOs
 {
@@ -38,5 +39,15 @@ namespace Workflows.Abstraction.DTOs
         /// Serialized representation of the result action callback.
         /// </summary>
         public string ResultAction { get; set; }
+
+        /// <summary>
+        /// The key used to resolve the command handler from ICommandHandlerFactory.
+        /// </summary>
+        public string HandlerKey { get; set; }
+
+        /// <summary>
+        /// Determines whether the command is processed as a direct (runner-handled) or indirect (orchestrator-signalled) operation.
+        /// </summary>
+        public CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.Direct;
     }
 }
