@@ -1,23 +1,23 @@
-﻿using Workflows.Handler.BaseUse;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 
 using System;
 using System.Linq;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.DTOs;
-namespace Workflows.Handler
+
+namespace Workflows.Definition
 {
     public abstract partial class WorkflowContainer
     {
 
-        protected SignalWait<SignalData> WaitSignal<SignalData>(
+        protected Definition.SignalWait<SignalData> WaitSignal<SignalData>(
             string signalIdentifier,
             string name = null,
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = ""
             )
         {
-            SignalWait<SignalData> newSignalWait = new SignalWait<SignalData>(new SignalWaitDto
+            Definition.SignalWait<SignalData> newSignalWait = new Definition.SignalWait<SignalData>(new SignalWaitDto
             {
                 SignalIdentifier = signalIdentifier,
                 WaitName = name,
@@ -36,8 +36,8 @@ namespace Workflows.Handler
         /// Creates a group of passive waits that can use any matching strategy (MatchAll, MatchAny, MatchIf).
         /// Only passive waits (signals, timers, sub-workflows) are allowed to prevent race conditions.
         /// </summary>
-        protected GroupWait WaitGroup(
-            IPassiveWait[] passiveWaits,
+        protected Definition.GroupWait WaitGroup(
+            Definition.IPassiveWait[] passiveWaits,
             string name = null,
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
@@ -48,9 +48,9 @@ namespace Workflows.Handler
             }
 
             // Convert IPassiveWait markers to Wait instances for internal use
-            var waits = passiveWaits.Cast<Wait>().ToArray();
+            var waits = passiveWaits.Cast<Definition.Wait>().ToArray();
             
-            var group = new GroupWait(
+            var group = new Definition.GroupWait(
                 new WaitsGroupDto
                 {
                     WaitName = name ?? $"#Wait Group `{inCodeLine}` by `{callerName}`",
@@ -72,8 +72,8 @@ namespace Workflows.Handler
         /// Commands cannot use MatchAny() to prevent multiple commands from executing in a race condition.
         /// This method enforces MatchAll() immediately to prevent the workflow author from changing it.
         /// </summary>
-        protected GroupWait ExecuteParallel(
-            ICommandWait[] commands,
+        protected Definition.GroupWait ExecuteParallel(
+            Definition.ICommandWait[] commands,
             string name = null,
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
@@ -84,9 +84,9 @@ namespace Workflows.Handler
             }
 
             // Convert ICommandWait markers to Wait instances for internal use
-            var waits = commands.Cast<Wait>().ToArray();
+            var waits = commands.Cast<Definition.Wait>().ToArray();
 
-            var group = new GroupWait(
+            var group = new Definition.GroupWait(
                 new WaitsGroupDto
                 {
                     WaitName = name ?? $"#Parallel Commands `{inCodeLine}` by `{callerName}`",
@@ -102,13 +102,13 @@ namespace Workflows.Handler
             group.WaitData.ChildWaits.ForEach(wait => wait.ParentWaitId = group.WaitData.Id);
 
             // Instantly call MatchAll() and return - prevents workflow author from changing matching strategy
-            return group.MatchAll() as GroupWait;
+            return group.MatchAll() as Definition.GroupWait;
         }
 
         /// <summary>
         /// Creates a single command wait that can be configured with retry, compensation, and result handlers.
         /// </summary>
-        protected CommandWait<TCommand, TResult> ExecuteCommand<TCommand, TResult>(
+        protected Definition.CommandWait<TCommand, TResult> ExecuteCommand<TCommand, TResult>(
             string commandName,
             TCommand data,
             [CallerLineNumber] int inCodeLine = 0,
@@ -119,7 +119,7 @@ namespace Workflows.Handler
                 throw new ArgumentException("Command name must not be null or empty", nameof(commandName));
             }
 
-            var commandWait = new CommandWait<TCommand, TResult>(commandName, data)
+            var commandWait = new Definition.CommandWait<TCommand, TResult>(commandName, data)
             {
                 CurrentWorkflow = this
             };

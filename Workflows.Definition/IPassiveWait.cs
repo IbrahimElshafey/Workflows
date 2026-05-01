@@ -1,7 +1,6 @@
-using System;
 using System.Collections.Generic;
 
-namespace Workflows.Handler.BaseUse
+namespace Workflows.Definition
 {
     /// <summary>
     /// Marker interface for passive waits that react to external events without initiating side effects.
@@ -19,6 +18,6 @@ namespace Workflows.Handler.BaseUse
         /// Appends the given token ID to <see cref="CancelTokens"/>, ignoring null/empty strings and duplicates.
         /// When this token is cancelled the wait will be interrupted before the engine evaluates the incoming event.
         /// </summary>
-        IPassiveWait WithCancelToken(string token);
+        Definition.IPassiveWait WithCancelToken(string token);
     }
 }

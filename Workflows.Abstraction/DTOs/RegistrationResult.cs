@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace Workflows.Abstraction.DTOs
+﻿namespace Workflows.Abstraction.DTOs
 {
     public class RegistrationResult
     {

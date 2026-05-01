@@ -1,6 +1,6 @@
 using Workflows.Abstraction.Enums;
 
-namespace Workflows.Handler.BaseUse
+namespace Workflows.Definition
 {
     /// <summary>
     /// Marker interface for active waits that initiate side effects (e.g., commands, API calls).

@@ -1,8 +1,3 @@
-using System;
-using System.Threading.Tasks;
-using Workflows.Handler;
-using Workflows.Handler.BaseUse;
-
 namespace Workflows.Sample.Commands
 {
     /// <summary>
@@ -44,13 +39,13 @@ namespace Workflows.Sample.Commands
     /// <summary>
     /// Example workflow demonstrating the Command primitive usage.
     /// </summary>
-    public class OrderWithCommandWorkflow : WorkflowContainer
+    public class OrderWithCommandWorkflow : Definition.WorkflowContainer
     {
         public int CurrentOrderId { get; set; }
         public string CustomerEmail { get; set; }
         public decimal OrderAmount { get; set; }
 
-        public async IAsyncEnumerable<Wait> ProcessOrderWithCommand()
+        public async IAsyncEnumerable<Definition.Wait> ProcessOrderWithCommand()
         {
             // Receive order details via signal
             yield return WaitSignal<OrderReceivedEvent>("OrderReceived")

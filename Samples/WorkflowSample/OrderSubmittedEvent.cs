@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Workflows.Handler;
-using Workflows.Handler.BaseUse;
-
-namespace Workflows.Sample
+﻿namespace Workflows.Sample
 {
     // --- Sample Signal Data Payloads ---
     public class OrderSubmittedEvent

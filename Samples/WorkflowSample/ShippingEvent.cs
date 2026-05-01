@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace Workflows.Sample
+﻿namespace Workflows.Sample
 {
     public class ShippingEvent
     {

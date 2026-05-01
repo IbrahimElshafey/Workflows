@@ -4,14 +4,14 @@ using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using Workflows.Abstraction.DTOs;
 
-namespace Workflows.Handler.BaseUse
+namespace Workflows.Definition
 {
     /// <summary>
     /// Represents a passive wait for an external signal event.
     /// Signals do not initiate side effects, so they can be safely combined
     /// with other passive waits in group scenarios.
     /// </summary>
-    public partial class SignalWait<SignalData> : Wait, IPassiveWait, ISignalWait
+    public partial class SignalWait<SignalData> : Definition.Wait, Definition.IPassiveWait, ISignalWait
     {
         internal Action<SignalData> AfterMatchAction { get; set; }
 
@@ -28,13 +28,13 @@ namespace Workflows.Handler.BaseUse
             set => MatchExpression = value;
         }
 
-        public SignalWait<SignalData> AfterMatch(Action<SignalData> afterMatchAction)
+        public Definition.SignalWait<SignalData> AfterMatch(Action<SignalData> afterMatchAction)
         {
             AfterMatchAction = afterMatchAction;
             return this;
         }
 
-        public SignalWait<SignalData> MatchAny(bool condition = true)
+        public Definition.SignalWait<SignalData> MatchAny(bool condition = true)
         {
             if (condition)
             {
@@ -43,7 +43,7 @@ namespace Workflows.Handler.BaseUse
             return this;
         }
 
-        public SignalWait<SignalData> MatchIf(
+        public Definition.SignalWait<SignalData> MatchIf(
             Expression<Func<SignalData, bool>> matchExpression,
             [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int callerLineNumber = 0,
@@ -59,7 +59,7 @@ namespace Workflows.Handler.BaseUse
             throw new NotImplementedException();
         }
 
-        public SignalWait<SignalData> NoActionAfterMatch()
+        public Definition.SignalWait<SignalData> NoActionAfterMatch()
         {
             AfterMatchAction = null;
             return this;
@@ -69,7 +69,7 @@ namespace Workflows.Handler.BaseUse
         /// Callback execusted when the wait canceled because it's a part of wait group that one match is sufficent
         /// </summary>
         /// <param name="cancelAction">Action to execute when cancel</param>
-        public SignalWait<SignalData> WhenCancel(Action cancelAction)
+        public Definition.SignalWait<SignalData> WhenCancel(Action cancelAction)
         {
             CancelAction = cancelAction;
             return this;
@@ -77,7 +77,7 @@ namespace Workflows.Handler.BaseUse
 
         public HashSet<string> CancelTokens { get; set; }
 
-        public SignalWait<SignalData> WithCancelToken(string token)
+        public Definition.SignalWait<SignalData> WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token)) return this;
             CancelTokens ??= new HashSet<string>();
@@ -85,6 +85,6 @@ namespace Workflows.Handler.BaseUse
             return this;
         }
 
-        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
+        Definition.IPassiveWait Definition.IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
     }
 }

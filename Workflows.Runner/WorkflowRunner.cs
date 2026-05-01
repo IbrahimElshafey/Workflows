@@ -10,8 +10,6 @@ using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Runner;
-using Workflows.Handler;
-using Workflows.Handler.BaseUse;
 using Workflows.Runner.ExpressionTransformers;
 
 namespace Workflows.Runner
@@ -28,7 +26,7 @@ namespace Workflows.Runner
         private readonly IWorkflowRunnerClient _runResultSender;
         private readonly ILogger<WorkflowRunner> _logger;
         private readonly IServiceProvider _serviceProvider;
-        private readonly ICommandHandlerFactory _commandHandlerFactory;
+        private readonly Definition.ICommandHandlerFactory _commandHandlerFactory;
 
         public WorkflowRunner(
             TypesCache workflowTypeCache,
@@ -40,7 +38,7 @@ namespace Workflows.Runner
             IWorkflowRunnerClient runResultSender,
             ILogger<WorkflowRunner> logger,
             IServiceProvider serviceProvider,
-            ICommandHandlerFactory commandHandlerFactory)
+            Definition.ICommandHandlerFactory commandHandlerFactory)
         {
             _workflowTypeCache = workflowTypeCache ?? throw new ArgumentNullException(nameof(workflowTypeCache));
             _matchExpressionTransformer = matchExpressionTransformer ?? throw new ArgumentNullException(nameof(matchExpressionTransformer));
@@ -345,9 +343,9 @@ namespace Workflows.Runner
             };
         }
 
-        private async Task<Wait> AdvanceWorkflow(object workflowInstance, WaitInfrastructureDto incomingWait, WorkflowRunContext runContext = null)
+        private async Task<Definition.Wait> AdvanceWorkflow(object workflowInstance, WaitInfrastructureDto incomingWait, WorkflowRunContext runContext = null)
         {
-            if (workflowInstance is not WorkflowContainer container)
+            if (workflowInstance is not Definition.WorkflowContainer container)
                 throw new InvalidOperationException("Workflow instance must inherit from WorkflowContainer.");
 
             if (string.IsNullOrWhiteSpace(incomingWait.CallerName))
@@ -361,10 +359,10 @@ namespace Workflows.Runner
                 throw new MissingMethodException(container.GetType().FullName, incomingWait.CallerName);
 
             var workflowStream = method.Invoke(container, null);
-            if (workflowStream is not IAsyncEnumerable<Wait> asyncEnumerable)
+            if (workflowStream is not IAsyncEnumerable<Definition.Wait> asyncEnumerable)
                 throw new InvalidOperationException($"Workflow method [{incomingWait.CallerName}] must return IAsyncEnumerable<Wait>.");
 
-            var runner = ResolvePrivateDataValue(incomingWait.Locals) as IAsyncEnumerator<Wait> ?? asyncEnumerable.GetAsyncEnumerator();
+            var runner = ResolvePrivateDataValue(incomingWait.Locals) as IAsyncEnumerator<Definition.Wait> ?? asyncEnumerable.GetAsyncEnumerator();
             RestoreEnumeratorState(runner, container, incomingWait);
 
             var previousWait = incomingWait;
@@ -373,7 +371,7 @@ namespace Workflows.Runner
             {
                 var nextWait = runner.Current;
 
-                if (nextWait is ICommandWait command)
+                if (nextWait is Definition.ICommandWait command)
                 {
                     var handler = _commandHandlerFactory.GetHandler(command.HandlerKey);
                     await handler.ExecuteAsync(command, runContext);
@@ -398,7 +396,7 @@ namespace Workflows.Runner
             return null;
         }
 
-        private void RestoreEnumeratorState(IAsyncEnumerator<Wait> runner, WorkflowContainer workflowInstance, WaitInfrastructureDto incomingWait)
+        private void RestoreEnumeratorState(IAsyncEnumerator<Definition.Wait> runner, Definition.WorkflowContainer workflowInstance, WaitInfrastructureDto incomingWait)
         {
             var runnerType = runner.GetType();
 
@@ -446,23 +444,23 @@ namespace Workflows.Runner
             return privateData.Value;
         }
 
-        private void PrepareWaitForPersistence(Wait wait, WaitInfrastructureDto waitDto)
+        private void PrepareWaitForPersistence(Definition.Wait wait, WaitInfrastructureDto waitDto)
         {
             if (wait == null || waitDto == null)
                 return;
 
             waitDto.PersistStatus = PersistStatus.New;
 
-            if (wait is IPassiveWait passiveWait && passiveWait.CancelTokens?.Count > 0)
+            if (wait is Definition.IPassiveWait passiveWait && passiveWait.CancelTokens?.Count > 0)
                 waitDto.CancelTokens = passiveWait.CancelTokens;
 
-            if (wait is ISignalWait signalWait && waitDto is SignalWaitDto signalWaitDto)
+            if (wait is Definition.ISignalWait signalWait && waitDto is SignalWaitDto signalWaitDto)
                 PrepareSignalWaitForPersistence(signalWait, signalWaitDto);
 
-            if (wait is GroupWait groupWait && waitDto is WaitsGroupDto waitsGroupDto)
+            if (wait is Definition.GroupWait groupWait && waitDto is WaitsGroupDto waitsGroupDto)
                 PrepareGroupWaitForPersistence(groupWait, waitsGroupDto);
 
-            if (wait is SubWorkflowWait subWorkflowWait && waitDto is SubWorkflowWaitDto subWorkflowWaitDto)
+            if (wait is Definition.SubWorkflowWait subWorkflowWait && waitDto is SubWorkflowWaitDto subWorkflowWaitDto)
                 PrepareSubWorkflowWaitForPersistence(subWorkflowWait, subWorkflowWaitDto);
 
             if (waitDto.ChildWaits == null)
@@ -486,7 +484,7 @@ namespace Workflows.Runner
             return wait.CancelTokens.Any(t => workflowState.CancelledTokens.Contains(t));
         }
 
-        private void PrepareGroupWaitForPersistence(GroupWait groupWait, WaitsGroupDto waitsGroupDto)
+        private void PrepareGroupWaitForPersistence(Definition.GroupWait groupWait, WaitsGroupDto waitsGroupDto)
         {
             if (waitsGroupDto.ChildWaits == null || waitsGroupDto.ChildWaits.Count == 0)
                 return;
@@ -506,7 +504,7 @@ namespace Workflows.Runner
             }
         }
 
-        private void PrepareSignalWaitForPersistence(ISignalWait signalWait, SignalWaitDto signalWaitDto)
+        private void PrepareSignalWaitForPersistence(Definition.ISignalWait signalWait, SignalWaitDto signalWaitDto)
         {
             try
             {
@@ -530,7 +528,7 @@ namespace Workflows.Runner
             }
         }
 
-        private void CaptureRunnerState(IAsyncEnumerator<Wait> runner, WaitInfrastructureDto previousWait, Wait nextWait)
+        private void CaptureRunnerState(IAsyncEnumerator<Definition.Wait> runner, WaitInfrastructureDto previousWait, Definition.Wait nextWait)
         {
             if (nextWait?.ToDto() is not WaitInfrastructureDto nextWaitDto)
                 return;
@@ -555,7 +553,7 @@ namespace Workflows.Runner
             }
         }
 
-        private void PrepareSubWorkflowWaitForPersistence(SubWorkflowWait subWorkflowWait, SubWorkflowWaitDto subWorkflowWaitDto)
+        private void PrepareSubWorkflowWaitForPersistence(Definition.SubWorkflowWait subWorkflowWait, SubWorkflowWaitDto subWorkflowWaitDto)
         {
             if (subWorkflowWait.FirstWait == null)
                 return;

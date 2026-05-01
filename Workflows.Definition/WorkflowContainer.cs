@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-namespace Workflows.Handler
+
+namespace Workflows.Definition
 {
     public abstract partial class WorkflowContainer
     {

@@ -1,12 +1,11 @@
 ﻿using System;
 using ResumableFunctions.Handler.Expressions;
-using Workflows.Handler.BaseUse;
 
 namespace Workflows.Runner.ExpressionTransformers
 {
     internal class MatchExpressionTransformer
     {
-        internal MatchTransformationResult Transform(ISignalWait signalWait)
+        internal MatchTransformationResult Transform(Definition.ISignalWait signalWait)
         {
             if (signalWait == null)
                 throw new ArgumentNullException(nameof(signalWait));

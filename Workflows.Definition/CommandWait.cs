@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Enums;
 
-namespace Workflows.Handler.BaseUse
+namespace Workflows.Definition
 {
     /// <summary>
     /// Represents an active wait for an external command to complete.
@@ -37,7 +37,7 @@ namespace Workflows.Handler.BaseUse
         /// <summary>
         /// Registers a callback to execute when the command completes successfully.
         /// </summary>
-        public CommandWait<TCommand, TResult> OnResult(Action<TResult> onSuccess)
+        public Definition.CommandWait<TCommand, TResult> OnResult(Action<TResult> onSuccess)
         {
             OnResultAction = onSuccess;
             return this;
@@ -47,7 +47,7 @@ namespace Workflows.Handler.BaseUse
         /// Registers a callback to execute when the command completes successfully.
         /// Supports async Task callbacks.
         /// </summary>
-        public CommandWait<TCommand, TResult> OnResult(Func<TResult, Task> onSuccess)
+        public Definition.CommandWait<TCommand, TResult> OnResult(Func<TResult, Task> onSuccess)
         {
             if (onSuccess != null)
             {
@@ -62,7 +62,7 @@ namespace Workflows.Handler.BaseUse
         /// <summary>
         /// Updates the DTO retry settings.
         /// </summary>
-        public CommandWait<TCommand, TResult> WithRetries(int maxAttempts, TimeSpan? backoff = null)
+        public Definition.CommandWait<TCommand, TResult> WithRetries(int maxAttempts, TimeSpan? backoff = null)
         {
             if (maxAttempts < 1)
             {
@@ -76,7 +76,7 @@ namespace Workflows.Handler.BaseUse
         /// <summary>
         /// Registers a compensation action to run if the workflow rolls back.
         /// </summary>
-        public CommandWait<TCommand, TResult> RegisterCompensation(Action compensationAction)
+        public Definition.CommandWait<TCommand, TResult> RegisterCompensation(Action compensationAction)
         {
             CompensationAction = compensationAction;
             return this;
@@ -86,7 +86,7 @@ namespace Workflows.Handler.BaseUse
         /// Registers a compensation action to run if the workflow rolls back.
         /// Supports async Task callbacks.
         /// </summary>
-        public CommandWait<TCommand, TResult> RegisterCompensation(Func<Task> compensationAction)
+        public Definition.CommandWait<TCommand, TResult> RegisterCompensation(Func<Task> compensationAction)
         {
             if (compensationAction != null)
             {
@@ -108,7 +108,7 @@ namespace Workflows.Handler.BaseUse
         /// <summary>
         /// Sets the handler key used to resolve the command handler from ICommandHandlerFactory.
         /// </summary>
-        public CommandWait<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Direct)
+        public Definition.CommandWait<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Direct)
         {
             Data.HandlerKey = key;
             Data.ExecutionMode = mode;
@@ -118,7 +118,7 @@ namespace Workflows.Handler.BaseUse
         /// <summary>
         /// Sets the execution mode for this command (Fast or Slow).
         /// </summary>
-        public CommandWait<TCommand, TResult> WithExecutionMode(CommandExecutionMode mode)
+        public Definition.CommandWait<TCommand, TResult> WithExecutionMode(CommandExecutionMode mode)
         {
             Data.ExecutionMode = mode;
             return this;

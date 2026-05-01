@@ -5,7 +5,8 @@ using System.Runtime.CompilerServices;
 using System;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Enums;
-namespace Workflows.Handler.BaseUse
+
+namespace Workflows.Definition
 {
     /// <summary>
     /// Represents a composite group of passive waits that can be combined
@@ -33,7 +34,7 @@ namespace Workflows.Handler.BaseUse
         /// <param name="callerName"></param>
         /// <returns></returns>
         public Wait MatchIf(
-        Func<GroupWait, bool> groupMatchFilter,
+        Func<Definition.GroupWait, bool> groupMatchFilter,
         [CallerLineNumber] int inCodeLine = 0,
         [CallerMemberName] string callerName = "")
         {
@@ -58,7 +59,7 @@ namespace Workflows.Handler.BaseUse
         }
         public HashSet<string> CancelTokens { get; set; }
 
-        public GroupWait WithCancelToken(string token)
+        public Definition.GroupWait WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token)) return this;
             CancelTokens ??= new HashSet<string>();

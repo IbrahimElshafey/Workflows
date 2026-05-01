@@ -1,8 +1,7 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
-namespace Workflows.Handler.BaseUse
+
+namespace Workflows.Definition
 {
     /// <summary>
     /// Base class for all wait types in the workflow engine.
@@ -30,7 +29,7 @@ namespace Workflows.Handler.BaseUse
         /// <summary>
         /// Reference to the workflow container that created this wait.
         /// </summary>
-        public WorkflowContainer CurrentWorkflow { get; set; }
+        public Definition.WorkflowContainer CurrentWorkflow { get; set; }
 
         /// <summary>
         /// Validate delegate that used for groupMatchFilter, AfterMatchAction, CancelAction and return:

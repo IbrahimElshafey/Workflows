@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
 using Workflows.Abstraction.DTOs;
-using Workflows.Handler.BaseUse;
-namespace Workflows.Handler
+
+namespace Workflows.Definition
 {
     public abstract partial class WorkflowContainer
     {
-        protected TimeWait WaitUntil(
+        protected Definition.TimeWait WaitUntil(
             DateTime untilTime,
             string name = null,
             [CallerLineNumber] int inCodeLine = 0,
@@ -17,7 +17,7 @@ namespace Workflows.Handler
                 throw new ArgumentException("Until date should be in the future", nameof(untilTime));
             }
             var timeToWait = untilTime - DateTime.UtcNow;
-            TimeWait newTimeWait = new TimeWait(new TimeWaitDto
+            Definition.TimeWait newTimeWait = new Definition.TimeWait(new TimeWaitDto
             {
                 WaitName = name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
                 TimeToWait = timeToWait,
@@ -32,7 +32,7 @@ namespace Workflows.Handler
             return newTimeWait;
         }
 
-        protected TimeWait WaitDelay(
+        protected Definition.TimeWait WaitDelay(
             TimeSpan timeToWait,
             string name = null,
             [CallerLineNumber] int inCodeLine = 0,
@@ -42,7 +42,7 @@ namespace Workflows.Handler
             {
                 throw new ArgumentException("Time to wait should be greater than 0", nameof(timeToWait));
             }
-            return new TimeWait(new TimeWaitDto
+            return new Definition.TimeWait(new TimeWaitDto
             {
                 WaitName = name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
                 TimeToWait = timeToWait,

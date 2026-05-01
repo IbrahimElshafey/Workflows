@@ -1,7 +1,7 @@
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 
-namespace Workflows.Handler.BaseUse
+namespace Workflows.Definition
 {
     /// <summary>
     /// Handles the execution of a command associated with an ICommandWait.

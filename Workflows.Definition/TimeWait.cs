@@ -1,21 +1,22 @@
 ﻿using System;
 using System.Collections.Generic;
 using Workflows.Abstraction.DTOs;
-namespace Workflows.Handler.BaseUse
+
+namespace Workflows.Definition
 {
     /// <summary>
     /// Represents a passive wait for a specified time duration or until a specific time.
     /// Time-based waits do not initiate side effects, so they can be safely combined
     /// with other passive waits in group scenarios.
     /// </summary>
-    public class TimeWait : Wait, IPassiveWait
+    public class TimeWait : Definition.Wait, Definition.IPassiveWait
     {
         internal TimeWaitDto Data { get; }
         internal TimeWait(TimeWaitDto waitData) : base(waitData)
         {
             Data = waitData;
         }
-        public TimeWait WhenCancel(Action cancelAction)
+        public Definition.TimeWait WhenCancel(Action cancelAction)
         {
             CancelAction = cancelAction;
             return this;
@@ -23,7 +24,7 @@ namespace Workflows.Handler.BaseUse
 
         public HashSet<string> CancelTokens { get; set; }
 
-        public TimeWait WithCancelToken(string token)
+        public Definition.TimeWait WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token)) return this;
             CancelTokens ??= new HashSet<string>();
@@ -31,6 +32,6 @@ namespace Workflows.Handler.BaseUse
             return this;
         }
 
-        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
+        Definition.IPassiveWait Definition.IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
     }
 }
