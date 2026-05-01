@@ -1,9 +1,8 @@
-﻿using System.Runtime.CompilerServices;
-
+﻿
 using System;
+
 using System.Linq;
-using Workflows.Abstraction.Enums;
-using Workflows.Abstraction.DTOs;
+using System.Runtime.CompilerServices;
 
 namespace Workflows.Definition
 {
@@ -17,11 +16,11 @@ namespace Workflows.Definition
             [CallerMemberName] string callerName = ""
             )
         {
-            Definition.SignalWait<SignalData> newSignalWait = new Definition.SignalWait<SignalData>(new SignalWaitDto
+            Definition.SignalWait<SignalData> newSignalWait = new Definition.SignalWait<SignalData>(new DTOs.SignalWaitDto
             {
                 SignalIdentifier = signalIdentifier,
                 WaitName = name,
-                WaitType = WaitType.SignalWait,
+                WaitType = Enums.WaitType.SignalWait,
                 InCodeLine = inCodeLine,
                 CallerName = callerName,
                 Created = DateTime.UtcNow,
@@ -49,13 +48,13 @@ namespace Workflows.Definition
 
             // Convert IPassiveWait markers to Wait instances for internal use
             var waits = passiveWaits.Cast<Definition.Wait>().ToArray();
-            
+
             var group = new Definition.GroupWait(
-                new WaitsGroupDto
+                new DTOs.WaitsGroupDto
                 {
                     WaitName = name ?? $"#Wait Group `{inCodeLine}` by `{callerName}`",
                     ChildWaits = waits.Select(x => x.WaitData).ToList(),
-                    WaitType = WaitType.GroupWaitAll,
+                    WaitType = Enums.WaitType.GroupWaitAll,
                     InCodeLine = inCodeLine,
                     CallerName = callerName,
                     Created = DateTime.UtcNow
@@ -87,11 +86,11 @@ namespace Workflows.Definition
             var waits = commands.Cast<Definition.Wait>().ToArray();
 
             var group = new Definition.GroupWait(
-                new WaitsGroupDto
+                new DTOs.WaitsGroupDto
                 {
                     WaitName = name ?? $"#Parallel Commands `{inCodeLine}` by `{callerName}`",
                     ChildWaits = waits.Select(x => x.WaitData).ToList(),
-                    WaitType = WaitType.CommandsGroup,
+                    WaitType = Enums.WaitType.CommandsGroup,
                     InCodeLine = inCodeLine,
                     CallerName = callerName,
                     Created = DateTime.UtcNow

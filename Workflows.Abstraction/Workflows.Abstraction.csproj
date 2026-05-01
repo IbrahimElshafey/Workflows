@@ -6,4 +6,8 @@
 		<LangVersion>14</LangVersion>
 	</PropertyGroup>
 
+	<ItemGroup>
+	  <ProjectReference Include="..\Workflows.Definition\Workflows.Definition.csproj" />
+	</ItemGroup>
+
 </Project>

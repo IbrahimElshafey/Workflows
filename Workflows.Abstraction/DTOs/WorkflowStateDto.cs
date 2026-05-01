@@ -28,7 +28,7 @@ namespace Workflows.Abstraction.DTOs
         /// <summary>
         /// List of current wait nodes (infrastructure DTOs) representing what the workflow is waiting for.
         /// </summary>
-        public List<WaitInfrastructureDto> Waits { get; internal set; } = new();
+        public List<Definition.DTOs.WaitInfrastructureDto> Waits { get; internal set; } = new();
 
         /// <summary>
         /// Current status of the workflow instance.
@@ -40,5 +40,6 @@ namespace Workflows.Abstraction.DTOs
         /// Passive waits referencing any of these tokens will be interrupted before evaluation.
         /// </summary>
         public HashSet<string> CancelledTokens { get; internal set; } = new HashSet<string>();
+        public string WorkflowType { get; internal set; }
     }
 }

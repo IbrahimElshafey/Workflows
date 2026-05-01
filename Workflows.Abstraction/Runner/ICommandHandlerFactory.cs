@@ -1,4 +1,7 @@
-namespace Workflows.Definition
+using Workflows.Definition;
+using Workflows;
+
+namespace Workflows.Abstraction.Runner
 {
     /// <summary>
     /// Resolves an ICommandHandler based on a handler key.
@@ -8,6 +11,6 @@ namespace Workflows.Definition
         /// <summary>
         /// Returns the command handler registered for the given key.
         /// </summary>
-        Definition.ICommandHandler GetHandler(string handlerKey);
+        ICommandHandler GetHandler(string handlerKey);
     }
 }

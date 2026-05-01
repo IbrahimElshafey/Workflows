@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
-using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Definition
 {
@@ -15,9 +14,9 @@ namespace Workflows.Definition
     {
         internal Action<SignalData> AfterMatchAction { get; set; }
 
-        internal SignalWait(SignalWaitDto data) : base(data) { Data = data; }
+        internal SignalWait(DTOs.SignalWaitDto data) : base(data) { Data = data; }
 
-        internal SignalWaitDto Data { get; private set; }
+        internal DTOs.SignalWaitDto Data { get; private set; }
 
 
         internal LambdaExpression MatchExpression { get; set; }
@@ -47,10 +46,10 @@ namespace Workflows.Definition
             Expression<Func<SignalData, bool>> matchExpression,
             [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int callerLineNumber = 0,
-            [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
+            [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             MatchExpression = matchExpression;
-            Data.MatchExpressionHash = CalcMatchExpressionHash(callerFilePath,callerLineNumber,expression);
+            Data.MatchExpressionHash = CalcMatchExpressionHash(callerFilePath, callerLineNumber, expression);
             return this;
         }
 

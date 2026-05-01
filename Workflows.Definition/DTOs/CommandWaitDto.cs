@@ -1,7 +1,6 @@
 using System;
-using Workflows.Abstraction.Enums;
 
-namespace Workflows.Abstraction.DTOs
+namespace Workflows.Definition.DTOs
 {
     /// <summary>
     /// DTO for Command that stores command execution configuration.
@@ -14,7 +13,7 @@ namespace Workflows.Abstraction.DTOs
         /// Will be populated by the workflow runner when it has access to IObjectSerializer.
         /// </summary>
         public object CommandData { get; set; }
-       
+
         public object CommandResult { get; set; }
 
         /// <summary>
@@ -50,6 +49,6 @@ namespace Workflows.Abstraction.DTOs
         /// <summary>
         /// Determines whether the command is processed as a direct (runner-handled) or indirect (orchestrator-signalled) operation.
         /// </summary>
-        public CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.Direct;
+        public Enums.CommandExecutionMode ExecutionMode { get; set; } = Enums.CommandExecutionMode.Direct;
     }
 }

@@ -1,16 +1,14 @@
-﻿using Workflows.Abstraction.Enums;
-
-namespace Workflows.Abstraction.DTOs
+﻿namespace Workflows.Definition.DTOs
 {
     /// <summary>
     /// DTO for GroupWait that stores composite wait configuration.
     /// Inherits from WaitInfrastructureDto to maintain compatibility with persistence infrastructure.
     /// </summary>
-    public class WaitsGroupDto : WaitInfrastructureDto
+    public class WaitsGroupDto : DTOs.WaitInfrastructureDto
     {
         internal WaitsGroupDto()
         {
-            WaitType = WaitType.GroupWaitAll;
+            WaitType = Enums.WaitType.GroupWaitAll;
         }
 
         /// <summary>

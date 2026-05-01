@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Workflows.Abstraction.DTOs
+namespace Workflows.Definition.DTOs
 {
     /// <summary>
     /// DTO for TimeWait that stores time-based wait configuration.
@@ -12,12 +12,12 @@ namespace Workflows.Abstraction.DTOs
         /// The duration or until time to wait.
         /// </summary>
         public TimeSpan TimeToWait { get; set; }
-        
+
         /// <summary>
         /// Unique match identifier for time-based matching.
         /// </summary>
         public string UniqueMatchId { get; set; }
-        
+
         /// <summary>
         /// Serialized callback to execute if this wait is cancelled.
         /// </summary>

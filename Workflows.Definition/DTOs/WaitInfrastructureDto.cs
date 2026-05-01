@@ -1,47 +1,15 @@
-﻿using System.Collections.Generic;
-
+﻿
 using System;
-using Workflows.Abstraction.Enums;
 
-namespace Workflows.Abstraction.DTOs
+using System.Collections.Generic;
+
+namespace Workflows.Definition.DTOs
 {
-    /// <summary>
-    /// Core wait configuration DTO containing only essential wait definition properties.
-    /// Lightweight and focused on workflow definition, not persistence infrastructure.
-    /// </summary>
-    public abstract class WaitCoreDto
-    {
-        /// <summary>
-        /// The name/identifier of this wait.
-        /// </summary>
-        public string WaitName { get; internal set; }
-
-        /// <summary>
-        /// The type of wait (Signal, Time, Command, etc.).
-        /// </summary>
-        public WaitType WaitType { get; internal set; }
-
-        /// <summary>
-        /// Name of the method that created this wait.
-        /// </summary>
-        public string CallerName { get; internal set; }
-
-        /// <summary>
-        /// Line number in the source code where this wait was created.
-        /// </summary>
-        public int InCodeLine { get; internal set; }
-
-        /// <summary>
-        /// UTC timestamp when this wait was created.
-        /// </summary>
-        public DateTime Created { get; internal set; }
-    }
-
     /// <summary>
     /// Infrastructure and execution state DTO containing properties needed for persistence,
     /// runtime state tracking, and workflow execution coordination.
     /// </summary>
-    public abstract class WaitInfrastructureDto : WaitCoreDto
+    public abstract class WaitInfrastructureDto : DTOs.WaitCoreDto
     {
         /// <summary>
         /// Unique identifier for this wait instance.
@@ -51,7 +19,7 @@ namespace Workflows.Abstraction.DTOs
         /// <summary>
         /// Current execution status of this wait (Waiting, Completed, Cancelled, etc.).
         /// </summary>
-        public WaitStatus Status { get; internal set; } = WaitStatus.Waiting;
+        public Enums.WaitStatus Status { get; internal set; } = Enums.WaitStatus.Waiting;
 
         /// <summary>
         /// Local variables in the method at the wait point. Represents RunnerState.
@@ -62,11 +30,6 @@ namespace Workflows.Abstraction.DTOs
         /// Closure data captured at the wait point for later deserialization.
         /// </summary>
         public PrivateData ClosureData { get; internal set; }
-
-        /// <summary>
-        /// Persistence status of this wait.
-        /// </summary>
-        public PersistStatus PersistStatus { get; internal set; }
 
         /// <summary>
         /// State value after this wait completes (used for resumption logic).
@@ -101,12 +64,11 @@ namespace Workflows.Abstraction.DTOs
         /// <summary>
         /// Child waits if this is a composite wait (e.g., GroupWait).
         /// </summary>
-        public List<WaitInfrastructureDto> ChildWaits { get; set; } = new();
+        public List<DTOs.WaitInfrastructureDto> ChildWaits { get; set; } = new();
 
         /// <summary>
         /// Token IDs that, when cancelled, will interrupt this passive wait before evaluation.
         /// </summary>
         public HashSet<string> CancelTokens { get; set; }
     }
-
 }

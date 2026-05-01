@@ -1,5 +1,4 @@
 ﻿using System;
-using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Definition
 {
@@ -9,9 +8,9 @@ namespace Workflows.Definition
     /// </summary>
     public class Wait
     {
-        public virtual WaitInfrastructureDto ToDto() => WaitData;
-        
-        internal Wait(WaitInfrastructureDto wait)
+        public virtual DTOs.WaitInfrastructureDto ToDto() => WaitData;
+
+        internal Wait(DTOs.WaitInfrastructureDto wait)
         {
             WaitData = wait;
         }
@@ -19,13 +18,13 @@ namespace Workflows.Definition
         /// <summary>
         /// The underlying infrastructure DTO containing persistence and execution state.
         /// </summary>
-        internal WaitInfrastructureDto WaitData { get; set; }
-        
+        internal DTOs.WaitInfrastructureDto WaitData { get; set; }
+
         /// <summary>
         /// Action to execute if this wait is cancelled.
         /// </summary>
         internal Action CancelAction { get; set; }
-        
+
         /// <summary>
         /// Reference to the workflow container that created this wait.
         /// </summary>

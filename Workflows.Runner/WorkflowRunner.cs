@@ -26,7 +26,7 @@ namespace Workflows.Runner
         private readonly IWorkflowRunnerClient _runResultSender;
         private readonly ILogger<WorkflowRunner> _logger;
         private readonly IServiceProvider _serviceProvider;
-        private readonly Definition.ICommandHandlerFactory _commandHandlerFactory;
+        private readonly Abstraction.Runner.ICommandHandlerFactory _commandHandlerFactory;
 
         public WorkflowRunner(
             TypesCache workflowTypeCache,
@@ -38,7 +38,7 @@ namespace Workflows.Runner
             IWorkflowRunnerClient runResultSender,
             ILogger<WorkflowRunner> logger,
             IServiceProvider serviceProvider,
-            Definition.ICommandHandlerFactory commandHandlerFactory)
+            Abstraction.Runner.ICommandHandlerFactory commandHandlerFactory)
         {
             _workflowTypeCache = workflowTypeCache ?? throw new ArgumentNullException(nameof(workflowTypeCache));
             _matchExpressionTransformer = matchExpressionTransformer ?? throw new ArgumentNullException(nameof(matchExpressionTransformer));
@@ -52,7 +52,7 @@ namespace Workflows.Runner
             _commandHandlerFactory = commandHandlerFactory ?? throw new ArgumentNullException(nameof(commandHandlerFactory));
         }
 
-        public async Task<WorkflowRunId> RunWorkflowAsync(WorkflowRunContext runContext)
+        public async Task<WorkflowRunId> RunWorkflowAsync(WorkflowExecutionRequest runContext)
         {
             if (runContext == null) throw new ArgumentNullException(nameof(runContext));
             if (runContext.WorkflowState == null) throw new ArgumentException("WorkflowState is required.", nameof(runContext));
@@ -64,11 +64,10 @@ namespace Workflows.Runner
                 Description = "Workflow runner execution"
             };
 
-            var result = new WorkflowRunResult
+            var result = new WorkflowExecutionResponse
             {
-                Status = WorkflowInstanceStatus.InProgress,
-                WorkflowState = runContext.WorkflowState,
-                Message = "Workflow is in progress."
+                UpdatedState = runContext.WorkflowState,
+                ExecutionCode = "Workflow is in progress."
             };
 
             object workflowInstance = null;
@@ -76,23 +75,21 @@ namespace Workflows.Runner
 
             try
             {
-                var workflowType = ResolveWorkflowType(runContext.WorkflowTypeName);
+                var workflowType = ResolveWorkflowType(runContext.WorkflowState.WorkflowType);
                 workflowInstance = HydrateWorkflowInstance(workflowType, runContext.WorkflowState.StateObject);
 
                 var incomingWait = SelectIncomingSignalWait(runContext.WorkflowState, runContext.Signal);
                 if (incomingWait == null)
                 {
-                    result.Message = "No matching waiting signal was found in workflow state.";
+                    result.ExecutionCode = "No matching waiting signal was found in workflow state.";
                     return runId;
                 }
 
-                result.IncomingWait = incomingWait;
 
                 if (IsWaitCancelledByToken(incomingWait, runContext.WorkflowState))
                 {
-                    incomingWait.Status = WaitStatus.Canceled;
-                    incomingWait.PersistStatus = PersistStatus.Updated;
-                    result.Message = "Wait was interrupted by a previously cancelled token.";
+                    incomingWait.Status = Definition.Enums.WaitStatus.Canceled;
+                    result.ExecutionCode = "Wait was interrupted by a previously cancelled token.";
                     TryProceedExecution(runContext.WorkflowState, incomingWait);
                     shouldSerializeState = true;
                     return runId;
@@ -100,16 +97,15 @@ namespace Workflows.Runner
 
                 if (!EvaluateSignalMatch(incomingWait, runContext.Signal, workflowInstance))
                 {
-                    result.Message = "Signal did not satisfy the exact wait match expression.";
+                    result.ExecutionCode = "Signal did not satisfy the exact wait match expression.";
                     return runId;
                 }
 
-                incomingWait.Status = WaitStatus.Completed;
-                incomingWait.PersistStatus = PersistStatus.Updated;
+                incomingWait.Status = Definition.Enums.WaitStatus.Completed;
 
                 if (!TryProceedExecution(runContext.WorkflowState, incomingWait))
                 {
-                    result.Message = "Signal matched, but workflow is still waiting for grouped or nested waits.";
+                    result.ExecutionCode = "Signal matched, but workflow is still waiting for grouped or nested waits.";
                     shouldSerializeState = true;
                     return runId;
                 }
@@ -119,9 +115,8 @@ namespace Workflows.Runner
                 if (nextWait == null)
                 {
                     runContext.WorkflowState.Status = WorkflowInstanceStatus.Completed;
-                    result.Status = WorkflowInstanceStatus.Completed;
-                    result.Message = "Workflow completed successfully.";
-                    result.IncomingWait = null;
+                    result.UpdatedState.Status = WorkflowInstanceStatus.Completed;
+                    result.ExecutionCode = "Workflow completed successfully.";
                 }
                 else
                 {
@@ -132,9 +127,8 @@ namespace Workflows.Runner
                     nextWaitDto.WorkflowStateId = runContext.WorkflowState.Id;
 
                     PrepareWaitForPersistence(nextWait, nextWaitDto);
-                    nextWaitDto.Status = WaitStatus.Waiting;
-                    runContext.WorkflowState.Waits = new List<WaitInfrastructureDto> { nextWaitDto };
-                    result.IncomingWait = nextWaitDto;
+                    nextWaitDto.Status = Definition.Enums.WaitStatus.Waiting;
+                    runContext.WorkflowState.Waits = new List<Definition.DTOs.WaitInfrastructureDto> { nextWaitDto };
                 }
 
                 shouldSerializeState = true;
@@ -149,12 +143,11 @@ namespace Workflows.Runner
                 _logger.LogError(actualException, "Error while running workflow instance {WorkflowStateId}.", runContext.WorkflowState.Id);
                 runContext.WorkflowState.Status = WorkflowInstanceStatus.InError;
 
-                if (result.IncomingWait != null)
-                    result.IncomingWait.Status = _settings.WaitStatusIfProcessingError;
+                //if (result.IncomingWait != null)
+                //    result.IncomingWait.Status = _settings.WaitStatusIfProcessingError;
 
-                result.Status = WorkflowInstanceStatus.InError;
-                result.Message = actualException.ToString();
-                result.WorkflowState = runContext.WorkflowState;
+                result.ExecutionCode = actualException.ToString();
+                result.UpdatedState = runContext.WorkflowState;
 
                 return runId;
             }
@@ -165,7 +158,7 @@ namespace Workflows.Runner
                     runContext.WorkflowState.StateObject = _objectSerializer.Serialize(workflowInstance, SerializationScope.CompilerGeneratedClass);
                 }
 
-                result.WorkflowState = runContext.WorkflowState;
+                result.UpdatedState = runContext.WorkflowState;
                 await _runResultSender.SendWorkflowRunResultAsync(runId, result);
             }
         }
@@ -213,30 +206,29 @@ namespace Workflows.Runner
             return _objectSerializer.Deserialize(serialized, workflowType);
         }
 
-        private static SignalWaitDto SelectIncomingSignalWait(WorkflowStateDto workflowState, SignalDto signal)
+        private static Definition.DTOs.SignalWaitDto SelectIncomingSignalWait(WorkflowStateDto workflowState, SignalDto signal)
         {
             if (workflowState?.Waits == null || signal == null) return null;
 
             return workflowState.Waits
                 .Flatten(x => x.ChildWaits)
-                .OfType<SignalWaitDto>()
+                .OfType<Definition.DTOs.SignalWaitDto>()
                 .FirstOrDefault(x =>
-                    x.Status == WaitStatus.Waiting &&
+                    x.Status == Definition.Enums.WaitStatus.Waiting &&
                     string.Equals(x.SignalIdentifier, signal.SignalIdentifier, StringComparison.OrdinalIgnoreCase));
         }
 
-        private static bool TryProceedExecution(WorkflowStateDto workflowState, WaitInfrastructureDto currentWait)
+        private static bool TryProceedExecution(WorkflowStateDto workflowState, Definition.DTOs.WaitInfrastructureDto currentWait)
         {
             var parent = GetParentWait(workflowState, currentWait);
             while (parent != null)
             {
-                if (parent is WaitsGroupDto || parent is SubWorkflowWaitDto)
+                if (parent is Definition.DTOs.WaitsGroupDto || parent is Definition.DTOs.SubWorkflowWaitDto)
                 {
                     if (!IsWaitCompleted(parent))
                         return false;
 
-                    parent.Status = WaitStatus.Completed;
-                    parent.PersistStatus = PersistStatus.Updated;
+                    parent.Status = Definition.Enums.WaitStatus.Completed;
                     CancelSubWaits(parent);
                 }
 
@@ -247,7 +239,7 @@ namespace Workflows.Runner
             return true;
         }
 
-        private static WaitInfrastructureDto GetParentWait(WorkflowStateDto workflowState, WaitInfrastructureDto currentWait)
+        private static Definition.DTOs.WaitInfrastructureDto GetParentWait(WorkflowStateDto workflowState, Definition.DTOs.WaitInfrastructureDto currentWait)
         {
             if (workflowState?.Waits == null || currentWait?.ParentWaitId == null)
                 return null;
@@ -258,51 +250,50 @@ namespace Workflows.Runner
                 .FirstOrDefault(x => x.Id == parentId);
         }
 
-        private static bool IsWaitCompleted(WaitInfrastructureDto wait)
+        private static bool IsWaitCompleted(Definition.DTOs.WaitInfrastructureDto wait)
         {
             if (wait == null)
                 return false;
 
-            if (wait is WaitsGroupDto group)
+            if (wait is Definition.DTOs.WaitsGroupDto group)
                 return IsGroupWaitCompleted(group);
 
-            if (wait is SubWorkflowWaitDto subWorkflow)
-                return subWorkflow.ChildWaits?.Any(x => x.Status == WaitStatus.Waiting) is false;
+            if (wait is Definition.DTOs.SubWorkflowWaitDto subWorkflow)
+                return subWorkflow.ChildWaits?.Any(x => x.Status == Definition.Enums.WaitStatus.Waiting) is false;
 
-            return wait.Status == WaitStatus.Completed;
+            return wait.Status == Definition.Enums.WaitStatus.Completed;
         }
 
-        private static bool IsGroupWaitCompleted(WaitsGroupDto group)
+        private static bool IsGroupWaitCompleted(Definition.DTOs.WaitsGroupDto group)
         {
             switch (group.WaitType)
             {
-                case WaitType.GroupWaitAll:
-                    return group.ChildWaits?.All(x => x.Status == WaitStatus.Completed) is true;
+                case Definition.Enums.WaitType.GroupWaitAll:
+                    return group.ChildWaits?.All(x => x.Status == Definition.Enums.WaitStatus.Completed) is true;
 
-                case WaitType.GroupWaitFirst:
-                    return group.ChildWaits?.Any(x => x.Status == WaitStatus.Completed) is true;
+                case Definition.Enums.WaitType.GroupWaitFirst:
+                    return group.ChildWaits?.Any(x => x.Status == Definition.Enums.WaitStatus.Completed) is true;
 
-                case WaitType.GroupWaitWithExpression:
-                    return group.ChildWaits?.Any(x => x.Status == WaitStatus.Waiting) is false;
+                case Definition.Enums.WaitType.GroupWaitWithExpression:
+                    return group.ChildWaits?.Any(x => x.Status == Definition.Enums.WaitStatus.Waiting) is false;
 
                 default:
-                    return group.ChildWaits?.Any(x => x.Status == WaitStatus.Waiting) is false;
+                    return group.ChildWaits?.Any(x => x.Status == Definition.Enums.WaitStatus.Waiting) is false;
             }
         }
 
-        private static void CancelSubWaits(WaitInfrastructureDto wait)
+        private static void CancelSubWaits(Definition.DTOs.WaitInfrastructureDto wait)
         {
             if (wait?.ChildWaits == null)
                 return;
 
-            foreach (var child in wait.ChildWaits.Flatten(x => x.ChildWaits).Where(x => x != wait && x.Status == WaitStatus.Waiting))
+            foreach (var child in wait.ChildWaits.Flatten(x => x.ChildWaits).Where(x => x != wait && x.Status == Definition.Enums.WaitStatus.Waiting))
             {
-                child.Status = WaitStatus.Canceled;
-                child.PersistStatus = PersistStatus.Updated;
+                child.Status = Definition.Enums.WaitStatus.Canceled;
             }
         }
 
-        private bool EvaluateSignalMatch(SignalWaitDto incomingWait, SignalDto signal, object workflowInstance)
+        private bool EvaluateSignalMatch(Definition.DTOs.SignalWaitDto incomingWait, SignalDto signal, object workflowInstance)
         {
             if (incomingWait == null || signal == null) return false;
             if (incomingWait.IsExactMatchFullMatch) return true;
@@ -330,12 +321,12 @@ namespace Workflows.Runner
             }
         }
 
-        private PrivateData SerializePrivateData(object value)
+        private Definition.DTOs.PrivateData SerializePrivateData(object value)
         {
             if (value == null)
                 return null;
 
-            return new PrivateData
+            return new Definition.DTOs.PrivateData
             {
                 Value = _objectSerializer.Serialize(value, SerializationScope.CompilerGeneratedClass),
                 TypeName = value.GetType().AssemblyQualifiedName ?? value.GetType().FullName,
@@ -343,7 +334,7 @@ namespace Workflows.Runner
             };
         }
 
-        private async Task<Definition.Wait> AdvanceWorkflow(object workflowInstance, WaitInfrastructureDto incomingWait, WorkflowRunContext runContext = null)
+        private async Task<Definition.Wait> AdvanceWorkflow(object workflowInstance, Definition.DTOs.WaitInfrastructureDto incomingWait, WorkflowExecutionRequest runContext = null)
         {
             if (workflowInstance is not Definition.WorkflowContainer container)
                 throw new InvalidOperationException("Workflow instance must inherit from WorkflowContainer.");
@@ -376,7 +367,7 @@ namespace Workflows.Runner
                     var handler = _commandHandlerFactory.GetHandler(command.HandlerKey);
                     await handler.ExecuteAsync(command, runContext);
 
-                    if (command.ExecutionMode == CommandExecutionMode.Direct)
+                    if (command.ExecutionMode == Definition.Enums.CommandExecutionMode.Direct)
                     {
                         // Auto-advance: capture state so we can resume, but do not suspend
                         CaptureRunnerState(runner, previousWait, nextWait);
@@ -396,7 +387,7 @@ namespace Workflows.Runner
             return null;
         }
 
-        private void RestoreEnumeratorState(IAsyncEnumerator<Definition.Wait> runner, Definition.WorkflowContainer workflowInstance, WaitInfrastructureDto incomingWait)
+        private void RestoreEnumeratorState(IAsyncEnumerator<Definition.Wait> runner, Definition.WorkflowContainer workflowInstance, Definition.DTOs.WaitInfrastructureDto incomingWait)
         {
             var runnerType = runner.GetType();
 
@@ -431,7 +422,7 @@ namespace Workflows.Runner
             }
         }
 
-        private object ResolvePrivateDataValue(PrivateData privateData)
+        private object ResolvePrivateDataValue(Definition.DTOs.PrivateData privateData)
         {
             if (privateData?.Value == null) return null;
 
@@ -444,23 +435,21 @@ namespace Workflows.Runner
             return privateData.Value;
         }
 
-        private void PrepareWaitForPersistence(Definition.Wait wait, WaitInfrastructureDto waitDto)
+        private void PrepareWaitForPersistence(Definition.Wait wait, Definition.DTOs.WaitInfrastructureDto waitDto)
         {
             if (wait == null || waitDto == null)
                 return;
 
-            waitDto.PersistStatus = PersistStatus.New;
-
             if (wait is Definition.IPassiveWait passiveWait && passiveWait.CancelTokens?.Count > 0)
                 waitDto.CancelTokens = passiveWait.CancelTokens;
 
-            if (wait is Definition.ISignalWait signalWait && waitDto is SignalWaitDto signalWaitDto)
+            if (wait is Definition.ISignalWait signalWait && waitDto is Definition.DTOs.SignalWaitDto signalWaitDto)
                 PrepareSignalWaitForPersistence(signalWait, signalWaitDto);
 
-            if (wait is Definition.GroupWait groupWait && waitDto is WaitsGroupDto waitsGroupDto)
+            if (wait is Definition.GroupWait groupWait && waitDto is Definition.DTOs.WaitsGroupDto waitsGroupDto)
                 PrepareGroupWaitForPersistence(groupWait, waitsGroupDto);
 
-            if (wait is Definition.SubWorkflowWait subWorkflowWait && waitDto is SubWorkflowWaitDto subWorkflowWaitDto)
+            if (wait is Definition.SubWorkflowWait subWorkflowWait && waitDto is Definition.DTOs.SubWorkflowWaitDto subWorkflowWaitDto)
                 PrepareSubWorkflowWaitForPersistence(subWorkflowWait, subWorkflowWaitDto);
 
             if (waitDto.ChildWaits == null)
@@ -469,11 +458,10 @@ namespace Workflows.Runner
             foreach (var child in waitDto.ChildWaits)
             {
                 child.ParentWaitId = waitDto.Id;
-                child.PersistStatus = PersistStatus.New;
             }
         }
 
-        private static bool IsWaitCancelledByToken(WaitInfrastructureDto wait, WorkflowStateDto workflowState)
+        private static bool IsWaitCancelledByToken(Definition.DTOs.WaitInfrastructureDto wait, WorkflowStateDto workflowState)
         {
             if (wait?.CancelTokens == null || wait.CancelTokens.Count == 0)
                 return false;
@@ -484,7 +472,7 @@ namespace Workflows.Runner
             return wait.CancelTokens.Any(t => workflowState.CancelledTokens.Contains(t));
         }
 
-        private void PrepareGroupWaitForPersistence(Definition.GroupWait groupWait, WaitsGroupDto waitsGroupDto)
+        private void PrepareGroupWaitForPersistence(Definition.GroupWait groupWait, Definition.DTOs.WaitsGroupDto waitsGroupDto)
         {
             if (waitsGroupDto.ChildWaits == null || waitsGroupDto.ChildWaits.Count == 0)
                 return;
@@ -504,7 +492,7 @@ namespace Workflows.Runner
             }
         }
 
-        private void PrepareSignalWaitForPersistence(Definition.ISignalWait signalWait, SignalWaitDto signalWaitDto)
+        private void PrepareSignalWaitForPersistence(Definition.ISignalWait signalWait, Definition.DTOs.SignalWaitDto signalWaitDto)
         {
             try
             {
@@ -528,9 +516,9 @@ namespace Workflows.Runner
             }
         }
 
-        private void CaptureRunnerState(IAsyncEnumerator<Definition.Wait> runner, WaitInfrastructureDto previousWait, Definition.Wait nextWait)
+        private void CaptureRunnerState(IAsyncEnumerator<Definition.Wait> runner, Definition.DTOs.WaitInfrastructureDto previousWait, Definition.Wait nextWait)
         {
-            if (nextWait?.ToDto() is not WaitInfrastructureDto nextWaitDto)
+            if (nextWait?.ToDto() is not Definition.DTOs.WaitInfrastructureDto nextWaitDto)
                 return;
 
             var runnerType = runner.GetType();
@@ -553,24 +541,23 @@ namespace Workflows.Runner
             }
         }
 
-        private void PrepareSubWorkflowWaitForPersistence(Definition.SubWorkflowWait subWorkflowWait, SubWorkflowWaitDto subWorkflowWaitDto)
+        private void PrepareSubWorkflowWaitForPersistence(Definition.SubWorkflowWait subWorkflowWait, Definition.DTOs.SubWorkflowWaitDto subWorkflowWaitDto)
         {
             if (subWorkflowWait.FirstWait == null)
                 return;
 
             var firstWaitDto = subWorkflowWait.FirstWait;
-            subWorkflowWaitDto.ChildWaits = new List<WaitInfrastructureDto> { firstWaitDto };
+            subWorkflowWaitDto.ChildWaits = new List<Definition.DTOs.WaitInfrastructureDto> { firstWaitDto };
 
             PrepareWaitDtoTreeForPersistence(firstWaitDto, subWorkflowWaitDto.Id);
         }
 
-        private void PrepareWaitDtoTreeForPersistence(WaitInfrastructureDto waitDto, Guid? parentWaitId)
+        private void PrepareWaitDtoTreeForPersistence(Definition.DTOs.WaitInfrastructureDto waitDto, Guid? parentWaitId)
         {
             if (waitDto == null)
                 return;
 
             waitDto.ParentWaitId = parentWaitId;
-            waitDto.PersistStatus = PersistStatus.New;
 
             if (waitDto.ChildWaits == null || waitDto.ChildWaits.Count == 0)
                 return;

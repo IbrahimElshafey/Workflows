@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
-using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Definition
 {
@@ -17,7 +16,7 @@ namespace Workflows.Definition
                 throw new ArgumentException("Until date should be in the future", nameof(untilTime));
             }
             var timeToWait = untilTime - DateTime.UtcNow;
-            Definition.TimeWait newTimeWait = new Definition.TimeWait(new TimeWaitDto
+            Definition.TimeWait newTimeWait = new Definition.TimeWait(new DTOs.TimeWaitDto
             {
                 WaitName = name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
                 TimeToWait = timeToWait,
@@ -42,7 +41,7 @@ namespace Workflows.Definition
             {
                 throw new ArgumentException("Time to wait should be greater than 0", nameof(timeToWait));
             }
-            return new Definition.TimeWait(new TimeWaitDto
+            return new Definition.TimeWait(new DTOs.TimeWaitDto
             {
                 WaitName = name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
                 TimeToWait = timeToWait,

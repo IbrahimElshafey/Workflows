@@ -17,15 +17,8 @@
 			<_Parameter1>Workflows.Runner</_Parameter1>
 		</AssemblyAttribute>
 	</ItemGroup>
-
-	<ItemGroup>
-		<ProjectReference Include="..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
-	</ItemGroup>
 	<ItemGroup>
 		<PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
-	</ItemGroup>
-	<ItemGroup>
-	  <Folder Include="Registration\" />
 	</ItemGroup>
 
 </Project>

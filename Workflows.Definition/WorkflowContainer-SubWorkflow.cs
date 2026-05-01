@@ -1,10 +1,9 @@
-﻿using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
-
+﻿
 using System;
 using System.Collections.Generic;
-using Workflows.Abstraction.Enums;
-using Workflows.Abstraction.DTOs;
+using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
+using Workflows.Definition.Helpers;
 
 namespace Workflows.Definition
 {
@@ -19,11 +18,11 @@ namespace Workflows.Definition
             var runner = workflow.GetAsyncEnumerator();
             var runnerName = runner.GetType().Name;
             var workflowName = Regex.Match(runnerName, "<(.+)>").Groups[1].Value;
-            var workflowInfo = GetType().GetMethod(workflowName, Abstraction.Helpers.CoreExtensions.DeclaredWithinTypeFlags());
-            var result = new Definition.SubWorkflowWait(new SubWorkflowWaitDto
+            var workflowInfo = GetType().GetMethod(workflowName, CoreExtensions.DeclaredWithinTypeFlags());
+            var result = new Definition.SubWorkflowWait(new DTOs.SubWorkflowWaitDto
             {
                 WaitName = name ?? $"#Wait Workflow `{workflowName}`",
-                WaitType = WaitType.SubWorkflowWait,
+                WaitType = Enums.WaitType.SubWorkflowWait,
                 CallerName = callerName,
                 InCodeLine = inCodeLine,
                 Created = DateTime.UtcNow,

@@ -1,7 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using Workflows.Abstraction.DTOs;
-using Workflows.Abstraction.Enums;
 
 namespace Workflows.Definition
 {
@@ -17,20 +15,20 @@ namespace Workflows.Definition
         internal Action<TResult> OnResultAction { get; set; }
         internal Action CompensationAction { get; set; }
 
-        internal CommandWaitDto Data { get; }
+        internal DTOs.CommandWaitDto Data { get; }
 
         /// <summary>
         /// Internal constructor accepting command name and data.
         /// Initializes the CommandWaitDto with the serialized command payload.
         /// </summary>
-        internal CommandWait(string commandName, TCommand data) : base(new CommandWaitDto
+        internal CommandWait(string commandName, TCommand data) : base(new DTOs.CommandWaitDto
         {
             WaitName = commandName,
-            WaitType = Workflows.Abstraction.Enums.WaitType.Command,
+            WaitType = Enums.WaitType.Command,
             Created = DateTime.UtcNow,
         })
         {
-            Data = (CommandWaitDto)WaitData;
+            Data = (DTOs.CommandWaitDto)WaitData;
             CommandData = data;
         }
 
@@ -103,12 +101,12 @@ namespace Workflows.Definition
         string ICommandWait.HandlerKey => Data.HandlerKey;
 
         /// <inheritdoc/>
-        CommandExecutionMode ICommandWait.ExecutionMode => Data.ExecutionMode;
+        Enums.CommandExecutionMode ICommandWait.ExecutionMode => Data.ExecutionMode;
 
         /// <summary>
         /// Sets the handler key used to resolve the command handler from ICommandHandlerFactory.
         /// </summary>
-        public Definition.CommandWait<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Direct)
+        public Definition.CommandWait<TCommand, TResult> WithHandlerKey(string key, Enums.CommandExecutionMode mode = Enums.CommandExecutionMode.Direct)
         {
             Data.HandlerKey = key;
             Data.ExecutionMode = mode;
@@ -118,7 +116,7 @@ namespace Workflows.Definition
         /// <summary>
         /// Sets the execution mode for this command (Fast or Slow).
         /// </summary>
-        public Definition.CommandWait<TCommand, TResult> WithExecutionMode(CommandExecutionMode mode)
+        public Definition.CommandWait<TCommand, TResult> WithExecutionMode(Enums.CommandExecutionMode mode)
         {
             Data.ExecutionMode = mode;
             return this;

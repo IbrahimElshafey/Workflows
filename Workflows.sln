@@ -19,6 +19,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{E5E7
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Orchestrator", "Workflows.Orchestrator\Workflows.Orchestrator.csproj", "{F15A5D68-976A-4728-BE8E-AA618CFF6F35}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DataStore", "DataStore", "{B0EC8713-8E22-4B9C-9C74-8CE3C9C8D101}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Orchestrator.Data.EF", "DataStore\Workflows.Orchestrator.Data.EF\Workflows.Orchestrator.Data.EF.csproj", "{EBEE06CF-3F67-6E20-F1D6-CA0AD9B1BC80}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -49,12 +53,17 @@ Global
 		{F15A5D68-976A-4728-BE8E-AA618CFF6F35}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F15A5D68-976A-4728-BE8E-AA618CFF6F35}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F15A5D68-976A-4728-BE8E-AA618CFF6F35}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EBEE06CF-3F67-6E20-F1D6-CA0AD9B1BC80}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EBEE06CF-3F67-6E20-F1D6-CA0AD9B1BC80}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EBEE06CF-3F67-6E20-F1D6-CA0AD9B1BC80}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EBEE06CF-3F67-6E20-F1D6-CA0AD9B1BC80}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{63BA3294-6BCB-4C56-A906-36381C9B86B5} = {E5E70ECB-5B3C-4CEB-AB9E-67E3CBFB30C5}
+		{EBEE06CF-3F67-6E20-F1D6-CA0AD9B1BC80} = {B0EC8713-8E22-4B9C-9C74-8CE3C9C8D101}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {AE5D3544-A75E-4511-ADAF-BEE3DA168EE9}

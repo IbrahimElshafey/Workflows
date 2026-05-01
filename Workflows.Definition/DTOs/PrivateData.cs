@@ -1,7 +1,8 @@
 ﻿using System;
-namespace Workflows.Abstraction.DTOs
+
+namespace Workflows.Definition.DTOs
 {
-    public class PrivateData 
+    public class PrivateData
     {
         public object Value { get; internal set; }
 

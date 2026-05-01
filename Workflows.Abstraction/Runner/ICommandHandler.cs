@@ -1,7 +1,9 @@
 using System.Threading.Tasks;
+using Workflows.Definition;
+using Workflows;
 using Workflows.Abstraction.DTOs;
 
-namespace Workflows.Definition
+namespace Workflows.Abstraction.Runner
 {
     /// <summary>
     /// Handles the execution of a command associated with an ICommandWait.
@@ -11,6 +13,6 @@ namespace Workflows.Definition
         /// <summary>
         /// Executes the command represented by the given wait within the provided workflow context.
         /// </summary>
-        Task ExecuteAsync(ICommandWait command, WorkflowRunContext context);
+        Task ExecuteAsync(ICommandWait command, WorkflowExecutionRequest context);
     }
 }

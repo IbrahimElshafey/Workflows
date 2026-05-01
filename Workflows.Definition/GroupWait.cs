@@ -1,10 +1,9 @@
-﻿using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.CompilerServices;
-
+﻿
 using System;
-using Workflows.Abstraction.DTOs;
-using Workflows.Abstraction.Enums;
+using System.Collections.Generic;
+using System.Linq;
+
+using System.Runtime.CompilerServices;
 
 namespace Workflows.Definition
 {
@@ -14,16 +13,16 @@ namespace Workflows.Definition
     /// </summary>
     public class GroupWait : Wait, IPassiveWait
     {
-        internal WaitsGroupDto WaitsGroupEntity { get; }
+        internal DTOs.WaitsGroupDto WaitsGroupEntity { get; }
         internal IReadOnlyList<Wait> ChildWaitsRuntime { get; }
 
-        internal GroupWait(WaitsGroupDto wait, IReadOnlyList<Wait> childWaits = null) : base(wait)
+        internal GroupWait(DTOs.WaitsGroupDto wait, IReadOnlyList<Wait> childWaits = null) : base(wait)
         {
             WaitsGroupEntity = wait;
             ChildWaitsRuntime = childWaits;
         }
 
-        public int CompletedCount => WaitsGroupEntity.ChildWaits?.Count(x => x.Status == WaitStatus.Completed) ?? 0;
+        public int CompletedCount => WaitsGroupEntity.ChildWaits?.Count(x => x.Status == Enums.WaitStatus.Completed) ?? 0;
 
         /// <summary>
         /// Check if group is matched
@@ -38,7 +37,7 @@ namespace Workflows.Definition
         [CallerLineNumber] int inCodeLine = 0,
         [CallerMemberName] string callerName = "")
         {
-            WaitsGroupEntity.WaitType = WaitType.GroupWaitWithExpression;
+            WaitsGroupEntity.WaitType = Enums.WaitType.GroupWaitWithExpression;
             WaitsGroupEntity.InCodeLine = inCodeLine;
             WaitsGroupEntity.CallerName = callerName;
             WaitsGroupEntity.MatchFuncName = ValidateCallback(groupMatchFilter, nameof(WaitsGroupEntity.MatchFuncName));
@@ -47,14 +46,14 @@ namespace Workflows.Definition
 
         public Wait MatchAll()
         {
-            WaitsGroupEntity.WaitType = WaitType.GroupWaitAll;
+            WaitsGroupEntity.WaitType = Enums.WaitType.GroupWaitAll;
             return this;
         }
 
         public Wait MatchFirst() => MatchAny();
         public Wait MatchAny()
         {
-            WaitsGroupEntity.WaitType = WaitType.GroupWaitFirst;
+            WaitsGroupEntity.WaitType = Enums.WaitType.GroupWaitFirst;
             return this;
         }
         public HashSet<string> CancelTokens { get; set; }

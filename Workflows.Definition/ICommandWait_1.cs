@@ -1,5 +1,3 @@
-using Workflows.Abstraction.Enums;
-
 namespace Workflows.Definition
 {
     /// <summary>
@@ -19,6 +17,6 @@ namespace Workflows.Definition
         /// <summary>
         /// Determines whether the command runs fast (auto-advance) or slow (suspend and persist).
         /// </summary>
-        CommandExecutionMode ExecutionMode { get; }
+        Enums.CommandExecutionMode ExecutionMode { get; }
     }
 }
