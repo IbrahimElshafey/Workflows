@@ -3,7 +3,7 @@ using System;
 namespace Workflows.Abstraction.DTOs
 {
     /// <summary>
-    /// DTO for CommandWait that stores command execution configuration.
+    /// DTO for Command that stores command execution configuration.
     /// Inherits from WaitInfrastructureDto to maintain compatibility with the wait persistence system.
     /// </summary>
     public class CommandWaitDto : WaitInfrastructureDto

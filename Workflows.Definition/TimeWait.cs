@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Workflows.Abstraction.DTOs;
 namespace Workflows.Handler.BaseUse
 {
@@ -19,5 +20,17 @@ namespace Workflows.Handler.BaseUse
             CancelAction = cancelAction;
             return this;
         }
+
+        public HashSet<string> CancelTokens { get; set; }
+
+        public TimeWait WithCancelToken(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token)) return this;
+            CancelTokens ??= new HashSet<string>();
+            CancelTokens.Add(token);
+            return this;
+        }
+
+        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
     }
 }

@@ -80,6 +80,20 @@ namespace Workflows.Runner
                 //todo:it may be one or more wait matching signal in this stage (1 of million)
                 result.IncomingWait = incomingWait;
 
+                // Pre-evaluation check: if any of the wait's cancel tokens have already been
+                // cancelled, unwind this wait without evaluating the signal.
+                if (IsWaitCancelledByToken(incomingWait, runContext.WorkflowState))
+                {
+                    incomingWait.Status = WaitStatus.Canceled;
+                    incomingWait.PersistStatus = PersistStatus.Updated;
+                    result.Message = "Wait was interrupted by a previously cancelled token.";
+                    TryProceedExecution(runContext.WorkflowState, incomingWait);
+                    runContext.WorkflowState.StateObject = _objectSerializer.Serialize(workflowInstance, SerializationScope.CompilerGeneratedClass);
+                    result.WorkflowState = runContext.WorkflowState;
+                    _runResultSender.SendWorkflowRunResult(runId, result).GetAwaiter().GetResult();
+                    return runId;
+                }
+
                 if (!EvaluateSignalMatch(incomingWait, runContext.Signal, workflowInstance))
                 {
                     result.Message = "Signal did not satisfy the exact wait match expression.";
@@ -99,7 +113,9 @@ namespace Workflows.Runner
                     return runId;
                 }
 
-                var nextWait = AdvanceWorkflow(workflowInstance, incomingWait);
+                WaitInfrastructureDto currentResumePoint = incomingWait;
+                var nextWait = AdvanceWorkflow(workflowInstance, currentResumePoint);
+
                 if (nextWait == null)
                 {
                     runContext.WorkflowState.Status = WorkflowInstanceStatus.Completed;
@@ -311,7 +327,7 @@ namespace Workflows.Runner
             };
         }
 
-        private Wait AdvanceWorkflow(object workflowInstance, SignalWaitDto incomingWait)
+        private Wait AdvanceWorkflow(object workflowInstance, WaitInfrastructureDto incomingWait)
         {
             if (workflowInstance is not WorkflowContainer container)
                 throw new InvalidOperationException("Workflow instance must inherit from WorkflowContainer.");
@@ -342,7 +358,7 @@ namespace Workflows.Runner
             return nextWait;
         }
 
-        private void RestoreEnumeratorState(IAsyncEnumerator<Wait> runner, WorkflowContainer workflowInstance, SignalWaitDto incomingWait)
+        private void RestoreEnumeratorState(IAsyncEnumerator<Wait> runner, WorkflowContainer workflowInstance, WaitInfrastructureDto incomingWait)
         {
             var runnerType = runner.GetType();
 
@@ -382,6 +398,10 @@ namespace Workflows.Runner
 
             waitDto.PersistStatus = PersistStatus.New;
 
+            // Copy cancel tokens from the runtime IPassiveWait to its DTO so they survive persistence.
+            if (wait is IPassiveWait passiveWait && passiveWait.CancelTokens?.Count > 0)
+                waitDto.CancelTokens = passiveWait.CancelTokens;
+
             if (wait is ISignalWait signalWait && waitDto is SignalWaitDto signalWaitDto)
                 PrepareSignalWaitForPersistence(signalWait, signalWaitDto);
 
@@ -399,6 +419,21 @@ namespace Workflows.Runner
                 child.ParentWaitId = waitDto.Id;
                 child.PersistStatus = PersistStatus.New;
             }
+        }
+
+        /// <summary>
+        /// Returns true when any of the wait's <see cref="WaitInfrastructureDto.CancelTokens"/>
+        /// have already been recorded in <see cref="WorkflowStateDto.CancelledTokens"/>.
+        /// </summary>
+        private static bool IsWaitCancelledByToken(WaitInfrastructureDto wait, WorkflowStateDto workflowState)
+        {
+            if (wait?.CancelTokens == null || wait.CancelTokens.Count == 0)
+                return false;
+
+            if (workflowState?.CancelledTokens == null || workflowState.CancelledTokens.Count == 0)
+                return false;
+
+            return wait.CancelTokens.Any(t => workflowState.CancelledTokens.Contains(t));
         }
 
         private void PrepareGroupWaitForPersistence(GroupWait groupWait, WaitsGroupDto waitsGroupDto)
@@ -445,7 +480,7 @@ namespace Workflows.Runner
             }
         }
 
-        private void CaptureRunnerState(IAsyncEnumerator<Wait> runner, SignalWaitDto previousWait, Wait nextWait)
+        private void CaptureRunnerState(IAsyncEnumerator<Wait> runner, WaitInfrastructureDto previousWait, Wait nextWait)
         {
             if (nextWait?.ToDto() is not WaitInfrastructureDto nextWaitDto)
                 return;

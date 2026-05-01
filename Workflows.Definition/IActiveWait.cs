@@ -4,7 +4,7 @@ namespace Workflows.Handler.BaseUse
     /// Marker interface for active waits that initiate side effects (e.g., commands, API calls).
     /// Active waits must not be combined with MatchAny() to prevent race conditions where
     /// multiple commands could execute. They should only use MatchAll() via ExecuteParallel().
-    /// Examples: CommandWait
+    /// Examples: Command
     /// </summary>
     public interface IActiveWait
     {

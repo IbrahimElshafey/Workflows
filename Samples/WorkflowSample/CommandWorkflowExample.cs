@@ -42,7 +42,7 @@ namespace Workflows.Sample.Commands
     }
 
     /// <summary>
-    /// Example workflow demonstrating the CommandWait primitive usage.
+    /// Example workflow demonstrating the Command primitive usage.
     /// </summary>
     public class OrderWithCommandWorkflow : WorkflowContainer
     {
@@ -55,6 +55,7 @@ namespace Workflows.Sample.Commands
             // Receive order details via signal
             yield return WaitSignal<OrderReceivedEvent>("OrderReceived")
                 .MatchIf(x => x.OrderId > 0)
+                .WithCancelToken("order-received-token")
                 .AfterMatch(order =>
                 {
                     CurrentOrderId = order.OrderId;

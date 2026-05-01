@@ -102,6 +102,11 @@ namespace Workflows.Abstraction.DTOs
         /// Child waits if this is a composite wait (e.g., GroupWait).
         /// </summary>
         public List<WaitInfrastructureDto> ChildWaits { get; set; } = new();
+
+        /// <summary>
+        /// Token IDs that, when cancelled, will interrupt this passive wait before evaluation.
+        /// </summary>
+        public HashSet<string> CancelTokens { get; set; }
     }
 
 }

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Reflection;
 using Workflows.Abstraction.DTOs;
 
@@ -14,6 +15,18 @@ namespace Workflows.Handler.BaseUse
         internal MethodInfo SubWorkflowMethodInfo { get; set; }
         internal WaitInfrastructureDto FirstWait { get; set; }
         internal IAsyncEnumerator<Wait> Runner { get; set; }
+        public HashSet<string> CancelTokens { get; set; }
+
+        public SubWorkflowWait WithCancelToken(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token)) return this;
+            CancelTokens ??= new HashSet<string>();
+            CancelTokens.Add(token);
+            return this;
+        }
+
+        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
+
         internal SubWorkflowWait(SubWorkflowWaitDto wait) : base(wait)
         {
         }

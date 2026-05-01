@@ -56,6 +56,16 @@ namespace Workflows.Handler.BaseUse
             WaitsGroupEntity.WaitType = WaitType.GroupWaitFirst;
             return this;
         }
+        public HashSet<string> CancelTokens { get; set; }
 
+        public GroupWait WithCancelToken(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token)) return this;
+            CancelTokens ??= new HashSet<string>();
+            CancelTokens.Add(token);
+            return this;
+        }
+
+        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
     }
 }

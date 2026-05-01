@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace Workflows.Handler.BaseUse
 {
     /// <summary>
@@ -7,5 +10,15 @@ namespace Workflows.Handler.BaseUse
     /// </summary>
     public interface IPassiveWait
     {
+        /// <summary>
+        /// Token IDs that, when cancelled, will interrupt this passive wait.
+        /// </summary>
+        HashSet<string> CancelTokens { get; set; }
+
+        /// <summary>
+        /// Appends the given token ID to <see cref="CancelTokens"/>, ignoring null/empty strings and duplicates.
+        /// When this token is cancelled the wait will be interrupted before the engine evaluates the incoming event.
+        /// </summary>
+        IPassiveWait WithCancelToken(string token);
     }
 }

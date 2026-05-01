@@ -91,7 +91,7 @@ namespace Workflows.Handler
                 {
                     WaitName = name ?? $"#Parallel Commands `{inCodeLine}` by `{callerName}`",
                     ChildWaits = waits.Select(x => x.WaitData).ToList(),
-                    WaitType = WaitType.GroupWaitAll,  // Always MatchAll for safety
+                    WaitType = WaitType.CommandsGroup\,
                     InCodeLine = inCodeLine,
                     CallerName = callerName,
                     Created = DateTime.UtcNow

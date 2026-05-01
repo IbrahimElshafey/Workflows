@@ -23,7 +23,7 @@ namespace Workflows.Handler.BaseUse
         internal CommandWait(string commandName, TCommand data) : base(new CommandWaitDto
         {
             WaitName = commandName,
-            WaitType = Workflows.Abstraction.Enums.WaitType.CommandWait,
+            WaitType = Workflows.Abstraction.Enums.WaitType.Command,
             Created = DateTime.UtcNow,
         })
         {
