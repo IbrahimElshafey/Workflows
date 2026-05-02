@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
+using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Definition
 {
@@ -14,9 +15,9 @@ namespace Workflows.Definition
     {
         internal Action<SignalData> AfterMatchAction { get; set; }
 
-        internal SignalWait(DTOs.SignalWaitDto data) : base(data) { Data = data; }
+        internal SignalWait(SignalWaitDto data) : base(data) { Data = data; }
 
-        internal DTOs.SignalWaitDto Data { get; private set; }
+        internal SignalWaitDto Data { get; private set; }
 
 
         internal LambdaExpression MatchExpression { get; set; }

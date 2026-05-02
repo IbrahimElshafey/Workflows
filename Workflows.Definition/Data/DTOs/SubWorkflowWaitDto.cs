@@ -1,4 +1,4 @@
-﻿namespace Workflows.Definition.DTOs
+﻿namespace Workflows.Definition.Data.DTOs
 {
     /// <summary>
     /// DTO for SubWorkflowWait that represents a nested workflow execution.

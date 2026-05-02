@@ -1,5 +1,6 @@
 ﻿using System.Linq;
 using System.Threading.Tasks;
+using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Definition
 {
@@ -16,6 +17,6 @@ namespace Workflows.Definition
         IWorkflowRegister RegisterRunner(string runnerId, params string[] listeningQueues);
 
         // Finalize and push to the Orchestrator
-        Task<DTOs.RegistrationSyncResult> CommitAsync();
+        Task<RegistrationSyncResult> CommitAsync();
     }
 }

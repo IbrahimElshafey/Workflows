@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Reflection;
+using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Definition
 {
@@ -11,7 +12,7 @@ namespace Workflows.Definition
     public class SubWorkflowWait : Definition.Wait, Definition.IPassiveWait
     {
         internal MethodInfo SubWorkflowMethodInfo { get; set; }
-        internal DTOs.WaitInfrastructureDto FirstWait { get; set; }
+        internal WaitInfrastructureDto FirstWait { get; set; }
         internal IAsyncEnumerator<Definition.Wait> Runner { get; set; }
         public HashSet<string> CancelTokens { get; set; }
 
@@ -25,7 +26,7 @@ namespace Workflows.Definition
 
         Definition.IPassiveWait Definition.IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
 
-        internal SubWorkflowWait(DTOs.SubWorkflowWaitDto wait) : base(wait)
+        internal SubWorkflowWait(SubWorkflowWaitDto wait) : base(wait)
         {
         }
     }

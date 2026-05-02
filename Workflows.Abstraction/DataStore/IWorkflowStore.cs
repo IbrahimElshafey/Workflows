@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
+using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Abstraction.DataStore
 {
@@ -13,7 +14,7 @@ namespace Workflows.Abstraction.DataStore
         /// </summary>
         Task SaveContextSyncAsync(
             WorkflowStateDto state,
-            IEnumerable<Definition.DTOs.WaitInfrastructureDto> newWaits,
+            IEnumerable<WaitInfrastructureDto> newWaits,
             IEnumerable<Guid> completedWaitIds);
 
         /// <summary>

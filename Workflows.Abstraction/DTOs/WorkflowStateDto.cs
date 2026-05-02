@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Workflows.Abstraction.Enums;
+using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Abstraction.DTOs
 {
@@ -28,7 +29,7 @@ namespace Workflows.Abstraction.DTOs
         /// <summary>
         /// List of current wait nodes (infrastructure DTOs) representing what the workflow is waiting for.
         /// </summary>
-        public List<Definition.DTOs.WaitInfrastructureDto> Waits { get; internal set; } = new();
+        public List<WaitInfrastructureDto> Waits { get; internal set; } = new();
 
         /// <summary>
         /// Current status of the workflow instance.

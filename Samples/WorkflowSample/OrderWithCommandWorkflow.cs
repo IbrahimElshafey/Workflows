@@ -1,51 +1,18 @@
-namespace Workflows.Sample.Commands
+using Workflows.Definition;
+using WorkflowSample.DataObject;
+
+namespace WorkflowSample
 {
-    /// <summary>
-    /// Example command types for external services
-    /// </summary>
-    public class SendEmailCommand
-    {
-        public string To { get; set; }
-        public string Subject { get; set; }
-        public string Body { get; set; }
-    }
-
-    public class SendEmailResult
-    {
-        public string MessageId { get; set; }
-        public bool Success { get; set; }
-    }
-
-    public class ProcessPaymentCommand
-    {
-        public string OrderId { get; set; }
-        public decimal Amount { get; set; }
-        public string PaymentMethod { get; set; }
-    }
-
-    public class ProcessPaymentResult
-    {
-        public string TransactionId { get; set; }
-        public string Status { get; set; }
-    }
-
-    public class OrderReceivedEvent
-    {
-        public int OrderId { get; set; }
-        public string CustomerEmail { get; set; }
-        public decimal Amount { get; set; }
-    }
-
     /// <summary>
     /// Example workflow demonstrating the Command primitive usage.
     /// </summary>
-    public class OrderWithCommandWorkflow : Definition.WorkflowContainer
+    public class OrderWithCommandWorkflow : WorkflowContainer
     {
         public int CurrentOrderId { get; set; }
         public string CustomerEmail { get; set; }
         public decimal OrderAmount { get; set; }
 
-        public async IAsyncEnumerable<Definition.Wait> ProcessOrderWithCommand()
+        public async IAsyncEnumerable<Wait> ProcessOrderWithCommand()
         {
             // Receive order details via signal
             yield return WaitSignal<OrderReceivedEvent>("OrderReceived")
@@ -115,14 +82,14 @@ namespace Workflows.Sample.Commands
 
         private Task LogPaymentAsync(ProcessPaymentResult result)
         {
-            return Task.Run(() => 
+            return Task.Run(() =>
                 Console.WriteLine($"Logged payment transaction: {result.TransactionId}")
             );
         }
 
         private Task RefundPaymentAsync()
         {
-            return Task.Run(() => 
+            return Task.Run(() =>
                 Console.WriteLine("Initiated refund process")
             );
         }

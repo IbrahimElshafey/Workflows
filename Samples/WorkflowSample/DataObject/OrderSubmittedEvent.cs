@@ -1,4 +1,4 @@
-﻿namespace Workflows.Sample
+﻿namespace WorkflowSample.DataObject
 {
     // --- Sample Signal Data Payloads ---
     public class OrderSubmittedEvent

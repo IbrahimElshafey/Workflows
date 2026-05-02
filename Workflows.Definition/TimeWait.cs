@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Definition
 {
@@ -10,8 +11,8 @@ namespace Workflows.Definition
     /// </summary>
     public class TimeWait : Definition.Wait, Definition.IPassiveWait
     {
-        internal DTOs.TimeWaitDto Data { get; }
-        internal TimeWait(DTOs.TimeWaitDto waitData) : base(waitData)
+        internal TimeWaitDto Data { get; }
+        internal TimeWait(TimeWaitDto waitData) : base(waitData)
         {
             Data = waitData;
         }

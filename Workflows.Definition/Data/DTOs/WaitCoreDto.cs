@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Workflows.Definition.DTOs
+namespace Workflows.Definition.Data.DTOs
 {
     /// <summary>
     /// Core wait configuration DTO containing only essential wait definition properties.

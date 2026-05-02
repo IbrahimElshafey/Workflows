@@ -3,13 +3,13 @@ using System;
 
 using System.Collections.Generic;
 
-namespace Workflows.Definition.DTOs
+namespace Workflows.Definition.Data.DTOs
 {
     /// <summary>
     /// Infrastructure and execution state DTO containing properties needed for persistence,
     /// runtime state tracking, and workflow execution coordination.
     /// </summary>
-    public abstract class WaitInfrastructureDto : DTOs.WaitCoreDto
+    public abstract class WaitInfrastructureDto : WaitCoreDto
     {
         /// <summary>
         /// Unique identifier for this wait instance.
@@ -64,7 +64,7 @@ namespace Workflows.Definition.DTOs
         /// <summary>
         /// Child waits if this is a composite wait (e.g., GroupWait).
         /// </summary>
-        public List<DTOs.WaitInfrastructureDto> ChildWaits { get; set; } = new();
+        public List<WaitInfrastructureDto> ChildWaits { get; set; } = new();
 
         /// <summary>
         /// Token IDs that, when cancelled, will interrupt this passive wait before evaluation.

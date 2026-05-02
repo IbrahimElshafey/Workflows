@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
+using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Abstraction.DataStore
 {
@@ -13,7 +14,7 @@ namespace Workflows.Abstraction.DataStore
         /// Synchronizes the in-memory/database definitions with the Runner's package.
         /// Returns a detailed result of the sync operation.
         /// </summary>
-        Task<Definition.DTOs.RegistrationSyncResult> SyncDefinitionsAsync(BulkRegistrationPackage package);
+        Task<RegistrationSyncResult> SyncDefinitionsAsync(BulkRegistrationPackage package);
         Task<WorkflowDefinition> GetDefinitionAsync(string workflowName, string version);
         Task<SignalDefinition> GetSignalDefinitionAsync(string signalName);
         Task<CommandDefinition> GetCommandDefinitionAsync(string commandName);

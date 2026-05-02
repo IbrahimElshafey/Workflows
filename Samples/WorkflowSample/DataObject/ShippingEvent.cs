@@ -1,4 +1,4 @@
-﻿namespace Workflows.Sample
+﻿namespace WorkflowSample.DataObject
 {
     public class ShippingEvent
     {

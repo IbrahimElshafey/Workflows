@@ -1,4 +1,5 @@
 ﻿using System;
+using Workflows.Definition.Data.Enums;
 
 namespace Workflows.Abstraction.DTOs
 {
@@ -24,6 +25,6 @@ namespace Workflows.Abstraction.DTOs
         /// </summary>
         public TimeSpan DefaultTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
-        public Definition.Enums.CommandExecutionMode ExecutionMode { get; set; }
+        public CommandExecutionMode ExecutionMode { get; set; }
     }
 }

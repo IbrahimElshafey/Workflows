@@ -1,10 +1,10 @@
-﻿namespace Workflows.Definition.DTOs
+﻿namespace Workflows.Definition.Data.DTOs
 {
     /// <summary>
     /// DTO for GroupWait that stores composite wait configuration.
     /// Inherits from WaitInfrastructureDto to maintain compatibility with persistence infrastructure.
     /// </summary>
-    public class WaitsGroupDto : DTOs.WaitInfrastructureDto
+    public class WaitsGroupDto : WaitInfrastructureDto
     {
         internal WaitsGroupDto()
         {

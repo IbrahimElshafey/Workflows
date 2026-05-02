@@ -1,4 +1,5 @@
 ﻿using System;
+using Workflows.Definition.Data.Enums;
 
 namespace Workflows.Abstraction.DTOs
 {
@@ -9,7 +10,7 @@ namespace Workflows.Abstraction.DTOs
             CommandInputType = typeof(TCommand);
             CommandResultType = typeof(TResult);
         }
-        public CommandRegistrationInput(string handlerKey, Definition.Enums.CommandExecutionMode commandExecutionMode) : this()
+        public CommandRegistrationInput(string handlerKey, CommandExecutionMode commandExecutionMode) : this()
         {
             HandlerKey = handlerKey;
             CommandExecutionMode = commandExecutionMode;
@@ -18,6 +19,6 @@ namespace Workflows.Abstraction.DTOs
         public Type CommandInputType { get; private set; }
         public Type CommandResultType { get; private set; }
         public string? HandlerKey { get; private set; }
-        public Definition.Enums.CommandExecutionMode CommandExecutionMode { get; }
+        public CommandExecutionMode CommandExecutionMode { get; }
     }
 }

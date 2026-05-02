@@ -1,6 +1,7 @@
 using System;
+using Workflows.Definition.Data.Enums;
 
-namespace Workflows.Definition.DTOs
+namespace Workflows.Definition.Data.DTOs
 {
     /// <summary>
     /// DTO for Command that stores command execution configuration.
@@ -49,6 +50,6 @@ namespace Workflows.Definition.DTOs
         /// <summary>
         /// Determines whether the command is processed as a direct (runner-handled) or indirect (orchestrator-signalled) operation.
         /// </summary>
-        public Enums.CommandExecutionMode ExecutionMode { get; set; } = Enums.CommandExecutionMode.Direct;
+        public CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.Direct;
     }
 }

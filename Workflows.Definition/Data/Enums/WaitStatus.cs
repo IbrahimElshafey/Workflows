@@ -1,4 +1,4 @@
-﻿namespace Workflows.Definition.Enums
+﻿namespace Workflows.Definition.Data.Enums
 {
     public enum WaitStatus
     {

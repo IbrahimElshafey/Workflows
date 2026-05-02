@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace Workflows.Definition.DTOs
+namespace Workflows.Definition.Data.DTOs
 {
     /// <summary>
     /// DTO for SignalWait that stores signal matching and callback configuration.

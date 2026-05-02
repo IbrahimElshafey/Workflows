@@ -1,7 +1,11 @@
-﻿namespace Workflows.Sample
+﻿using WorkflowSample.DataObject;
+using Workflows;
+using Workflows.Definition;
+
+namespace WorkflowSample
 {
     // --- The Workflow Definition ---
-    public class OrderProcessingWorkflow : Definition.WorkflowContainer
+    public class OrderProcessingWorkflow : WorkflowContainer
     {
         // Workflow State: This will be serialized and persisted automatically
         public int CurrentOrderId { get; set; }
@@ -11,7 +15,7 @@
         /// <summary>
         /// The main entry point for the workflow.
         /// </summary>
-        public async IAsyncEnumerable<Definition.Wait> ProcessOrderWorkflow()
+        public async IAsyncEnumerable<Wait> ProcessOrderWorkflow()
         {
             // 1. Wait for a specific signal (Order Submitted)
             yield return WaitSignal<OrderSubmittedEvent>("OrderSubmittedSignal", "Wait for Order Submission")
@@ -56,7 +60,7 @@
         /// <summary>
         /// A sub-workflow that can be reused and called from the main workflow.
         /// </summary>
-        public async IAsyncEnumerable<Definition.Wait> ShippingSubWorkflow()
+        public async IAsyncEnumerable<Wait> ShippingSubWorkflow()
         {
             yield return WaitSignal<ShippingEvent>("OrderShipped", "Wait for Courier Pickup")
                 .MatchIf(shipping => shipping.OrderId == CurrentOrderId)
