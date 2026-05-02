@@ -1,4 +1,4 @@
-namespace Workflows.Definition.Data.Enums
+namespace Workflows.Abstraction.Enums
 {
     /// <summary>
     /// Defines who receives the command result and how execution resumes.

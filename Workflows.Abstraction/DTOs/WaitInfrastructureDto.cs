@@ -1,9 +1,8 @@
-﻿
 using System;
-
 using System.Collections.Generic;
+using Workflows.Abstraction.Enums;
 
-namespace Workflows.Definition.Data.DTOs
+namespace Workflows.Abstraction.DTOs
 {
     /// <summary>
     /// Infrastructure and execution state DTO containing properties needed for persistence,
@@ -19,7 +18,7 @@ namespace Workflows.Definition.Data.DTOs
         /// <summary>
         /// Current execution status of this wait (Waiting, Completed, Cancelled, etc.).
         /// </summary>
-        public Enums.WaitStatus Status { get; internal set; } = Enums.WaitStatus.Waiting;
+        public WaitStatus Status { get; internal set; } = WaitStatus.Waiting;
 
         /// <summary>
         /// Local variables in the method at the wait point. Represents RunnerState.

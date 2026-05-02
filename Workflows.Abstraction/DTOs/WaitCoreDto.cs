@@ -1,6 +1,7 @@
-﻿using System;
+using System;
+using Workflows.Abstraction.Enums;
 
-namespace Workflows.Definition.Data.DTOs
+namespace Workflows.Abstraction.DTOs
 {
     /// <summary>
     /// Core wait configuration DTO containing only essential wait definition properties.
@@ -16,7 +17,7 @@ namespace Workflows.Definition.Data.DTOs
         /// <summary>
         /// The type of wait (Signal, Time, Command, etc.).
         /// </summary>
-        public Enums.WaitType WaitType { get; internal set; }
+        public WaitType WaitType { get; internal set; }
 
         /// <summary>
         /// Name of the method that created this wait.

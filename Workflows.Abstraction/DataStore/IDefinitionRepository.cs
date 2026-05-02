@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
-using Workflows.Definition.Data.DTOs;
+using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Abstraction.DataStore
 {
@@ -20,3 +20,4 @@ namespace Workflows.Abstraction.DataStore
         Task<CommandDefinition> GetCommandDefinitionAsync(string commandName);
     }
 }
+

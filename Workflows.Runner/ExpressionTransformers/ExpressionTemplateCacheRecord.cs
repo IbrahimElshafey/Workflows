@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 
 namespace Workflows.Runner.ExpressionTransformers
 {
-    internal class ExpressionTemplateCachRecord
+    internal class ExpressionTemplateCacheRecord
     {
         // Tier 3 Execution: (signalData, workflowInstance, closure) => bool
         public Func<object, object, object, bool> CompiledMatchDelegate { get; set; }

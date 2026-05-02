@@ -1,73 +1,57 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
-using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Definition
 {
     /// <summary>
     /// Base class for all wait types in the workflow engine.
-    /// Wraps a WaitInfrastructureDto (or derived) to provide runtime behavior and fluent configuration.
     /// </summary>
     public class Wait
     {
-        public virtual WaitInfrastructureDto ToDto() => WaitData;
-
-        internal Wait(WaitInfrastructureDto wait)
+        internal Wait(WaitType waitType, string waitName, int inCodeLine, string callerName)
         {
-            WaitData = wait;
+            Id = Guid.NewGuid();
+            WaitType = waitType;
+            WaitName = waitName;
+            InCodeLine = inCodeLine;
+            CallerName = callerName;
+            Created = DateTime.UtcNow;
         }
-        /// <summary>
-        /// The underlying infrastructure DTO containing persistence and execution state.
-        /// </summary>
-        internal WaitInfrastructureDto WaitData { get; set; }
 
-        /// <summary>
-        /// Action to execute if this wait is cancelled.
-        /// </summary>
+        internal Guid Id { get; set; }
+        internal string WaitName { get; set; }
+        internal WaitType WaitType { get; set; }
+        internal string CallerName { get; set; }
+        internal int InCodeLine { get; set; }
+        internal DateTime Created { get; set; }
+
+        internal WaitStatus Status { get; set; } = WaitStatus.Waiting;
+        internal int StateAfterWait { get; set; }
+        internal string Path { get; set; }
+        internal Guid? ParentWaitId { get; set; }
+        internal Guid RequestedByWorkflowId { get; set; }
+        internal Guid RootWorkflowId { get; set; }
+        internal Guid WorkflowStateId { get; set; }
+        internal List<Wait> ChildWaits { get; set; } = new();
+
+        internal object LocalsValue { get; set; }
+        internal string LocalsTypeName { get; set; }
+        internal DateTime? LocalsCreated { get; set; }
+
+        internal object ClosureValue { get; set; }
+        internal string ClosureTypeName { get; set; }
+        internal DateTime? ClosureCreated { get; set; }
+
         internal Func<ValueTask> CancelAction { get; set; }
 
-        /// <summary>
-        /// Reference to the workflow container that created this wait.
-        /// </summary>
         public Definition.WorkflowContainer CurrentWorkflow { get; set; }
 
-        /// <summary>
-        /// Validate delegate that used for groupMatchFilter, AfterMatchAction, CancelAction and return:
-        /// $"{method.DeclaringType.FullName}#{method.Name}"
-        /// </summary>
         internal string ValidateCallback(Delegate callback, string methodName)
         {
-            //var Name = WaitData.WaitName;
-            //var method = callback.Method;
-            //var workflowClassType = CurrentWorkflow.GetType();
-            //var declaringType = method.DeclaringType;
-            //var containerType = callback.Target?.GetType();
-
-            //var validConatinerCalss =
-            //  (declaringType == workflowClassType ||
-            //  declaringType.Name == Constants.CompilerStaticLambdas ||
-            //  declaringType.Name.StartsWith(Constants.CompilerClosurePrefix)) &&
-            //  declaringType.FullName.StartsWith(workflowClassType.FullName);
-
-            //if (validConatinerCalss is false)
-            //    throw new Exception(
-            //        $"For wait [{Name}] the [{methodName}:{method.Name}] must be a method in class " +
-            //        $"[{workflowClassType.Name}] or inline lambda method.");
-
-            //var hasOverload = workflowClassType.GetMethods(CoreExtensions.DeclaredWithinTypeFlags()).Count(x => x.Name == method.Name) > 1;
-            //if (hasOverload)
-            //    throw new Exception(
-            //        $"For wait [{Name}] the [{methodName}:{method.Name}] must not be over-loaded.");
-            //if (declaringType.Name.StartsWith(Constants.CompilerClosurePrefix))
-            //    SetClosureObject(callback.Target);
-            //return $"{method.DeclaringType.FullName}#{method.Name}";
             return null;
         }
 
-        /// <summary>
-        /// Callback execusted when the wait canceled because it's a part of wait group that one match is sufficent
-        /// </summary>
-        /// <param name="cancelAction">Action to execute when cancel</param>
         public Wait OnCanceled(Func<ValueTask> cancelAction)
         {
             CancelAction = cancelAction;
@@ -76,26 +60,6 @@ namespace Workflows.Definition
 
         internal void SetClosureObject(object closure)
         {
-            //var ClosureObject = this.WaitData.ClosureObject;
-            //if (closure == null) return;
-            //if (ClosureObject == null)
-            //{
-            //    ClosureObject = closure;
-            //    return;
-            //}
-
-            //var currentClosureType = ClosureObject.GetType();
-            //var incomingClosureType = closure.GetType();
-            //var nestedClosure =
-            //    currentClosureType.Name.StartsWith(Constants.CompilerClosurePrefix) is true &&
-            //    incomingClosureType.Name.StartsWith(Constants.CompilerClosurePrefix);
-            //var sameType = currentClosureType == incomingClosureType;
-            //if (sameType is false && nestedClosure is false)
-            //{
-            //    throw new Exception(
-            //        $"For method wait [{WaitData.WaitName}] the closure must be the same for AfterMatchAction, CancelAction, and MatchExpression.");
-            //}
-            //ClosureObject = closure;
         }
     }
 }

@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Workflows.Abstraction.Enums;
-using Workflows.Definition.Data.DTOs;
+using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Abstraction.DTOs
 {
@@ -44,3 +44,4 @@ namespace Workflows.Abstraction.DTOs
         public string WorkflowType { get; internal set; }
     }
 }
+

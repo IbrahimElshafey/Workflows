@@ -1,7 +1,7 @@
 using System;
-using Workflows.Definition.Data.Enums;
+using Workflows.Abstraction.Enums;
 
-namespace Workflows.Definition.Data.DTOs
+namespace Workflows.Abstraction.DTOs
 {
     /// <summary>
     /// DTO for Command that stores command execution configuration.

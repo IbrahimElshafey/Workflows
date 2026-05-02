@@ -1,4 +1,6 @@
-﻿namespace Workflows.Definition.Data.DTOs
+using Workflows.Abstraction.Enums;
+
+namespace Workflows.Abstraction.DTOs
 {
     /// <summary>
     /// DTO for GroupWait that stores composite wait configuration.
@@ -8,7 +10,7 @@
     {
         internal WaitsGroupDto()
         {
-            WaitType = Enums.WaitType.GroupWaitAll;
+            WaitType = WaitType.GroupWaitAll;
         }
 
         /// <summary>

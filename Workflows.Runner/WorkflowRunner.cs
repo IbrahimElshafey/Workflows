@@ -10,8 +10,6 @@ using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Runner;
-using Workflows.Definition.Data.DTOs;
-using Workflows.Definition.Data.Enums;
 using Workflows.Runner.ExpressionTransformers;
 
 namespace Workflows.Runner
@@ -122,7 +120,7 @@ namespace Workflows.Runner
                 }
                 else
                 {
-                    var nextWaitDto = nextWait.ToDto();
+                    var nextWaitDto = MapWaitToDto(nextWait);
                     nextWaitDto.ParentWaitId = incomingWait.ParentWaitId;
                     nextWaitDto.RequestedByWorkflowId = incomingWait.RequestedByWorkflowId;
                     nextWaitDto.RootWorkflowId = incomingWait.RootWorkflowId;
@@ -367,13 +365,13 @@ namespace Workflows.Runner
                 if (nextWait is Definition.ICommandWait command)
                 {
                     var handler = _commandHandlerFactory.GetHandler(command.HandlerKey);
-                    await handler.ExecuteAsync(command, runContext);
+                    await handler.ExecuteAsync(new CommandWaitAdapter(command), runContext);
 
-                    if (command.ExecutionMode == CommandExecutionMode.Direct)
+                    if (command.ExecutionMode == Definition.CommandExecutionMode.Direct)
                     {
                         // Auto-advance: capture state so we can resume, but do not suspend
                         CaptureRunnerState(runner, previousWait, nextWait);
-                        previousWait = nextWait.ToDto();
+                        previousWait = MapWaitToDto(nextWait);
                         continue;
                     }
 
@@ -520,7 +518,8 @@ namespace Workflows.Runner
 
         private void CaptureRunnerState(IAsyncEnumerator<Definition.Wait> runner, WaitInfrastructureDto previousWait, Definition.Wait nextWait)
         {
-            if (nextWait?.ToDto() is not WaitInfrastructureDto nextWaitDto)
+            var nextWaitDto = MapWaitToDto(nextWait);
+            if (nextWaitDto == null)
                 return;
 
             var runnerType = runner.GetType();
@@ -543,12 +542,120 @@ namespace Workflows.Runner
             }
         }
 
+        private static WaitInfrastructureDto MapWaitToDto(Definition.Wait wait)
+        {
+            if (wait == null)
+                return null;
+
+            WaitInfrastructureDto dto = wait switch
+            {
+                Definition.SubWorkflowWait => new SubWorkflowWaitDto(),
+                Definition.GroupWait => new WaitsGroupDto(),
+                Definition.TimeWait => new TimeWaitDto(),
+                Definition.ISignalWait => new SignalWaitDto(),
+                Definition.ICommandWait => new CommandWaitDto(),
+                _ => new TimeWaitDto()
+            };
+
+            CopyBase(wait, dto);
+
+            switch (dto)
+            {
+                case SignalWaitDto signalDto:
+                    signalDto.SignalIdentifier = (string?)wait.GetType().GetProperty("SignalIdentifier", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait);
+                    signalDto.TemplateHashKey = wait.GetType().GetProperty("TemplateHashKey", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait);
+                    break;
+
+                case TimeWaitDto timeDto:
+                    timeDto.TimeToWait = (TimeSpan)(wait.GetType().GetProperty("TimeToWait", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait) ?? default(TimeSpan));
+                    timeDto.UniqueMatchId = (string?)wait.GetType().GetProperty("UniqueMatchId", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait);
+                    timeDto.CancelAction = (string?)wait.GetType().GetProperty("CancelActionSerialized", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait);
+                    break;
+
+                case WaitsGroupDto groupDto:
+                    groupDto.MatchFuncName = (string?)wait.GetType().GetProperty("MatchFuncName", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait);
+                    break;
+
+                case CommandWaitDto commandDto:
+                    commandDto.CommandData = wait.GetType().GetProperty("CommandData", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait);
+                    commandDto.MaxRetryAttempts = (int)(wait.GetType().GetProperty("MaxRetryAttempts", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait) ?? 1);
+                    commandDto.RetryBackoff = (TimeSpan?)wait.GetType().GetProperty("RetryBackoff", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait);
+                    commandDto.CompensationMethodName = (string?)wait.GetType().GetProperty("CompensationMethodName", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait);
+                    commandDto.CancelAction = (string?)wait.GetType().GetProperty("CancelActionSerialized", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait);
+                    commandDto.ResultAction = (string?)wait.GetType().GetProperty("ResultActionSerialized", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait);
+                    commandDto.HandlerKey = (string?)wait.GetType().GetProperty("HandlerKey", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait);
+                    var execMode = (Definition.CommandExecutionMode?)(wait.GetType().GetProperty("ExecutionMode", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(wait));
+                    commandDto.ExecutionMode = execMode == Definition.CommandExecutionMode.Indirect ? CommandExecutionMode.Indirect : CommandExecutionMode.Direct;
+                    break;
+            }
+
+            if (wait.ChildWaits != null && wait.ChildWaits.Count > 0)
+            {
+                dto.ChildWaits = wait.ChildWaits.Select(MapWaitToDto).Where(x => x != null).ToList();
+            }
+
+            return dto;
+        }
+
+        private static void CopyBase(Definition.Wait wait, WaitInfrastructureDto dto)
+        {
+            dto.Id = wait.Id;
+            dto.WaitName = wait.WaitName;
+            dto.WaitType = (WaitType)(int)wait.WaitType;
+            dto.CallerName = wait.CallerName;
+            dto.InCodeLine = wait.InCodeLine;
+            dto.Created = wait.Created;
+            dto.Status = (WaitStatus)(int)wait.Status;
+            dto.StateAfterWait = wait.StateAfterWait;
+            dto.Path = wait.Path;
+            dto.ParentWaitId = wait.ParentWaitId;
+            dto.RequestedByWorkflowId = wait.RequestedByWorkflowId;
+            dto.RootWorkflowId = wait.RootWorkflowId;
+            dto.WorkflowStateId = wait.WorkflowStateId;
+
+            if (wait.LocalsCreated.HasValue)
+            {
+                dto.Locals = new PrivateData
+                {
+                    Value = wait.LocalsValue,
+                    TypeName = wait.LocalsTypeName,
+                    Created = wait.LocalsCreated.Value
+                };
+            }
+
+            if (wait.ClosureCreated.HasValue)
+            {
+                dto.ClosureData = new PrivateData
+                {
+                    Value = wait.ClosureValue,
+                    TypeName = wait.ClosureTypeName,
+                    Created = wait.ClosureCreated.Value
+                };
+            }
+        }
+
+        private sealed class CommandWaitAdapter : Workflows.Abstraction.Runner.ICommandWait
+        {
+            private readonly Definition.ICommandWait _inner;
+
+            public CommandWaitAdapter(Definition.ICommandWait inner)
+            {
+                _inner = inner;
+            }
+
+            public string HandlerKey => _inner.HandlerKey;
+
+            public CommandExecutionMode ExecutionMode => _inner.ExecutionMode == Definition.CommandExecutionMode.Indirect
+                ? CommandExecutionMode.Indirect
+                : CommandExecutionMode.Direct;
+        }
+
         private void PrepareSubWorkflowWaitForPersistence(Definition.SubWorkflowWait subWorkflowWait, SubWorkflowWaitDto subWorkflowWaitDto)
         {
             if (subWorkflowWait.FirstWait == null)
                 return;
 
-            var firstWaitDto = subWorkflowWait.FirstWait;
+            var firstWaitDto = MapWaitToDto(subWorkflowWait.FirstWait);
             subWorkflowWaitDto.ChildWaits = new List<WaitInfrastructureDto> { firstWaitDto };
 
             PrepareWaitDtoTreeForPersistence(firstWaitDto, subWorkflowWaitDto.Id);

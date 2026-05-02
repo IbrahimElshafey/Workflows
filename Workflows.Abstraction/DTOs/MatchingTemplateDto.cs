@@ -1,6 +1,6 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
-namespace Workflows.Definition.Data.DTOs
+namespace Workflows.Abstraction.DTOs
 {
     public class MatchingTemplateDto
     {
@@ -8,6 +8,7 @@ namespace Workflows.Definition.Data.DTOs
         /// Serialized match expression for filtering incoming signals.
         /// </summary>
         public string MatchExpression { get; set; }
+
         /// <summary>
         /// Hash of the match expression for optimization and deduplication.
         /// </summary>

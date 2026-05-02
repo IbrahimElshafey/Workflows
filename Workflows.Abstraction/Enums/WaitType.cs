@@ -1,4 +1,4 @@
-﻿namespace Workflows.Definition.Data.Enums
+namespace Workflows.Abstraction.Enums
 {
     public enum WaitType
     {

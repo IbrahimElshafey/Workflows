@@ -1,5 +1,5 @@
-﻿using System;
-using Workflows.Definition.Data.Enums;
+using System;
+using Workflows.Abstraction.Enums;
 
 namespace Workflows.Abstraction.DTOs
 {

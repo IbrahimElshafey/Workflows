@@ -5,6 +5,8 @@ using System.Linq.Expressions;
 
 namespace Workflows.Runner
 {
+    //todo: delete this class
+    //and use MatchExpressionTemplateCache instead, which will cache the compiled expression template and the compiled match function separately, so that we can reuse the compiled match function for different waits with the same match expression template.
     internal class MatchExpressionCache
     {
         private readonly ConcurrentDictionary<string, Func<object, object, bool>> _cache = new();

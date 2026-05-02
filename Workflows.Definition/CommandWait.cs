@@ -1,15 +1,8 @@
 using System;
 using System.Threading.Tasks;
-using Workflows.Definition.Data.DTOs;
-using Workflows.Definition.Data.Enums;
 
 namespace Workflows.Definition
 {
-    /// <summary>
-    /// Represents an active wait for an external command to complete.
-    /// Commands are side-effecting operations that must execute,
-    /// so they cannot be mixed with passive waits in MatchAny() scenarios.
-    /// </summary>
     public class CommandWait<TCommand, TResult> : Wait, ICommandWait
     {
         internal TResult CommandResult { get; set; }
@@ -17,36 +10,25 @@ namespace Workflows.Definition
         internal Action<TResult> OnResultAction { get; set; }
         internal Action CompensationAction { get; set; }
 
-        internal CommandWaitDto Data { get; }
+        internal int MaxRetryAttempts { get; set; } = 1;
+        internal TimeSpan? RetryBackoff { get; set; }
+        internal string CompensationMethodName { get; set; }
+        internal string CancelActionSerialized { get; set; }
+        internal string ResultActionSerialized { get; set; }
+        internal string HandlerKey { get; set; }
+        internal CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.Direct;
 
-        /// <summary>
-        /// Internal constructor accepting command name and data.
-        /// Initializes the CommandWaitDto with the serialized command payload.
-        /// </summary>
-        internal CommandWait(string commandName, TCommand data) : base(new CommandWaitDto
+        internal CommandWait(string commandName, TCommand data) : base(WaitType.Command, commandName, 0, null)
         {
-            WaitName = commandName,
-            WaitType = WaitType.Command,
-            Created = DateTime.UtcNow,
-        })
-        {
-            Data = (CommandWaitDto)WaitData;
             CommandData = data;
         }
 
-        /// <summary>
-        /// Registers a callback to execute when the command completes successfully.
-        /// </summary>
         public Definition.CommandWait<TCommand, TResult> OnResult(Action<TResult> onSuccess)
         {
             OnResultAction = onSuccess;
             return this;
         }
 
-        /// <summary>
-        /// Registers a callback to execute when the command completes successfully.
-        /// Supports async Task callbacks.
-        /// </summary>
         public Definition.CommandWait<TCommand, TResult> OnResult(Func<TResult, Task> onSuccess)
         {
             if (onSuccess != null)
@@ -59,38 +41,27 @@ namespace Workflows.Definition
             return this;
         }
 
-        /// <summary>
-        /// Updates the DTO retry settings.
-        /// </summary>
         public Definition.CommandWait<TCommand, TResult> WithRetries(int maxAttempts, TimeSpan? backoff = null)
         {
             if (maxAttempts < 1)
             {
                 throw new ArgumentException("Max attempts must be at least 1", nameof(maxAttempts));
             }
-            Data.MaxRetryAttempts = maxAttempts;
-            Data.RetryBackoff = backoff;
+            MaxRetryAttempts = maxAttempts;
+            RetryBackoff = backoff;
             return this;
         }
 
-        /// <summary>
-        /// Registers a compensation action to run if the workflow rolls back.
-        /// </summary>
         public Definition.CommandWait<TCommand, TResult> RegisterCompensation(Action compensationAction)
         {
             CompensationAction = compensationAction;
             return this;
         }
 
-        /// <summary>
-        /// Registers a compensation action to run if the workflow rolls back.
-        /// Supports async Task callbacks.
-        /// </summary>
         public Definition.CommandWait<TCommand, TResult> RegisterCompensation(Func<Task> compensationAction)
         {
             if (compensationAction != null)
             {
-                //tod:revist this to not use Wait
                 CompensationAction = () =>
                 {
                     compensationAction().Wait();
@@ -99,29 +70,22 @@ namespace Workflows.Definition
             return this;
         }
 
-        /// <inheritdoc/>
-        string ICommandWait.HandlerKey => Data.HandlerKey;
+        string ICommandWait.HandlerKey => HandlerKey;
 
-        /// <inheritdoc/>
-        CommandExecutionMode ICommandWait.ExecutionMode => Data.ExecutionMode;
+        CommandExecutionMode ICommandWait.ExecutionMode => ExecutionMode;
 
-        /// <summary>
-        /// Sets the handler key used to resolve the command handler from ICommandHandlerFactory.
-        /// </summary>
         public Definition.CommandWait<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Direct)
         {
-            Data.HandlerKey = key;
-            Data.ExecutionMode = mode;
+            HandlerKey = key;
+            ExecutionMode = mode;
             return this;
         }
 
-        /// <summary>
-        /// Sets the execution mode for this command (Fast or Slow).
-        /// </summary>
         public Definition.CommandWait<TCommand, TResult> WithExecutionMode(CommandExecutionMode mode)
         {
-            Data.ExecutionMode = mode;
+            ExecutionMode = mode;
             return this;
         }
     }
 }
+

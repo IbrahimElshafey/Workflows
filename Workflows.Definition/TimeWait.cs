@@ -1,21 +1,20 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Definition
 {
-    /// <summary>
-    /// Represents a passive wait for a specified time duration or until a specific time.
-    /// Time-based waits do not initiate side effects, so they can be safely combined
-    /// with other passive waits in group scenarios.
-    /// </summary>
     public class TimeWait : Wait, IPassiveWait
     {
-        internal TimeWaitDto Data { get; }
-        internal TimeWait(TimeWaitDto waitData) : base(waitData)
+        internal TimeWait(string waitName, TimeSpan timeToWait, string uniqueMatchId, int inCodeLine, string callerName)
+            : base(WaitType.SignalWait, waitName, inCodeLine, callerName)
         {
-            Data = waitData;
+            TimeToWait = timeToWait;
+            UniqueMatchId = uniqueMatchId;
         }
+
+        internal TimeSpan TimeToWait { get; set; }
+        internal string UniqueMatchId { get; set; }
+        internal string CancelActionSerialized { get; set; }
 
         public HashSet<string> CancelTokens { get; set; }
 

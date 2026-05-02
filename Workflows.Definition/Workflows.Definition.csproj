@@ -17,8 +17,5 @@
 			<_Parameter1>Workflows.Runner</_Parameter1>
 		</AssemblyAttribute>
 	</ItemGroup>
-	<ItemGroup>
-		<PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
-	</ItemGroup>
 
 </Project>

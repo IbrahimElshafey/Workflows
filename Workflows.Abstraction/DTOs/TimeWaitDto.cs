@@ -1,6 +1,6 @@
-﻿using System;
+using System;
 
-namespace Workflows.Definition.Data.DTOs
+namespace Workflows.Abstraction.DTOs
 {
     /// <summary>
     /// DTO for TimeWait that stores time-based wait configuration.

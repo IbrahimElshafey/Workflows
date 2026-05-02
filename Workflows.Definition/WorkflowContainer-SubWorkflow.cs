@@ -1,10 +1,7 @@
-﻿
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
-using Workflows.Definition.Data.DTOs;
-using Workflows.Definition.Data.Enums;
 using Workflows.Definition.Helpers;
 
 namespace Workflows.Definition
@@ -21,18 +18,15 @@ namespace Workflows.Definition
             var runnerName = runner.GetType().Name;
             var workflowName = Regex.Match(runnerName, "<(.+)>").Groups[1].Value;
             var workflowInfo = GetType().GetMethod(workflowName, CoreExtensions.DeclaredWithinTypeFlags());
-            var result = new SubWorkflowWait(new SubWorkflowWaitDto
-            {
-                WaitName = name ?? $"#Wait Workflow `{workflowName}`",
-                WaitType = WaitType.SubWorkflowWait,
-                CallerName = callerName,
-                InCodeLine = inCodeLine,
-                Created = DateTime.UtcNow,
-            })
+            var result = new SubWorkflowWait(
+                name ?? $"#Wait Workflow `{workflowName}`",
+                inCodeLine,
+                callerName)
             {
                 CurrentWorkflow = this,
                 SubWorkflowMethodInfo = workflowInfo,
-                Runner = runner
+                Runner = runner,
+                WaitType = WaitType.SubWorkflowWait
             };
             return result;
         }

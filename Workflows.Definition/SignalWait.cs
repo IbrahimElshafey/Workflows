@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
-using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Definition
 {
@@ -15,12 +14,24 @@ namespace Workflows.Definition
     {
         internal Action<SignalData> AfterMatchAction { get; set; }
 
-        internal SignalWait(SignalWaitDto data) : base(data) { Data = data; }
-
-        internal SignalWaitDto Data { get; private set; }
-
+        internal SignalWait(string signalIdentifier, string waitName, int inCodeLine, string callerName)
+            : base(WaitType.SignalWait, waitName, inCodeLine, callerName)
+        {
+            SignalIdentifier = signalIdentifier;
+        }
 
         internal LambdaExpression MatchExpression { get; set; }
+
+        internal object TemplateHashKey { get; set; }
+        internal string MatchExpressionSerialized { get; set; }
+        internal string GenericMatchExpressionSerialized { get; set; }
+        internal bool IsGenericMatchFullMatch { get; set; }
+        internal string AfterMatchActionSerialized { get; set; }
+        internal string CancelActionSerialized { get; set; }
+        internal string ExactMatchPartSerialized { get; set; }
+        internal bool IsExactMatchFullMatch { get; set; }
+        internal List<string> SignalExactMatchPaths { get; set; }
+        internal string SignalIdentifier { get; set; }
 
         LambdaExpression ISignalWait.MatchExpression
         {
@@ -50,7 +61,7 @@ namespace Workflows.Definition
             [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             MatchExpression = matchExpression;
-            Data.TemplateHashKey = CalcMatchExpressionHash(callerFilePath, callerLineNumber, expression);
+            TemplateHashKey = CalcMatchExpressionHash(callerFilePath, callerLineNumber, expression);
             return this;
         }
 
@@ -64,8 +75,6 @@ namespace Workflows.Definition
             AfterMatchAction = null;
             return this;
         }
-
-
 
         public HashSet<string> CancelTokens { get; set; }
 

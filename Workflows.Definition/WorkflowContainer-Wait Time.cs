@@ -1,6 +1,5 @@
-﻿using System;
+using System;
 using System.Runtime.CompilerServices;
-using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Definition
 {
@@ -17,15 +16,12 @@ namespace Workflows.Definition
                 throw new ArgumentException("Until date should be in the future", nameof(untilTime));
             }
             var timeToWait = untilTime - DateTime.UtcNow;
-            Definition.TimeWait newTimeWait = new Definition.TimeWait(new TimeWaitDto
-            {
-                WaitName = name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
-                TimeToWait = timeToWait,
-                UniqueMatchId = Guid.NewGuid().ToString(),
-                InCodeLine = inCodeLine,
-                CallerName = callerName,
-                Created = DateTime.UtcNow
-            })
+            Definition.TimeWait newTimeWait = new Definition.TimeWait(
+                name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
+                timeToWait,
+                Guid.NewGuid().ToString(),
+                inCodeLine,
+                callerName)
             {
                 CurrentWorkflow = this
             };
@@ -42,15 +38,12 @@ namespace Workflows.Definition
             {
                 throw new ArgumentException("Time to wait should be greater than 0", nameof(timeToWait));
             }
-            return new Definition.TimeWait(new TimeWaitDto
-            {
-                WaitName = name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
-                TimeToWait = timeToWait,
-                UniqueMatchId = Guid.NewGuid().ToString(),
-                InCodeLine = inCodeLine,
-                CallerName = callerName,
-                Created = DateTime.UtcNow
-            })
+            return new Definition.TimeWait(
+                name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
+                timeToWait,
+                Guid.NewGuid().ToString(),
+                inCodeLine,
+                callerName)
             {
                 CurrentWorkflow = this
             };

@@ -4,14 +4,14 @@ namespace Workflows.Runner.ExpressionTransformers
 {
     internal class MatchExpressionTemplateCache
     {
-        private readonly ConcurrentDictionary<string, ExpressionTemplateCachRecord> _cache = new();
+        private readonly ConcurrentDictionary<string, ExpressionTemplateCacheRecord> _cache = new();
 
-        public bool TryGetValue(string key, out ExpressionTemplateCachRecord compiledParts)
+        public bool TryGetValue(string key, out ExpressionTemplateCacheRecord compiledParts)
         {
             return _cache.TryGetValue(key, out compiledParts);
         }
 
-        public bool TryAdd(string key, ExpressionTemplateCachRecord compiledParts)
+        public bool TryAdd(string key, ExpressionTemplateCacheRecord compiledParts)
         {
             return _cache.TryAdd(key, compiledParts);
         }

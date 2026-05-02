@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace Workflows.Definition.Data.DTOs
+namespace Workflows.Abstraction.DTOs
 {
     public class RegistrationError
     {

@@ -1,6 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using Workflows.Definition.Data.DTOs;
+using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Abstraction.DTOs
 {

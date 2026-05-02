@@ -1,16 +1,11 @@
-﻿
 using System;
-
 using System.Linq;
 using System.Runtime.CompilerServices;
-using Workflows.Definition.Data.DTOs;
-using Workflows.Definition.Data.Enums;
 
 namespace Workflows.Definition
 {
     public abstract partial class WorkflowContainer
     {
-
         protected Definition.SignalWait<SignalData> WaitSignal<SignalData>(
             string signalIdentifier,
             string name = null,
@@ -18,25 +13,17 @@ namespace Workflows.Definition
             [CallerMemberName] string callerName = ""
             )
         {
-            Definition.SignalWait<SignalData> newSignalWait = new Definition.SignalWait<SignalData>(new SignalWaitDto
-            {
-                SignalIdentifier = signalIdentifier,
-                WaitName = name,
-                WaitType = WaitType.SignalWait,
-                InCodeLine = inCodeLine,
-                CallerName = callerName,
-                Created = DateTime.UtcNow,
-            })
+            var newSignalWait = new Definition.SignalWait<SignalData>(
+                signalIdentifier,
+                name,
+                inCodeLine,
+                callerName)
             {
                 CurrentWorkflow = this
             };
             return newSignalWait;
         }
 
-        /// <summary>
-        /// Creates a group of passive waits that can use any matching strategy (MatchAll, MatchAny, MatchIf).
-        /// Only passive waits (signals, timers, sub-workflows) are allowed to prevent race conditions.
-        /// </summary>
         protected Definition.GroupWait WaitGroup(
             Definition.IPassiveWait[] passiveWaits,
             string name = null,
@@ -48,31 +35,21 @@ namespace Workflows.Definition
                 throw new ArgumentNullException($"The group wait named [{name}] contains wait that is null.");
             }
 
-            // Convert IPassiveWait markers to Wait instances for internal use
             var waits = passiveWaits.Cast<Definition.Wait>().ToArray();
 
             var group = new Definition.GroupWait(
-                new WaitsGroupDto
-                {
-                    WaitName = name ?? $"#Wait Group `{inCodeLine}` by `{callerName}`",
-                    ChildWaits = waits.Select(x => x.WaitData).ToList(),
-                    WaitType = WaitType.GroupWaitAll,
-                    InCodeLine = inCodeLine,
-                    CallerName = callerName,
-                    Created = DateTime.UtcNow
-                },
-                waits)
-            ;
-            group.CurrentWorkflow = this;
-            group.WaitData.ChildWaits.ForEach(wait => wait.ParentWaitId = group.WaitData.Id);
+                name ?? $"#Wait Group `{inCodeLine}` by `{callerName}`",
+                waits,
+                inCodeLine,
+                callerName)
+            {
+                CurrentWorkflow = this,
+                WaitType = WaitType.GroupWaitAll
+            };
+            group.ChildWaits.ForEach(wait => wait.ParentWaitId = group.Id);
             return group;
         }
 
-        /// <summary>
-        /// Creates a parallel group of active commands that execute with MatchAll semantics.
-        /// Commands cannot use MatchAny() to prevent multiple commands from executing in a race condition.
-        /// This method enforces MatchAll() immediately to prevent the workflow author from changing it.
-        /// </summary>
         protected Definition.GroupWait ExecuteParallel(
             Definition.ICommandWait[] commands,
             string name = null,
@@ -84,31 +61,22 @@ namespace Workflows.Definition
                 throw new ArgumentNullException($"The parallel command group named [{name}] contains a command that is null.");
             }
 
-            // Convert ICommandWait markers to Wait instances for internal use
             var waits = commands.Cast<Definition.Wait>().ToArray();
 
             var group = new Definition.GroupWait(
-                new WaitsGroupDto
-                {
-                    WaitName = name ?? $"#Parallel Commands `{inCodeLine}` by `{callerName}`",
-                    ChildWaits = waits.Select(x => x.WaitData).ToList(),
-                    WaitType = WaitType.CommandsGroup,
-                    InCodeLine = inCodeLine,
-                    CallerName = callerName,
-                    Created = DateTime.UtcNow
-                },
-                waits)
-            ;
-            group.CurrentWorkflow = this;
-            group.WaitData.ChildWaits.ForEach(wait => wait.ParentWaitId = group.WaitData.Id);
+                name ?? $"#Parallel Commands `{inCodeLine}` by `{callerName}`",
+                waits,
+                inCodeLine,
+                callerName)
+            {
+                CurrentWorkflow = this,
+                WaitType = WaitType.CommandsGroup
+            };
+            group.ChildWaits.ForEach(wait => wait.ParentWaitId = group.Id);
 
-            // Instantly call MatchAll() and return - prevents workflow author from changing matching strategy
             return group.MatchAll() as Definition.GroupWait;
         }
 
-        /// <summary>
-        /// Creates a single command wait that can be configured with retry, compensation, and result handlers.
-        /// </summary>
         protected Definition.CommandWait<TCommand, TResult> ExecuteCommand<TCommand, TResult>(
             string commandName,
             TCommand data,
@@ -122,10 +90,10 @@ namespace Workflows.Definition
 
             var commandWait = new Definition.CommandWait<TCommand, TResult>(commandName, data)
             {
-                CurrentWorkflow = this
+                CurrentWorkflow = this,
+                InCodeLine = inCodeLine,
+                CallerName = callerName
             };
-            commandWait.Data.InCodeLine = inCodeLine;
-            commandWait.Data.CallerName = callerName;
 
             return commandWait;
         }
