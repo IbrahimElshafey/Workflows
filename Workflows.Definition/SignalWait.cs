@@ -11,7 +11,7 @@ namespace Workflows.Definition
     /// Signals do not initiate side effects, so they can be safely combined
     /// with other passive waits in group scenarios.
     /// </summary>
-    public partial class SignalWait<SignalData> : Definition.Wait, Definition.IPassiveWait, ISignalWait
+    public partial class SignalWait<SignalData> : Wait, IPassiveWait, ISignalWait
     {
         internal Action<SignalData> AfterMatchAction { get; set; }
 
@@ -28,13 +28,13 @@ namespace Workflows.Definition
             set => MatchExpression = value;
         }
 
-        public Definition.SignalWait<SignalData> AfterMatch(Action<SignalData> afterMatchAction)
+        public SignalWait<SignalData> AfterMatch(Action<SignalData> afterMatchAction)
         {
             AfterMatchAction = afterMatchAction;
             return this;
         }
 
-        public Definition.SignalWait<SignalData> MatchAny(bool condition = true)
+        public SignalWait<SignalData> MatchAny(bool condition = true)
         {
             if (condition)
             {
@@ -43,14 +43,14 @@ namespace Workflows.Definition
             return this;
         }
 
-        public Definition.SignalWait<SignalData> MatchIf(
+        public SignalWait<SignalData> MatchIf(
             Expression<Func<SignalData, bool>> matchExpression,
             [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int callerLineNumber = 0,
             [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             MatchExpression = matchExpression;
-            Data.MatchExpressionHash = CalcMatchExpressionHash(callerFilePath, callerLineNumber, expression);
+            Data.TemplateHashKey = CalcMatchExpressionHash(callerFilePath, callerLineNumber, expression);
             return this;
         }
 
@@ -59,25 +59,17 @@ namespace Workflows.Definition
             throw new NotImplementedException();
         }
 
-        public Definition.SignalWait<SignalData> NoActionAfterMatch()
+        public SignalWait<SignalData> NoActionAfterMatch()
         {
             AfterMatchAction = null;
             return this;
         }
 
-        /// <summary>
-        /// Callback execusted when the wait canceled because it's a part of wait group that one match is sufficent
-        /// </summary>
-        /// <param name="cancelAction">Action to execute when cancel</param>
-        public Definition.SignalWait<SignalData> WhenCancel(Action cancelAction)
-        {
-            CancelAction = cancelAction;
-            return this;
-        }
+
 
         public HashSet<string> CancelTokens { get; set; }
 
-        public Definition.SignalWait<SignalData> WithCancelToken(string token)
+        public SignalWait<SignalData> WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token)) return this;
             CancelTokens ??= new HashSet<string>();
@@ -85,6 +77,6 @@ namespace Workflows.Definition
             return this;
         }
 
-        Definition.IPassiveWait Definition.IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
+        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
     }
 }

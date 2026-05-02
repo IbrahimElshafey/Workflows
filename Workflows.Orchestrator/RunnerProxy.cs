@@ -5,11 +5,11 @@ using Workflows.Abstraction.Runner;
 
 namespace Workflows.Orchestrator
 {
-    public class OrchestratorRunnerProxy : IWorkflowRunner
+    public class RunnerProxy : IWorkflowRunner
     {
         private readonly IMessageDispatcher _dispatcher;
 
-        public OrchestratorRunnerProxy(IMessageDispatcher dispatcher)
+        public RunnerProxy(IMessageDispatcher dispatcher)
         {
             _dispatcher = dispatcher;
         }

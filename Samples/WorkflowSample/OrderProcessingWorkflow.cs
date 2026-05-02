@@ -68,7 +68,13 @@ namespace WorkflowSample
                     shipping =>
                     {
                         Console.WriteLine($"[SubWorkflow] Order shipped! Tracking: {shipping.TrackingNumber}");
-                    });
+                    })
+                .WithCancelToken("sdldfjk")
+                .OnCanceled(async () =>
+                {
+                    Console.WriteLine($"[SubWorkflow] Order shipment canceled for Order {CurrentOrderId}");
+                    await Task.CompletedTask;
+                });
         }
 
         // Optional Overrides from WorkflowContainer

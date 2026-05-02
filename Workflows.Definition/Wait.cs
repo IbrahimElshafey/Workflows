@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using Workflows.Definition.Data.DTOs;
 
 namespace Workflows.Definition
@@ -15,7 +16,6 @@ namespace Workflows.Definition
         {
             WaitData = wait;
         }
-
         /// <summary>
         /// The underlying infrastructure DTO containing persistence and execution state.
         /// </summary>
@@ -24,7 +24,7 @@ namespace Workflows.Definition
         /// <summary>
         /// Action to execute if this wait is cancelled.
         /// </summary>
-        internal Action CancelAction { get; set; }
+        internal Func<ValueTask> CancelAction { get; set; }
 
         /// <summary>
         /// Reference to the workflow container that created this wait.
@@ -62,6 +62,16 @@ namespace Workflows.Definition
             //    SetClosureObject(callback.Target);
             //return $"{method.DeclaringType.FullName}#{method.Name}";
             return null;
+        }
+
+        /// <summary>
+        /// Callback execusted when the wait canceled because it's a part of wait group that one match is sufficent
+        /// </summary>
+        /// <param name="cancelAction">Action to execute when cancel</param>
+        public Wait OnCanceled(Func<ValueTask> cancelAction)
+        {
+            CancelAction = cancelAction;
+            return this;
         }
 
         internal void SetClosureObject(object closure)

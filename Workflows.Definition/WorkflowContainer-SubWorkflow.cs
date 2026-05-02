@@ -1,11 +1,11 @@
 ﻿
 using System;
-using System.Text.RegularExpressions;
-using Workflows.Definition.Data.Enums;
-using Workflows.Definition.Helpers;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Workflows.Definition.Data.DTOs;
+using Workflows.Definition.Data.Enums;
+using Workflows.Definition.Helpers;
 
 namespace Workflows.Definition
 {

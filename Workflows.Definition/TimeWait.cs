@@ -9,22 +9,17 @@ namespace Workflows.Definition
     /// Time-based waits do not initiate side effects, so they can be safely combined
     /// with other passive waits in group scenarios.
     /// </summary>
-    public class TimeWait : Definition.Wait, Definition.IPassiveWait
+    public class TimeWait : Wait, IPassiveWait
     {
         internal TimeWaitDto Data { get; }
         internal TimeWait(TimeWaitDto waitData) : base(waitData)
         {
             Data = waitData;
         }
-        public Definition.TimeWait WhenCancel(Action cancelAction)
-        {
-            CancelAction = cancelAction;
-            return this;
-        }
 
         public HashSet<string> CancelTokens { get; set; }
 
-        public Definition.TimeWait WithCancelToken(string token)
+        public TimeWait WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token)) return this;
             CancelTokens ??= new HashSet<string>();
@@ -32,6 +27,6 @@ namespace Workflows.Definition
             return this;
         }
 
-        Definition.IPassiveWait Definition.IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
+        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
     }
 }

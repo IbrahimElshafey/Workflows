@@ -2,18 +2,12 @@
 
 namespace Workflows.Definition.Data.DTOs
 {
-    /// <summary>
-    /// DTO for SignalWait that stores signal matching and callback configuration.
-    /// Inherits from WaitInfrastructureDto to maintain compatibility with persistence infrastructure.
-    /// </summary>
-    public class SignalWaitDto : WaitInfrastructureDto
+    public class MatchingTemplateDto
     {
-        public MatchingTemplateDto MatchingTemplate { get; set; }
         /// <summary>
         /// Serialized match expression for filtering incoming signals.
         /// </summary>
         public string MatchExpression { get; set; }
-
         /// <summary>
         /// Hash of the match expression for optimization and deduplication.
         /// </summary>
@@ -43,11 +37,6 @@ namespace Workflows.Definition.Data.DTOs
         /// Unique identifier for the signal being awaited.
         /// </summary>
         public string SignalIdentifier { get; set; }
-
-        /// <summary>
-        /// Exact match part of the filter expression.
-        /// </summary>
-        public string ExactMatchPart { get; internal set; }
 
         /// <summary>
         /// Whether the exact match covers the full match.

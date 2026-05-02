@@ -22,7 +22,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
     /// <summary>
     /// Gets the analyzed and transformed match expression parts.
     /// </summary>
-    internal MatchTransformationResult MatchExpressionParts { get; }
+    internal MatchTransformationResult MatchTransformationResult { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MatchExpressionWriter"/> class.
@@ -32,7 +32,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
     /// <param name="workflowInstance">The current workflow instance for closure resolution.</param>
     internal MatchExpressionWriter(LambdaExpression matchExpression, object workflowInstance)
     {
-        MatchExpressionParts = new();
+        MatchTransformationResult = new();
         _matchExpression = matchExpression;
 
         // Early exit if no expression to process
@@ -42,7 +42,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
         // If already transformed to 3 parameters, use as-is
         if (_matchExpression?.Parameters.Count == 3)
         {
-            MatchExpressionParts.MatchExpression = _matchExpression;
+            MatchTransformationResult.MatchExpression = _matchExpression;
             return;
         }
 
@@ -58,8 +58,8 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
         if (_expressionParts.Any(x => x.IsMandatory))
         {
             var mandatoryPartVisitor = new MandatoryPartExpressionsGenerator(_matchExpression, _expressionParts);
-            MatchExpressionParts.SignalExactMatchPaths = mandatoryPartVisitor.SignalExactMatchPaths;
-            MatchExpressionParts.InstanceExactMatchExpression = mandatoryPartVisitor.InstanceExactMatchExpression;
+            MatchTransformationResult.SignalExactMatchPaths = mandatoryPartVisitor.SignalExactMatchPaths;
+            MatchTransformationResult.InstanceExactMatchExpression = mandatoryPartVisitor.InstanceExactMatchExpression;
             SetIsMandatoryPartFullMatchValue();
         }
     }
@@ -75,7 +75,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
         // Find and replace compiler-generated closure constants with the closure parameter
         changeClosureVarsVisitor.OnVisitConstant(node =>
         {
-            if (node.Type.Name.StartsWith(Workflows.Abstraction.Helpers.Constants.CompilerClosurePrefix))
+            if (node.Type.Name.StartsWith(Constants.CompilerClosurePrefix))
             {
                 closure = node;
                 // Replace with the 3rd parameter (closure)
@@ -84,14 +84,14 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
             return base.VisitConstant(node);
         });
 
-        MatchExpressionParts.MatchExpression = (LambdaExpression)changeClosureVarsVisitor.Visit(MatchExpressionParts.MatchExpression);
+        MatchTransformationResult.MatchExpression = (LambdaExpression)changeClosureVarsVisitor.Visit(MatchTransformationResult.MatchExpression);
 
         // Capture the actual closure instance for later use
         if (closure != null)
         {
             var value = Lambda<Func<object>>(closure).CompileFast().Invoke();
             if (value != null)
-                MatchExpressionParts.Closure = value;
+                MatchTransformationResult.Closure = value;
         }
     }
 
@@ -179,7 +179,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
     /// </summary>
     private void FindExactMatchParts()
     {
-        MatchExpressionParts.MatchExpression = _matchExpression;
+        MatchTransformationResult.MatchExpression = _matchExpression;
         var constantTranslationVisitor = new GenericVisitor();
         constantTranslationVisitor.OnVisitBinary(VisitBinary);
         _matchExpression = (LambdaExpression)constantTranslationVisitor.Visit(_matchExpression);
@@ -372,7 +372,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
 
         if (mandatoryExactParts.Count == 0)
         {
-            MatchExpressionParts.IsExactMatchFullMatch = false;
+            MatchTransformationResult.IsExactMatchFullMatch = false;
             return;
         }
 
@@ -399,7 +399,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
         // If expression evaluates to true, mandatory parts alone are sufficient
         var transformedBody = replacer.Visit(_matchExpression.Body);
         var compiled = Lambda<Func<bool>>(transformedBody).CompileFast();
-        MatchExpressionParts.IsExactMatchFullMatch = compiled();
+        MatchTransformationResult.IsExactMatchFullMatch = compiled();
     }
 
     /// <summary>
