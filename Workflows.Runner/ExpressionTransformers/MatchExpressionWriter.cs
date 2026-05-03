@@ -3,11 +3,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
-using Workflows.Runner.ExpressionTransformers;
 using static System.Linq.Expressions.Expression;
 using Workflows.Abstraction.Helpers;
+using Workflows.Runner.Helpers;
+using Workflows.Runner.DataObjects;
 
-namespace ResumableFunctions.Handler.Expressions;
+namespace Workflows.Runner.ExpressionTransformers;
 
 /// <summary>
 /// Transforms and analyzes match expressions to extract mandatory parts and prepare them for evaluation.
@@ -75,7 +76,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
         // Find and replace compiler-generated closure constants with the closure parameter
         changeClosureVarsVisitor.OnVisitConstant(node =>
         {
-            if (node.Type.Name.StartsWith(Constants.CompilerClosurePrefix))
+            if (node.Type.Name.StartsWith(CompilerConstants.ClosurePrefix))
             {
                 closure = node;
                 // Replace with the 3rd parameter (closure)
@@ -164,7 +165,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
         Expression OnVisitConstant(ConstantExpression node)
         {
             // Look for compiler-generated closure types
-            if (node.Type.Name.StartsWith(Workflows.Abstraction.Helpers.Constants.CompilerClosurePrefix))
+            if (node.Type.Name.StartsWith(CompilerConstants.ClosurePrefix))
                 result = node.Type;
             return base.VisitConstant(node);
         }
@@ -215,7 +216,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
         /// </summary>
         bool CanConvertToSimpleString(Expression expression)
         {
-            // Constants are always convertible
+            // CompilerConstants are always convertible
             if (expression is ConstantExpression constantExpression)
                 return true;
 
@@ -428,7 +429,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
         checkUseParamter.OnVisitConstant(constant =>
         {
             // Count closure constant usage
-            if (constant.Type.Name.StartsWith(Workflows.Abstraction.Helpers.Constants.CompilerClosurePrefix))
+            if (constant.Type.Name.StartsWith(CompilerConstants.ClosurePrefix))
                 instanceAndClosureCount++;
             return constant;
         });

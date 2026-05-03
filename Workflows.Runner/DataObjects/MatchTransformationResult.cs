@@ -1,7 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq.Expressions;
 
-namespace Workflows.Runner.ExpressionTransformers
+namespace Workflows.Runner.DataObjects
 {
     internal class MatchTransformationResult
     {

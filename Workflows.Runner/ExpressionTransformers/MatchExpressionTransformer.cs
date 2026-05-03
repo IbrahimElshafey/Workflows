@@ -1,6 +1,6 @@
 ﻿using System;
-using ResumableFunctions.Handler.Expressions;
 using Workflows.Definition;
+using Workflows.Runner.DataObjects;
 
 namespace Workflows.Runner.ExpressionTransformers
 {
@@ -11,7 +11,7 @@ namespace Workflows.Runner.ExpressionTransformers
             if (signalWait == null)
                 throw new ArgumentNullException(nameof(signalWait));
 
-            var matchWriter = new MatchExpressionWriter(
+            var matchWriter = new ExpressionTransformers.MatchExpressionWriter(
                 signalWait.MatchExpression,
                 signalWait.WorkflowContainer);
 

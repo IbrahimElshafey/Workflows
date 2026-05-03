@@ -5,8 +5,9 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
-using static ResumableFunctions.Handler.Expressions.MatchExpressionWriter;
+using static Workflows.Runner.ExpressionTransformers.MatchExpressionWriter;
 using static System.Linq.Expressions.Expression;
+using Workflows.Runner.Helpers;
 
 namespace Workflows.Runner.ExpressionTransformers
 {
@@ -90,73 +91,12 @@ namespace Workflows.Runner.ExpressionTransformers
                 var changeClosureVarsVisitor = new GenericVisitor();
                 changeClosureVarsVisitor.OnVisitConstant(node =>
                 {
-                    if (node.Type.Name.StartsWith(Abstraction.Helpers.Constants.CompilerClosurePrefix))
+                    if (node.Type.Name.StartsWith(CompilerConstants.ClosurePrefix))
                         return _matchExpression.Parameters[2];
                     return base.VisitConstant(node);
                 });
                 return changeClosureVarsVisitor.Visit(valuePart);
             }
-        }
-    }
-
-    // -------------------------------------------------------
-    // Call-time resolution — replaces executing SignalExactMatchPaths
-    // -------------------------------------------------------
-
-    internal class MandatoryPartResolver
-    {
-        private static readonly ConcurrentDictionary<string, Func<JObject, JObject, string?>> _cache = new();
-
-        /// <summary>
-        /// Builds the MandatoryPart match value from an incoming call.
-        /// Replaces: Deserialize(SignalExactMatchPaths).Compile()(signalData)
-        /// Result:   ["42","Paid|Urgent","12"]  — matches Waits.MandatoryPart exactly
-        /// </summary>
-        public static string BuildFromCall(object signalData, List<string> paths)
-        {
-            var signalDataObj = JObject.FromObject(signalData);
-
-            var values = paths.Select(path =>
-                _cache.GetOrAdd(path, BuildAccessor)(signalDataObj, signalDataObj));
-
-            return Newtonsoft.Json.JsonConvert.SerializeObject(values);
-        }
-
-        private static Func<JObject, JObject, string?> BuildAccessor(string path)
-        {
-            var dot = path.IndexOf('.');
-            var token = path[(dot + 1)..];  // "ProjectId" or "Order.RegionId"
-
-            return (signalDataObj, _) =>
-                signalDataObj
-                    .SelectToken(token)        // handles nested paths free of charge
-                    ?.ToString();
-        }
-    }
-
-    // -------------------------------------------------------
-    // Registration side — serializes instance constants to JSON
-    // -------------------------------------------------------
-
-    internal static class MandatoryPartSerializer
-    {
-        /// <summary>
-        /// Executes InstanceExactMatchExpression and serializes to JSON array.
-        /// Called once at wait registration — result stored in Waits.MandatoryPart.
-        /// Never recomputed for the lifetime of that wait row.
-        /// </summary>
-        public static string Serialize(
-            LambdaExpression instanceExpression,
-            object workflowInstance,
-            object closure)
-        {
-            var values = (object[])instanceExpression
-                .CompileFast()
-                .DynamicInvoke(workflowInstance, closure)!;
-
-            return Newtonsoft.Json.JsonConvert.SerializeObject(
-                values.Select(v => v?.ToString()).ToList());
-            // ["42","Paid|Urgent","12"] — handles |, #, quotes, any character
         }
     }
 }

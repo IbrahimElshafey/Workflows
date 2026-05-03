@@ -6,11 +6,11 @@ using System.Linq;
 using System.Reflection;
 using Workflows.Abstraction.Helpers;
 
-namespace ResumableFunctions.Handler.Helpers
+namespace Workflows.Runner.Helpers
 {
     public class PrivateDataResolver : DefaultContractResolver
     {
-        static PrivateDataResolver contractResolver = new PrivateDataResolver();
+        static Helpers.PrivateDataResolver contractResolver = new Helpers.PrivateDataResolver();
         internal static JsonSerializerSettings Settings { get; } =
             new JsonSerializerSettings
             {

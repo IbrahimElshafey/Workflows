@@ -1,6 +1,6 @@
 using Workflows.Abstraction.Enums;
 
-namespace Workflows.Runner
+namespace Workflows.Runner.DataObjects
 {
     public class RunWorkflowSettings
     {

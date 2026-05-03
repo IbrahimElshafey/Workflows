@@ -1,6 +1,8 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using FastExpressionCompiler;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -10,40 +12,38 @@ using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Runner;
+using Workflows.Runner.DataObjects;
 using Workflows.Runner.ExpressionTransformers;
+using Workflows.Runner.Helpers;
 
 namespace Workflows.Runner
 {
     internal class WorkflowRunner : IWorkflowRunner
     {
-        private readonly TypesCache _workflowTypeCache;
-
+        private static readonly ConcurrentDictionary<string, Func<object, object, bool>> _matchExpressionCache
+            = new ConcurrentDictionary<string, Func<object, object, bool>>();
+        private static readonly ConcurrentDictionary<string, Type> _workflowTypeCache = new ConcurrentDictionary<string, Type>();
         private readonly MatchExpressionTransformer _matchExpressionTransformer;
         private readonly IExpressionSerializer _expressionSerializer;
-        private readonly MatchExpressionCache _matchExpressionCache;
         private readonly IObjectSerializer _objectSerializer;
         private readonly RunWorkflowSettings _settings;
         private readonly IWorkflowRunnerClient _runResultSender;
         private readonly ILogger<WorkflowRunner> _logger;
         private readonly IServiceProvider _serviceProvider;
-        private readonly Abstraction.Runner.ICommandHandlerFactory _commandHandlerFactory;
+        private readonly ICommandHandlerFactory _commandHandlerFactory;
 
         public WorkflowRunner(
-            TypesCache workflowTypeCache,
             MatchExpressionTransformer matchExpressionTransformer,
             IExpressionSerializer expressionSerializer,
-            MatchExpressionCache matchExpressionCache,
             IObjectSerializer objectSerializer,
             RunWorkflowSettings settings,
             IWorkflowRunnerClient runResultSender,
             ILogger<WorkflowRunner> logger,
             IServiceProvider serviceProvider,
-            Abstraction.Runner.ICommandHandlerFactory commandHandlerFactory)
+            ICommandHandlerFactory commandHandlerFactory)
         {
-            _workflowTypeCache = workflowTypeCache ?? throw new ArgumentNullException(nameof(workflowTypeCache));
             _matchExpressionTransformer = matchExpressionTransformer ?? throw new ArgumentNullException(nameof(matchExpressionTransformer));
             _expressionSerializer = expressionSerializer ?? throw new ArgumentNullException(nameof(expressionSerializer));
-            _matchExpressionCache = matchExpressionCache ?? throw new ArgumentNullException(nameof(matchExpressionCache));
             _objectSerializer = objectSerializer ?? throw new ArgumentNullException(nameof(objectSerializer));
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _runResultSender = runResultSender ?? throw new ArgumentNullException(nameof(runResultSender));
@@ -308,9 +308,9 @@ namespace Workflows.Runner
             try
             {
                 var closure = ResolvePrivateDataValue(incomingWait.ClosureData);
-                var evaluator = _matchExpressionCache.GetOrCompile(
+                var evaluator = _matchExpressionCache.GetOrAdd(
                     serializedExpression,
-                    () => _expressionSerializer.Deserialize(serializedExpression));
+                    _ => (Func<object, object, bool>)_expressionSerializer.Deserialize(serializedExpression).CompileFast());
 
                 return evaluator(signal.Data, closure ?? workflowInstance);
             }
@@ -391,17 +391,17 @@ namespace Workflows.Runner
         {
             var runnerType = runner.GetType();
 
-            var stateField = runnerType.GetField(Constants.CompilerStateFieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            var stateField = runnerType.GetField(CompilerConstants.StateFieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             stateField?.SetValue(runner, incomingWait.StateAfterWait);
 
             try
             {
                 var thisField = runnerType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                    .FirstOrDefault(x => x.Name.EndsWith(Constants.CompilerCallerSuffix, StringComparison.Ordinal));
+                    .FirstOrDefault(x => x.Name.EndsWith(CompilerConstants.CallerSuffix, StringComparison.Ordinal));
 
                 if (thisField == null)
                 {
-                    _logger.LogWarning("Could not restore compiler-generated caller field ending with suffix {Suffix} on runner type {RunnerType}.", Constants.CompilerCallerSuffix, runnerType.FullName);
+                    _logger.LogWarning("Could not restore compiler-generated caller field ending with suffix {Suffix} on runner type {RunnerType}.", CompilerConstants.CallerSuffix, runnerType.FullName);
                 }
                 else
                 {
@@ -417,7 +417,7 @@ namespace Workflows.Runner
             if (closureValue != null)
             {
                 var closureField = runnerType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                    .FirstOrDefault(x => x.FieldType.Name.StartsWith(Constants.CompilerClosurePrefix, StringComparison.Ordinal));
+                    .FirstOrDefault(x => x.FieldType.Name.StartsWith(CompilerConstants.ClosurePrefix, StringComparison.Ordinal));
                 closureField?.SetValue(runner, closureValue);
             }
         }
@@ -523,14 +523,14 @@ namespace Workflows.Runner
                 return;
 
             var runnerType = runner.GetType();
-            var stateField = runnerType.GetField(Constants.CompilerStateFieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            var stateField = runnerType.GetField(CompilerConstants.StateFieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (stateField?.GetValue(runner) is int state)
                 nextWaitDto.StateAfterWait = state;
 
             nextWaitDto.Locals = SerializePrivateData(runner);
 
             var closureField = runnerType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                .FirstOrDefault(x => x.FieldType.Name.StartsWith(Constants.CompilerClosurePrefix, StringComparison.Ordinal));
+                .FirstOrDefault(x => x.FieldType.Name.StartsWith(CompilerConstants.ClosurePrefix, StringComparison.Ordinal));
             var closureValue = closureField?.GetValue(runner);
             if (closureValue != null)
             {

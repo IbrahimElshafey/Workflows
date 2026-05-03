@@ -1,7 +1,6 @@
 ﻿using System.Linq.Expressions;
 
-namespace ResumableFunctions.Handler.Expressions;
-internal partial class MatchExpressionWriter
+namespace Workflows.Runner.ExpressionTransformers
 {
     internal class ExpressionPart
     {
@@ -20,5 +19,4 @@ internal partial class MatchExpressionWriter
         public BinaryExpression Expression { get; }
         public bool IsMandatory { get; internal set; }
     }
-
 }

@@ -12,10 +12,9 @@ namespace Workflows.Runner
              * RunWorkflowSettings settings,
             IWorkflowRunResultSender runResultSender,
             */
-            services.AddSingleton<TypesCache>();
             services.AddScoped<IWorkflowRunner, WorkflowRunner>();
             services.AddSingleton<MatchExpressionTransformer>();
-            services.AddSingleton<MatchExpressionCache>();
+            services.AddSingleton<StateMachineAdvancer>();
             services.AddSingleton<IExpressionSerializer, ExpressionSerializer>();
             return services;
         }

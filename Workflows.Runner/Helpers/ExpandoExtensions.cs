@@ -2,8 +2,11 @@
 using System;
 using System.Collections.Generic;
 using System.Dynamic;
+using Workflows.Runner.Helpers;
+using Workflows;
+using Workflows.Runner;
 
-namespace ResumableFunctions.Handler.Helpers
+namespace Workflows.Runner.Helpers
 {
     internal static class ExpandoExtensions
     {
