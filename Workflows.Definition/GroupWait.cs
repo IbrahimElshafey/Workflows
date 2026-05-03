@@ -13,16 +13,15 @@ namespace Workflows.Definition
     {
         internal IReadOnlyList<Wait> ChildWaitsRuntime { get; }
 
-        internal GroupWait(string waitName, IReadOnlyList<Wait> childWaits, int inCodeLine, string callerName)
-            : base(WaitType.GroupWaitAll, waitName, inCodeLine, callerName)
+        internal GroupWait(string waitName, IReadOnlyList<Wait> childWaits, int inCodeLine, string callerName, string callerFilePath)
+            : base(WaitType.GroupWaitAll, waitName, inCodeLine, callerName, callerFilePath)
         {
             ChildWaitsRuntime = childWaits;
             ChildWaits = childWaits?.ToList() ?? new List<Wait>();
         }
 
-        internal string MatchFuncName { get; set; }
+        internal Func<bool> GroupMatchFilter { get; set; }
 
-        public int CompletedCount => ChildWaits?.Count(x => x.Status == WaitStatus.Completed) ?? 0;
 
         /// <summary>
         /// Check if group is matched
@@ -33,14 +32,14 @@ namespace Workflows.Definition
         /// <param name="callerName"></param>
         /// <returns></returns>
         public Wait MatchIf(
-        Func<Definition.GroupWait, bool> groupMatchFilter,
+        Func<bool> groupMatchFilter,
         [CallerLineNumber] int inCodeLine = 0,
         [CallerMemberName] string callerName = "")
         {
             WaitType = WaitType.GroupWaitWithExpression;
             InCodeLine = inCodeLine;
             CallerName = callerName;
-            MatchFuncName = ValidateCallback(groupMatchFilter, nameof(MatchFuncName));
+            GroupMatchFilter = groupMatchFilter;
             return this;
         }
 
@@ -58,7 +57,7 @@ namespace Workflows.Definition
         }
         public HashSet<string> CancelTokens { get; set; }
 
-        public Definition.GroupWait WithCancelToken(string token)
+        public GroupWait WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token)) return this;
             CancelTokens ??= new HashSet<string>();

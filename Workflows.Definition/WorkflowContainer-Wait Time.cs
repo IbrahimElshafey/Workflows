@@ -5,9 +5,10 @@ namespace Workflows.Definition
 {
     public abstract partial class WorkflowContainer
     {
-        protected Definition.TimeWait WaitUntil(
+        protected TimeWait WaitUntil(
             DateTime untilTime,
             string name = null,
+            [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
@@ -16,21 +17,20 @@ namespace Workflows.Definition
                 throw new ArgumentException("Until date should be in the future", nameof(untilTime));
             }
             var timeToWait = untilTime - DateTime.UtcNow;
-            Definition.TimeWait newTimeWait = new Definition.TimeWait(
+            TimeWait newTimeWait = new TimeWait(
                 name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
                 timeToWait,
-                Guid.NewGuid().ToString(),
-                inCodeLine,
-                callerName)
+                Guid.NewGuid().ToString(), inCodeLine, callerName, callerFilePath)
             {
-                CurrentWorkflow = this
+                WorkflowContainer = this
             };
             return newTimeWait;
         }
 
-        protected Definition.TimeWait WaitDelay(
+        protected TimeWait WaitDelay(
             TimeSpan timeToWait,
             string name = null,
+            [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
@@ -38,14 +38,12 @@ namespace Workflows.Definition
             {
                 throw new ArgumentException("Time to wait should be greater than 0", nameof(timeToWait));
             }
-            return new Definition.TimeWait(
+            return new TimeWait(
                 name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
                 timeToWait,
-                Guid.NewGuid().ToString(),
-                inCodeLine,
-                callerName)
+                Guid.NewGuid().ToString(), inCodeLine, callerName, callerFilePath)
             {
-                CurrentWorkflow = this
+                WorkflowContainer = this
             };
         }
 

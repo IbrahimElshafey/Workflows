@@ -9,64 +9,8 @@
     <Import_RootNamespace>_Documents</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)AI-Commits\Zero-Dependencies-Refactoring.md" />
-    <None Include="$(MSBuildThisFileDirectory)Articles\Article1.md" />
-    <None Include="$(MSBuildThisFileDirectory)DB\delete_tests_dbs.sql" />
-    <None Include="$(MSBuildThisFileDirectory)GitHubDocs\BasicWaitTypes.md" />
-    <None Include="$(MSBuildThisFileDirectory)GitHubDocs\WaitTypesUseCases.md" />
-    <None Include="$(MSBuildThisFileDirectory)SolutionEvaluation-InterfaceSegregation.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-1\_Phase-1-plan.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-2\-NoNeed\Visual Workflow Designer (Phase 4).md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-2\Architecture &amp; Interface Specification.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-2\1-Resumable Functions Ecosystem.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-2\Security, Retention, and Performance Optimization.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-2\SQLite-backed Outbox-Performance.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-2\System Observability &amp; Diagnostic Endpoints.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-2\ResumableFunctions — Phase 2 Implementation Plan.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-2\Reliable Messaging SQLite Outbox-Inbox Pattern.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-2\Workflow-Plan.md" />
-    <None Include="$(MSBuildThisFileDirectory)_ResumableWorkflows\Engine Modules .md" />
-    <None Include="$(MSBuildThisFileDirectory)~Old\Services And Clients Communication.md" />
-    <None Include="$(MSBuildThisFileDirectory)GitHubDocs\WIN_V1.0.10.md" />
-    <None Include="$(MSBuildThisFileDirectory)GitHubDocs\What Help.md" />
-    <None Include="$(MSBuildThisFileDirectory)GitHubDocs\Internals.md" />
-    <None Include="$(MSBuildThisFileDirectory)GitHubDocs\Testing.md" />
-    <None Include="$(MSBuildThisFileDirectory)GitHubDocs\Configuration.md" />
-    <None Include="$(MSBuildThisFileDirectory)GitHubDocs\Distributed_Services_and_Resumable_Function.md" />
-    <None Include="$(MSBuildThisFileDirectory)GitHubDocs\Resumable_Functions_UI.md" />
-    <None Include="$(MSBuildThisFileDirectory)GitHubDocs\Cleaning_Job.md" />
-    <None Include="$(MSBuildThisFileDirectory)DB\query.sql" />
-    <None Include="$(MSBuildThisFileDirectory)~Old\Commands.md" />
-    <None Include="$(MSBuildThisFileDirectory)Articles\Documentation_Plan.md" />
-    <None Include="$(MSBuildThisFileDirectory)Reading and Ideas\External Reading.md" />
-    <None Include="$(MSBuildThisFileDirectory)~Old\Aggregate Column Idea.md" />
-    <None Include="$(MSBuildThisFileDirectory)~Old\Publisher.md" />
-    <None Include="$(MSBuildThisFileDirectory)~Old\Features.md" />
-    <None Include="$(MSBuildThisFileDirectory)Reading and Ideas\Service Fabric.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-1\Testing.md" />
-    <None Include="$(MSBuildThisFileDirectory)~Old\MVC_Use.md" />
-    <None Include="$(MSBuildThisFileDirectory)~Old\Background_Cleaning_Job.md" />
-    <None Include="$(MSBuildThisFileDirectory)~Old\Why not message queues.md" />
-    <None Include="$(MSBuildThisFileDirectory)ThinkHow\RF Calls a Service.md" />
-    <None Include="$(MSBuildThisFileDirectory)ThinkHow\اتصال متحقق.md" />
-    <None Include="$(MSBuildThisFileDirectory)UsefulSnippet\AddEnternalProps.csx" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-1\Versioning-Migration.md" />
-    <None Include="$(MSBuildThisFileDirectory)~Old\Concurrency.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-1\UI.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-1\Roslyn_Analyzer.md" />
-    <None Include="$(MSBuildThisFileDirectory)~Old\Refactor_and_Enhancements.md" />
-    <None Include="$(MSBuildThisFileDirectory)ThinkHow\Other_Wait_Types.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-1\README.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-1\Data Store Options.md" />
-    <None Include="$(MSBuildThisFileDirectory)~Old\How_It_works.md" />
-    <None Include="$(MSBuildThisFileDirectory)_Phase-1\_Todo.md" />
-  </ItemGroup>
-  <ItemGroup>
-    <Folder Include="$(MSBuildThisFileDirectory)GitHubDocs\IMG\" />
-    <Folder Include="$(MSBuildThisFileDirectory)~Old\" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="$(MSBuildThisFileDirectory)refs\FunctionRunner.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)refs\WaitEntity.cs" />
+    <None Include="$(MSBuildThisFileDirectory)Architectural Reference Guide.md" />
+    <None Include="$(MSBuildThisFileDirectory)Workflow Messaging Architecture.md" />
+    <None Include="$(MSBuildThisFileDirectory)Savig-state.md" />
   </ItemGroup>
 </Project>

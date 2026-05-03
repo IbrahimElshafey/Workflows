@@ -10,4 +10,8 @@
     <ProjectReference Include="..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="_docs\" />
+  </ItemGroup>
+
 </Project>

@@ -14,23 +14,14 @@ namespace Workflows.Definition
     {
         internal Action<SignalData> AfterMatchAction { get; set; }
 
-        internal SignalWait(string signalIdentifier, string waitName, int inCodeLine, string callerName)
-            : base(WaitType.SignalWait, waitName, inCodeLine, callerName)
+        internal SignalWait(string signalIdentifier, string waitName, int inCodeLine, string callerName, string callerFilepath)
+            : base(WaitType.SignalWait, waitName, inCodeLine, callerName, callerFilepath)
         {
             SignalIdentifier = signalIdentifier;
         }
 
         internal LambdaExpression MatchExpression { get; set; }
-
-        internal object TemplateHashKey { get; set; }
-        internal string MatchExpressionSerialized { get; set; }
-        internal string GenericMatchExpressionSerialized { get; set; }
-        internal bool IsGenericMatchFullMatch { get; set; }
-        internal string AfterMatchActionSerialized { get; set; }
-        internal string CancelActionSerialized { get; set; }
-        internal string ExactMatchPartSerialized { get; set; }
-        internal bool IsExactMatchFullMatch { get; set; }
-        internal List<string> SignalExactMatchPaths { get; set; }
+        internal string MatchExpressionAsText { get; set; }
         internal string SignalIdentifier { get; set; }
 
         LambdaExpression ISignalWait.MatchExpression
@@ -45,34 +36,20 @@ namespace Workflows.Definition
             return this;
         }
 
-        public SignalWait<SignalData> MatchAny(bool condition = true)
+        public SignalWait<SignalData> MatchAny()
         {
-            if (condition)
-            {
-                MatchExpression = null;
-            }
+            MatchExpression = null;
             return this;
         }
 
         public SignalWait<SignalData> MatchIf(
             Expression<Func<SignalData, bool>> matchExpression,
-            [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int callerLineNumber = 0,
             [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             MatchExpression = matchExpression;
-            TemplateHashKey = CalcMatchExpressionHash(callerFilePath, callerLineNumber, expression);
-            return this;
-        }
-
-        private object CalcMatchExpressionHash(string callerFilePath, int callerLineNumber, string? expression)
-        {
-            throw new NotImplementedException();
-        }
-
-        public SignalWait<SignalData> NoActionAfterMatch()
-        {
-            AfterMatchAction = null;
+            InCodeLine = callerLineNumber;
+            MatchExpressionAsText = expression;
             return this;
         }
 

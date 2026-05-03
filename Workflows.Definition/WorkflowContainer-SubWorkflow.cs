@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
-using Workflows.Definition.Helpers;
 
 namespace Workflows.Definition
 {
@@ -11,21 +9,14 @@ namespace Workflows.Definition
         protected SubWorkflowWait WaitSubWorkflow(
             IAsyncEnumerable<Wait> workflow,
             string name = null,
+            [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
-            var runner = workflow.GetAsyncEnumerator();
-            var runnerName = runner.GetType().Name;
-            var workflowName = Regex.Match(runnerName, "<(.+)>").Groups[1].Value;
-            var workflowInfo = GetType().GetMethod(workflowName, CoreExtensions.DeclaredWithinTypeFlags());
-            var result = new SubWorkflowWait(
-                name ?? $"#Wait Workflow `{workflowName}`",
-                inCodeLine,
-                callerName)
+            var result = new SubWorkflowWait(name, inCodeLine, callerName, callerFilePath)
             {
-                CurrentWorkflow = this,
-                SubWorkflowMethodInfo = workflowInfo,
-                Runner = runner,
+                WorkflowContainer = this,
+                Runner = workflow,
                 WaitType = WaitType.SubWorkflowWait
             };
             return result;

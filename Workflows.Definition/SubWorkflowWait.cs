@@ -1,22 +1,20 @@
 using System.Collections.Generic;
-using System.Reflection;
 
 namespace Workflows.Definition
 {
-    public class SubWorkflowWait : Definition.Wait, Definition.IPassiveWait
+    public class SubWorkflowWait : Wait, IPassiveWait
     {
-        internal MethodInfo SubWorkflowMethodInfo { get; set; }
         internal Wait FirstWait { get; set; }
-        internal IAsyncEnumerator<Definition.Wait> Runner { get; set; }
+        internal IAsyncEnumerable<Wait> Runner { get; set; }
 
-        internal SubWorkflowWait(string waitName, int inCodeLine, string callerName)
-            : base(WaitType.SubWorkflowWait, waitName, inCodeLine, callerName)
+        internal SubWorkflowWait(string waitName, int inCodeLine, string callerName, string callerFilePath)
+            : base(WaitType.SubWorkflowWait, waitName, inCodeLine, callerName, callerFilePath)
         {
         }
 
         public HashSet<string> CancelTokens { get; set; }
 
-        public Definition.SubWorkflowWait WithCancelToken(string token)
+        public SubWorkflowWait WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token)) return this;
             CancelTokens ??= new HashSet<string>();
@@ -24,7 +22,7 @@ namespace Workflows.Definition
             return this;
         }
 
-        Definition.IPassiveWait Definition.IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
+        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
     }
 }
 

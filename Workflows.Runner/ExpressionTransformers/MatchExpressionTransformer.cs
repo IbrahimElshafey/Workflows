@@ -13,7 +13,7 @@ namespace Workflows.Runner.ExpressionTransformers
 
             var matchWriter = new MatchExpressionWriter(
                 signalWait.MatchExpression,
-                signalWait.CurrentWorkflow);
+                signalWait.WorkflowContainer);
 
             var result = matchWriter.MatchTransformationResult;
             if (result?.MatchExpression == null)

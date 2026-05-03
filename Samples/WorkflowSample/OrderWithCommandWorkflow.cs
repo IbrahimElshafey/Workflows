@@ -42,6 +42,7 @@ namespace WorkflowSample
                 .RegisterCompensation(() =>
                 {
                     Console.WriteLine("Compensating: Marking email delivery as failed in database");
+                    return default;
                 });
 
             // Command 2: Process payment with async compensation

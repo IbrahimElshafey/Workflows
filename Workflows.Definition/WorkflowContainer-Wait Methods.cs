@@ -6,27 +6,29 @@ namespace Workflows.Definition
 {
     public abstract partial class WorkflowContainer
     {
-        protected Definition.SignalWait<SignalData> WaitSignal<SignalData>(
+        protected SignalWait<SignalData> WaitSignal<SignalData>(
             string signalIdentifier,
             string name = null,
+            [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int inCodeLine = 0,
-            [CallerMemberName] string callerName = ""
-            )
+            [CallerMemberName] string callerName = "")
         {
-            var newSignalWait = new Definition.SignalWait<SignalData>(
+            var newSignalWait = new SignalWait<SignalData>(
                 signalIdentifier,
                 name,
                 inCodeLine,
-                callerName)
+                callerName,
+                callerFilePath)
             {
-                CurrentWorkflow = this
+                WorkflowContainer = this
             };
             return newSignalWait;
         }
 
-        protected Definition.GroupWait WaitGroup(
-            Definition.IPassiveWait[] passiveWaits,
+        protected GroupWait WaitGroup(
+            IPassiveWait[] passiveWaits,
             string name = null,
+            [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
@@ -35,51 +37,54 @@ namespace Workflows.Definition
                 throw new ArgumentNullException($"The group wait named [{name}] contains wait that is null.");
             }
 
-            var waits = passiveWaits.Cast<Definition.Wait>().ToArray();
+            var waits = passiveWaits.Cast<Wait>().ToArray();
 
-            var group = new Definition.GroupWait(
+            var group = new GroupWait(
                 name ?? $"#Wait Group `{inCodeLine}` by `{callerName}`",
                 waits,
                 inCodeLine,
-                callerName)
+                callerName,
+                callerFilePath)
             {
-                CurrentWorkflow = this,
+                WorkflowContainer = this,
                 WaitType = WaitType.GroupWaitAll
             };
-            group.ChildWaits.ForEach(wait => wait.ParentWaitId = group.Id);
             return group;
         }
 
-        protected Definition.GroupWait ExecuteParallel(
-            Definition.ICommandWait[] commands,
+        protected Wait ExecuteParallel(
+            ICommandWait[] commands,
             string name = null,
+            [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
             if (commands.Any(x => x == null))
             {
-                throw new ArgumentNullException($"The parallel command group named [{name}] contains a command that is null.");
+                throw new ArgumentNullException(
+                    $"The parallel command group named [{name}] contains a command that is null.");
             }
 
-            var waits = commands.Cast<Definition.Wait>().ToArray();
+            var waits = commands.Cast<Wait>().ToArray();
 
-            var group = new Definition.GroupWait(
+            var group = new GroupWait(
                 name ?? $"#Parallel Commands `{inCodeLine}` by `{callerName}`",
                 waits,
                 inCodeLine,
-                callerName)
+                callerName,
+                callerFilePath)
             {
-                CurrentWorkflow = this,
+                WorkflowContainer = this,
                 WaitType = WaitType.CommandsGroup
             };
-            group.ChildWaits.ForEach(wait => wait.ParentWaitId = group.Id);
 
-            return group.MatchAll() as Definition.GroupWait;
+            return group;
         }
 
-        protected Definition.CommandWait<TCommand, TResult> ExecuteCommand<TCommand, TResult>(
+        protected CommandWait<TCommand, TResult> ExecuteCommand<TCommand, TResult>(
             string commandName,
             TCommand data,
+            [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
@@ -88,11 +93,14 @@ namespace Workflows.Definition
                 throw new ArgumentException("Command name must not be null or empty", nameof(commandName));
             }
 
-            var commandWait = new Definition.CommandWait<TCommand, TResult>(commandName, data)
+            var commandWait = new CommandWait<TCommand, TResult>(
+                commandName,
+                data,
+                inCodeLine,
+                callerName,
+                callerFilePath)
             {
-                CurrentWorkflow = this,
-                InCodeLine = inCodeLine,
-                CallerName = callerName
+                WorkflowContainer = this
             };
 
             return commandWait;

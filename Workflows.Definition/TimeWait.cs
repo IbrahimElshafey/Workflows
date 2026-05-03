@@ -5,8 +5,8 @@ namespace Workflows.Definition
 {
     public class TimeWait : Wait, IPassiveWait
     {
-        internal TimeWait(string waitName, TimeSpan timeToWait, string uniqueMatchId, int inCodeLine, string callerName)
-            : base(WaitType.SignalWait, waitName, inCodeLine, callerName)
+        internal TimeWait(string waitName, TimeSpan timeToWait, string uniqueMatchId, int inCodeLine, string callerName, string callerFilePath)
+            : base(WaitType.SignalWait, waitName, inCodeLine, callerName, callerFilePath)
         {
             TimeToWait = timeToWait;
             UniqueMatchId = uniqueMatchId;

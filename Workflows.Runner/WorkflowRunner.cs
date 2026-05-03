@@ -599,39 +599,39 @@ namespace Workflows.Runner
 
         private static void CopyBase(Definition.Wait wait, WaitInfrastructureDto dto)
         {
-            dto.Id = wait.Id;
-            dto.WaitName = wait.WaitName;
-            dto.WaitType = (WaitType)(int)wait.WaitType;
-            dto.CallerName = wait.CallerName;
-            dto.InCodeLine = wait.InCodeLine;
-            dto.Created = wait.Created;
-            dto.Status = (WaitStatus)(int)wait.Status;
-            dto.StateAfterWait = wait.StateAfterWait;
-            dto.Path = wait.Path;
-            dto.ParentWaitId = wait.ParentWaitId;
-            dto.RequestedByWorkflowId = wait.RequestedByWorkflowId;
-            dto.RootWorkflowId = wait.RootWorkflowId;
-            dto.WorkflowStateId = wait.WorkflowStateId;
+            //dto.Id = wait.Id;
+            //dto.WaitName = wait.WaitName;
+            //dto.WaitType = (WaitType)(int)wait.WaitType;
+            //dto.CallerName = wait.CallerName;
+            //dto.InCodeLine = wait.InCodeLine;
+            //dto.Created = wait.Created;
+            //dto.Status = (WaitStatus)(int)wait.Status;
+            //dto.StateAfterWait = wait.StateAfterWait;
+            //dto.Path = wait.Path;
+            //dto.ParentWaitId = wait.ParentWaitId;
+            //dto.RequestedByWorkflowId = wait.RequestedByWorkflowId;
+            //dto.RootWorkflowId = wait.RootWorkflowId;
+            //dto.WorkflowStateId = wait.WorkflowStateId;
 
-            if (wait.LocalsCreated.HasValue)
-            {
-                dto.Locals = new PrivateData
-                {
-                    Value = wait.LocalsValue,
-                    TypeName = wait.LocalsTypeName,
-                    Created = wait.LocalsCreated.Value
-                };
-            }
+            //if (wait.LocalsCreated.HasValue)
+            //{
+            //    dto.Locals = new PrivateData
+            //    {
+            //        Value = wait.LocalsValue,
+            //        TypeName = wait.LocalsTypeName,
+            //        Created = wait.LocalsCreated.Value
+            //    };
+            //}
 
-            if (wait.ClosureCreated.HasValue)
-            {
-                dto.ClosureData = new PrivateData
-                {
-                    Value = wait.ClosureValue,
-                    TypeName = wait.ClosureTypeName,
-                    Created = wait.ClosureCreated.Value
-                };
-            }
+            //if (wait.ClosureCreated.HasValue)
+            //{
+            //    dto.ClosureData = new PrivateData
+            //    {
+            //        Value = wait.ClosureValue,
+            //        TypeName = wait.ClosureTypeName,
+            //        Created = wait.ClosureCreated.Value
+            //    };
+            //}
         }
 
         private sealed class CommandWaitAdapter : Workflows.Abstraction.Runner.ICommandWait

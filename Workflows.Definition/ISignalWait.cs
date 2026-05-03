@@ -5,6 +5,6 @@ namespace Workflows.Definition
     public interface ISignalWait
     {
         LambdaExpression MatchExpression { get; set; }
-        WorkflowContainer CurrentWorkflow { get; set; }
+        WorkflowContainer WorkflowContainer { get; set; }
     }
 }
