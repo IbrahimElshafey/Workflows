@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
@@ -28,6 +29,8 @@ namespace Workflows.Runner
             _delegateSerializer = delegateSerializer ?? throw new ArgumentNullException(nameof(delegateSerializer));
             _closureContextResolver = closureContextResolver ?? throw new ArgumentNullException(nameof(closureContextResolver));
         }
+
+        #region To DTO
 
         public SubWorkflowWaitDto MapToDto(SubWorkflowWait waitsGroup)
         {
@@ -108,9 +111,9 @@ namespace Workflows.Runner
                 CancelAction = _delegateSerializer.Serialize(commandWait.CancelAction),
                 ResultAction = _delegateSerializer.Serialize(commandWait.OnResultAction),
                 HandlerKey = commandWait.HandlerKey,
-                ExecutionMode = commandWait.ExecutionMode == CommandExecutionMode.Indirect
-                    ? CommandExecutionMode.Indirect
-                    : CommandExecutionMode.Direct,
+                ExecutionMode = commandWait.ExecutionMode == Workflows.Shared.DataObject.CommandExecutionMode.Indirect
+                    ? Workflows.Shared.DataObject.CommandExecutionMode.Indirect
+                    : Workflows.Shared.DataObject.CommandExecutionMode.Direct,
                 ResultClosureKey = _closureContextResolver.CacheClosureIfAny(commandWait.OnResultAction?.Target, commandWait),
                 CompensationClosureKey = _closureContextResolver.CacheClosureIfAny(commandWait.CompensationAction?.Target, commandWait)
             };
@@ -134,9 +137,11 @@ namespace Workflows.Runner
             var matchClosureKey = _closureContextResolver.CacheClosureIfAny(_closureContextResolver.TryGetClosureFromExpression(signalWait.MatchExpression), signalWait);
             var afterMatchClosureKey = _closureContextResolver.CacheClosureIfAny(signalWait.AfterMatchAction?.Target, signalWait);
 
+            var signalIdentifier = (string)signalWait.GetType().GetProperty("SignalIdentifier", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(signalWait);
+
             var dto = new SignalWaitDto
             {
-                SignalIdentifier = signalWait.SignalIdentifier,
+                SignalIdentifier = signalIdentifier,
                 MatchExpression = serializedMatch,
                 MatchClosureKey = matchClosureKey,
                 AfterMatchAction = afterMatchAction,
@@ -151,7 +156,7 @@ namespace Workflows.Runner
             return dto;
         }
 
-        private WaitInfrastructureDto MapToDto(Wait wait)
+        public WaitInfrastructureDto MapToDto(Wait wait)
         {
             if (wait == null) throw new ArgumentNullException(nameof(wait));
 
@@ -179,5 +184,98 @@ namespace Workflows.Runner
             dto.Created = wait.Created;
             dto.StateAfterWait = wait.StateAfterWait;
         }
+
+        #endregion
+
+        #region From DTO
+
+        public Wait MapToWait(WaitInfrastructureDto dto, IWorkflowRegistry registry)
+        {
+            if (dto == null) throw new ArgumentNullException(nameof(dto));
+
+            Wait wait = dto switch
+            {
+                SignalWaitDto signalDto => MapToWait(signalDto, registry),
+                CommandWaitDto commandDto => MapToWait(commandDto, registry),
+                TimeWaitDto timeDto => MapToWait(timeDto),
+                GroupWaitDto groupDto => MapToWait(groupDto, registry),
+                SubWorkflowWaitDto subWorkflowDto => MapToWait(subWorkflowDto, registry),
+                _ => throw new NotSupportedException($"Unsupported DTO type [{dto.GetType().FullName}].")
+            };
+
+            RestoreBase(dto, wait);
+            return wait;
+        }
+
+        private Wait MapToWait(SignalWaitDto dto, IWorkflowRegistry registry)
+        {
+            var signalType = registry.SignalTypes.TryGetValue(dto.SignalIdentifier, out var type) ? type : typeof(object);
+            var waitType = typeof(SignalWait<>).MakeGenericType(signalType);
+
+            var wait = (ISignalWait)Activator.CreateInstance(waitType, BindingFlags.NonPublic | BindingFlags.Instance, new object[] { dto.SignalIdentifier, dto.WaitName, dto.InCodeLine, dto.CallerName, "" }, null);
+            if (!string.IsNullOrEmpty((string)dto.MatchExpression))
+            {
+                wait.MatchExpression = _expressionSerializer.Deserialize((string)dto.MatchExpression);
+            }
+
+            var baseWait = (Wait)wait;
+            var cancelTokensField = baseWait.GetType().GetProperty("CancelTokens", BindingFlags.Public | BindingFlags.Instance);
+            cancelTokensField?.SetValue(baseWait, dto.CancelTokens);
+            return baseWait;
+        }
+
+        private Wait MapToWait(CommandWaitDto dto, IWorkflowRegistry registry)
+        {
+            var commandInfo = registry.CommandTypes.TryGetValue(dto.HandlerKey, out var info) ? info : (CommandPayloadType: typeof(object), CommandResultType: typeof(object));
+            var waitType = typeof(CommandWait<,>).MakeGenericType(commandInfo.CommandPayloadType, commandInfo.CommandResultType);
+
+            var commandData = dto.CommandData == null ? null : (dto.CommandData is string s ? _objectSerializer.Deserialize(s, commandInfo.CommandPayloadType) : dto.CommandData);
+
+            var wait = (Wait)Activator.CreateInstance(waitType, BindingFlags.NonPublic | BindingFlags.Instance, null, new object[] { dto.WaitName, commandData, dto.InCodeLine, dto.CallerName, "" }, null);
+
+            var type = wait.GetType();
+            type.GetProperty("HandlerKey", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.HandlerKey);
+            type.GetProperty("ExecutionMode", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, (int)dto.ExecutionMode == (int)Workflows.Shared.DataObject.CommandExecutionMode.Indirect ? Workflows.Shared.DataObject.CommandExecutionMode.Indirect : Workflows.Shared.DataObject.CommandExecutionMode.Direct);
+            type.GetProperty("MaxRetryAttempts", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.MaxRetryAttempts);
+            type.GetProperty("RetryBackoff", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.RetryBackoff);
+
+            return wait;
+        }
+
+        private Wait MapToWait(TimeWaitDto dto)
+        {
+            var wait = new TimeWait(dto.WaitName, dto.TimeToWait, dto.UniqueMatchId, dto.InCodeLine, dto.CallerName, "");
+            wait.CancelTokens = dto.CancelTokens;
+            return wait;
+        }
+
+        private Wait MapToWait(GroupWaitDto dto, IWorkflowRegistry registry)
+        {
+            var childWaits = dto.ChildWaits?.Select(c => MapToWait(c, registry)).ToList() ?? new List<Wait>();
+            var wait = new GroupWait(dto.WaitName, childWaits, dto.InCodeLine, dto.CallerName, "");
+            wait.WaitType = (WaitType)(int)dto.WaitType;
+            wait.CancelTokens = dto.CancelTokens;
+            return wait;
+        }
+
+        private Wait MapToWait(SubWorkflowWaitDto dto, IWorkflowRegistry registry)
+        {
+            var wait = new SubWorkflowWait(dto.WaitName, dto.InCodeLine, dto.CallerName, "");
+            if (dto.ChildWaits?.Count > 0)
+            {
+                wait.FirstWait = MapToWait(dto.ChildWaits[0], registry);
+            }
+            wait.CancelTokens = dto.CancelTokens;
+            return wait;
+        }
+
+        private static void RestoreBase(WaitInfrastructureDto dto, Wait wait)
+        {
+            wait.Id = dto.Id;
+            wait.StateAfterWait = dto.StateAfterWait;
+            wait.Created = dto.Created;
+        }
+
+        #endregion
     }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
@@ -16,45 +16,70 @@ namespace Workflows.Runner
     internal class WorkflowBuilder : IWorkflowBuilder, IWorkflowRegistry
     {
         private readonly BulkRegistrationPackage registrationPackage = new BulkRegistrationPackage();
+        private readonly Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine)> _workflows = new();
+        private readonly Dictionary<string, Type> _signals = new();
+        private readonly Dictionary<string, (Type CommandPayloadType, Type CommandResultType)> _commands = new();
+
         public WorkflowBuilder()
         {
             
         }
 
-        public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine)> Workflows => throw new NotImplementedException();
+        public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine)> Workflows => _workflows;
 
-        public Dictionary<string, Type> SignalTypes => throw new NotImplementedException();
+        public Dictionary<string, Type> SignalTypes => _signals;
 
-        public Dictionary<string, (Type CommandPayloadType, Type CommandResultType)> CommandTypes => throw new NotImplementedException();
+        public Dictionary<string, (Type CommandPayloadType, Type CommandResultType)> CommandTypes => _commands;
 
         public Task<RegistrationSyncResult> CommitAsync()
         {
-            throw new NotImplementedException();
+            return Task.FromResult(new RegistrationSyncResult { Success = true });
         }
 
         public IWorkflowBuilder RegisterCommand<TCommand, TResult>(string commandIdentifier)
         {
-            throw new NotImplementedException();
+            _commands[commandIdentifier] = (typeof(TCommand), typeof(TResult));
+            registrationPackage.Commands.Add(new CommandDefinition
+            {
+                CommandName = commandIdentifier,
+                RequestTypeName = typeof(TCommand).AssemblyQualifiedName,
+                ResultTypeName = typeof(TResult).AssemblyQualifiedName
+            });
+            return this;
         }
 
         public IWorkflowBuilder RegisterRunner(string runnerName)
         {
-            throw new NotImplementedException();
+            registrationPackage.RunnerName = runnerName;
+            return this;
         }
 
         public IWorkflowBuilder RegisterSignal<TSignal>(string signalIdentifier)
         {
-            throw new NotImplementedException();
+            _signals[signalIdentifier] = typeof(TSignal);
+            registrationPackage.Signals.Add(new SignalDefinition
+            {
+                SignalIdentifier = signalIdentifier
+            });
+            return this;
         }
 
         public IWorkflowBuilder RegisterWorkflow<WorkflowClass>(IAsyncEnumerable<Wait> workflow, string name, string version = "1.0.0") where WorkflowClass : WorkflowContainer
         {
-            throw new NotImplementedException();
+            _workflows[name] = (typeof(WorkflowClass), workflow.GetType());
+            registrationPackage.Workflows.Add(new WorkflowDefinition
+            {
+                WorkflowName = name,
+                Version = version,
+                WorkflowTypeName = typeof(WorkflowClass).AssemblyQualifiedName,
+                RegisteredAt = DateTime.UtcNow
+            });
+            return this;
         }
 
         public IWorkflowBuilder SettingsSection(string settingsSection)
         {
-            throw new NotImplementedException();
+            return this;
         }
     }
 }

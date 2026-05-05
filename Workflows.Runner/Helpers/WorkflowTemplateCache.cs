@@ -1,0 +1,45 @@
+using System.Collections.Concurrent;
+using Workflows.Runner.DataObjects;
+
+namespace Workflows.Runner.Helpers
+{
+    internal class WorkflowTemplateCache
+    {
+        private readonly ConcurrentDictionary<string, SignalTemplateCacheRecord> _signalCache = new();
+        private readonly ConcurrentDictionary<string, CommandTemplateCacheRecord> _commandCache = new();
+        private readonly ConcurrentDictionary<string, GroupTemplateCacheRecord> _groupCache = new();
+
+        public SignalTemplateCacheRecord GetOrAddSignal(string key, SignalTemplateCacheRecord record)
+        {
+            return _signalCache.GetOrAdd(key, record);
+        }
+
+        public SignalTemplateCacheRecord GetSignal(string key)
+        {
+            _signalCache.TryGetValue(key, out var record);
+            return record;
+        }
+
+        public CommandTemplateCacheRecord GetOrAddCommand(string key, CommandTemplateCacheRecord record)
+        {
+            return _commandCache.GetOrAdd(key, record);
+        }
+
+        public CommandTemplateCacheRecord GetCommand(string key)
+        {
+            _commandCache.TryGetValue(key, out var record);
+            return record;
+        }
+
+        public GroupTemplateCacheRecord GetOrAddGroup(string key, GroupTemplateCacheRecord record)
+        {
+            return _groupCache.GetOrAdd(key, record);
+        }
+
+        public GroupTemplateCacheRecord GetGroup(string key)
+        {
+            _groupCache.TryGetValue(key, out var record);
+            return record;
+        }
+    }
+}
