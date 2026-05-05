@@ -6,6 +6,7 @@ namespace Workflows.Definition
 {
     public abstract partial class WorkflowContainer
     {
+        internal Dictionary<string, object> Variables { get; set; } = new Dictionary<string, object>();
         internal HashSet<string> TokensToCancel { get; set; } = new HashSet<string>();
 
         protected void CancelToken(string token)

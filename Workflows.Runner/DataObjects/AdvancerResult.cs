@@ -4,8 +4,9 @@ using Workflows.Definition;
 
 namespace Workflows.Runner.DataObjects
 {
-    internal class AdvancerResult : MachineState
+    public class AdvancerResult
     {
         public Wait Wait { get; set; }
+        public MachineState State { get; set; }
     }
 }

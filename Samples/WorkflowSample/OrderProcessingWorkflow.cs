@@ -34,20 +34,13 @@ namespace WorkflowSample
             yield return WaitDelay(TimeSpan.FromMinutes(5), "Wait 5 minutes before charging");
 
             // 3. Wait for payment, correlating it to the captured CurrentOrderId
-            yield return WaitSignal<PaymentProcessedEvent>("PaymentProcessedSignal", "Wait for Payment")
-                .MatchIf(payment => payment.OrderId == CurrentOrderId)
-                .AfterMatch(
-                    payment =>
-                    {
-                        Console.WriteLine($"[Workflow] Payment success: {payment.IsSuccessful}");
-                    });
+            yield return PaymentWait();
 
             // Yield a GroupWait that waits for ALL child waits to complete before continuing
             yield return WaitGroup(
-                [ 
-                    WaitSignal<ShippingEvent>("InventoryAllocated").MatchIf(x => x.OrderId == CurrentOrderId),
-                    WaitSignal<ShippingEvent>("LabelPrinted").MatchIf(x => x.OrderId == CurrentOrderId) 
-                ],
+                [ WaitSignal<ShippingEvent>("InventoryAllocated").MatchIf(x => x.OrderId == CurrentOrderId), WaitSignal<ShippingEvent>(
+                    "LabelPrinted")
+                    .MatchIf(x => x.OrderId == CurrentOrderId) ],
                 "Parallel Fulfillment Prep")
                 .MatchAll();
 
@@ -55,6 +48,18 @@ namespace WorkflowSample
             yield return WaitSubWorkflow(ShippingSubWorkflow(), "Run Shipping Sub-Workflow");
 
             Console.WriteLine($"[Workflow] Order {CurrentOrderId} processing complete!");
+        }
+
+        private SignalWait<PaymentProcessedEvent> PaymentWait()
+        {
+            var x = 10;
+            return WaitSignal<PaymentProcessedEvent>("PaymentProcessedSignal", "Wait for Payment")
+                .MatchIf(payment => payment.OrderId == CurrentOrderId && x > 0)
+                .AfterMatch(
+                    payment =>
+                    {
+                        Console.WriteLine($"[Workflow] Payment success: {payment.IsSuccessful}");
+                    });
         }
 
         /// <summary>
@@ -70,11 +75,12 @@ namespace WorkflowSample
                         Console.WriteLine($"[SubWorkflow] Order shipped! Tracking: {shipping.TrackingNumber}");
                     })
                 .WithCancelToken("sdldfjk")
-                .OnCanceled(async () =>
-                {
-                    Console.WriteLine($"[SubWorkflow] Order shipment canceled for Order {CurrentOrderId}");
-                    await Task.CompletedTask;
-                });
+                .OnCanceled(
+                    async () =>
+                    {
+                        Console.WriteLine($"[SubWorkflow] Order shipment canceled for Order {CurrentOrderId}");
+                        await Task.CompletedTask;
+                    });
         }
 
         // Optional Overrides from WorkflowContainer

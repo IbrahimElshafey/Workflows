@@ -3,7 +3,11 @@ using System.Threading.Tasks;
 
 namespace Workflows.Runner.DataObjects
 {
-    internal class ExpressionTemplateCacheRecord
+    /// <summary>
+    /// The key for this record will be a hash that calcualted based on (MatchExpressionTextForm, CancelActionName, AfterMatchAction).
+    /// This allows us to cache the compiled expressions for each unique wait in the workflow.
+    /// </summary>
+    internal class SignalTemplateCacheRecord
     {
         // Tier 3 Execution: (signalData, workflowInstance, closure) => bool
         public Func<object, object, object, bool> CompiledMatchDelegate { get; set; }

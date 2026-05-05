@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace Workflows.Definition
@@ -7,7 +9,7 @@ namespace Workflows.Definition
     /// <summary>
     /// Base class for all wait types in the workflow engine.
     /// </summary>
-    public class Wait
+    public abstract class Wait
     {
         internal Wait(WaitType waitType, string waitName, int inCodeLine, string callerName, string callerFilePath)
         {
@@ -38,10 +40,7 @@ namespace Workflows.Definition
 
         internal List<Wait> ChildWaits { get; set; } = new();
 
-        internal object LocalsValue { get; set; }
-
-        internal object ClosureValue { get; set; }
-
+        public string ClosureKey { get; set; }
         internal Func<ValueTask> CancelAction { get; set; }
 
         public WorkflowContainer WorkflowContainer { get; set; }

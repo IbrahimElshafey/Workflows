@@ -6,9 +6,9 @@ namespace Workflows.Abstraction.DTOs
     /// DTO for GroupWait that stores composite wait configuration.
     /// Inherits from WaitInfrastructureDto to maintain compatibility with persistence infrastructure.
     /// </summary>
-    public class WaitsGroupDto : WaitInfrastructureDto
+    public class GroupWaitDto : WaitInfrastructureDto
     {
-        internal WaitsGroupDto()
+        internal GroupWaitDto()
         {
             WaitType = WaitType.GroupWaitAll;
         }

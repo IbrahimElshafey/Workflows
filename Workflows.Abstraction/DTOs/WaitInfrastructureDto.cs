@@ -21,16 +21,6 @@ namespace Workflows.Abstraction.DTOs
         public WaitStatus Status { get; internal set; } = WaitStatus.Waiting;
 
         /// <summary>
-        /// Local variables in the method at the wait point. Represents RunnerState.
-        /// </summary>
-        public PrivateData Locals { get; internal set; }
-
-        /// <summary>
-        /// Closure data captured at the wait point for later deserialization.
-        /// </summary>
-        public PrivateData ClosureData { get; internal set; }
-
-        /// <summary>
         /// State value after this wait completes (used for resumption logic).
         /// </summary>
         public int StateAfterWait { get; internal set; }

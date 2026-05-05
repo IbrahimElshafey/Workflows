@@ -17,9 +17,9 @@ namespace Workflows.Runner
     internal class StateMachineAdvancer
     {
         // Cache of compiled hydrator delegates.
-        // Action<enumerator, instance, closuresDict, localsDict, state>
-        private static readonly ConcurrentDictionary<Type, Action<object, object, Dictionary<string, object>, Dictionary<string, object>, int>> _hydratorCache
-                = new ConcurrentDictionary<Type, Action<object, object, Dictionary<string, object>, Dictionary<string, object>, int>>();
+        // Action<enumerator, machineState>
+        private static readonly ConcurrentDictionary<Type, Action<object, MachineState>> _hydratorCache
+                = new ConcurrentDictionary<Type, Action<object, MachineState>>();
 
         // Cache: Func<enumerator, MachineState>
         private static readonly ConcurrentDictionary<Type, Func<object, MachineState>> _dehydratorCache
@@ -27,10 +27,7 @@ namespace Workflows.Runner
 
         internal async Task<AdvancerResult> RunAsync(
             IAsyncEnumerable<Wait> workflow,
-            WorkflowContainer instance,
-            Dictionary<string, object> closures,
-            Dictionary<string, object> locals,
-            int stateAfterWait,
+            MachineState previousState,
             CancellationToken cancellationToken = default)
         {
             var enumerator = workflow.GetAsyncEnumerator(cancellationToken);
@@ -38,7 +35,7 @@ namespace Workflows.Runner
 
             // 1. Hydrate 
             var hydrator = _hydratorCache.GetOrAdd(enumeratorType, BuildHydratorDelegate);
-            hydrator(enumerator, instance, closures, locals, stateAfterWait);
+            hydrator(enumerator, previousState);
 
             // 2. Advance
             if (await enumerator.MoveNextAsync())
@@ -53,88 +50,68 @@ namespace Workflows.Runner
                 return new AdvancerResult
                 {
                     Wait = nextWait,
-                    State = newState.State,
-                    Closures = newState.Closures,
-                    Locals = newState.Locals
+                    State = newState
                 };
             }
 
             return null; // Completed natively
         }
 
-        private static Action<object, object, Dictionary<string, object>, Dictionary<string, object>, int> BuildHydratorDelegate(Type enumeratorType)
+        private static Action<object, MachineState> BuildHydratorDelegate(Type enumeratorType)
         {
             var enumeratorParam = Expression.Parameter(typeof(object), "enumerator");
-            var instanceParam = Expression.Parameter(typeof(object), "instance");
-            var closuresParam = Expression.Parameter(typeof(Dictionary<string, object>), "closures");
-            var localsParam = Expression.Parameter(typeof(Dictionary<string, object>), "locals");
-            var stateParam = Expression.Parameter(typeof(int), "state");
+            var stateParam = Expression.Parameter(typeof(MachineState), "stateObj");
 
             var typedEnumerator = Expression.Convert(enumeratorParam, enumeratorType);
             var assignments = new List<Expression>();
             var localVariables = new List<ParameterExpression>();
 
             var fields = enumeratorType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+            // Extract property accessors for MachineState
+            var stateIndexProp = Expression.Property(stateParam, nameof(MachineState.StateIndex));
+            var instanceProp = Expression.Property(stateParam, nameof(MachineState.Instance));
+            var variablesProp = Expression.Property(stateParam, nameof(MachineState.Variables));
+
             var dictTryGetValueMethod = typeof(Dictionary<string, object>).GetMethod("TryGetValue", new[] { typeof(string), typeof(object).MakeByRefType() });
 
-            // 1. Assign State
+            // 1. Assign State Index
             var stateField = fields.FirstOrDefault(f => f.Name == CompilerConstants.StateFieldName);
             if (stateField != null)
             {
-                assignments.Add(Expression.Assign(Expression.Field(typedEnumerator, stateField), stateParam));
+                assignments.Add(Expression.Assign(Expression.Field(typedEnumerator, stateField), stateIndexProp));
             }
 
             // 2. Assign Instance ('this' pointer)
             var thisField = fields.FirstOrDefault(f => f.Name.EndsWith(CompilerConstants.CallerSuffix, StringComparison.Ordinal));
             if (thisField != null)
             {
-                var typedInstance = Expression.Convert(instanceParam, thisField.FieldType);
+                var typedInstance = Expression.Convert(instanceProp, thisField.FieldType);
                 assignments.Add(Expression.Assign(Expression.Field(typedEnumerator, thisField), typedInstance));
             }
 
-            // 3. Hydrate Closures
-            var closureFields = fields.Where(IsClosureField).ToList();
-            if (closureFields.Any())
+            // 3. Hydrate Variables (Locals + Closures combined)
+            var stateFieldsToHydrate = fields.Where(f => IsClosureField(f) || IsLocalField(f)).ToList();
+            if (stateFieldsToHydrate.Any())
             {
-                var closuresNotNull = Expression.NotEqual(closuresParam, Expression.Constant(null, typeof(Dictionary<string, object>)));
-                var closureAssignments = new List<Expression>();
+                var variablesNotNull = Expression.NotEqual(variablesProp, Expression.Constant(null, typeof(Dictionary<string, object>)));
+                var variableAssignments = new List<Expression>();
 
-                foreach (var cf in closureFields)
+                foreach (var f in stateFieldsToHydrate)
                 {
-                    var outVar = Expression.Variable(typeof(object), cf.Name + "_out");
+                    var outVar = Expression.Variable(typeof(object), f.Name + "_out");
                     localVariables.Add(outVar);
 
-                    var tryGetCall = Expression.Call(closuresParam, dictTryGetValueMethod, Expression.Constant(cf.Name), outVar);
-                    var assignField = Expression.Assign(Expression.Field(typedEnumerator, cf), Expression.Convert(outVar, cf.FieldType));
+                    var tryGetCall = Expression.Call(variablesProp, dictTryGetValueMethod, Expression.Constant(f.Name), outVar);
+                    var assignField = Expression.Assign(Expression.Field(typedEnumerator, f), Expression.Convert(outVar, f.FieldType));
 
-                    closureAssignments.Add(Expression.IfThen(tryGetCall, assignField));
+                    variableAssignments.Add(Expression.IfThen(tryGetCall, assignField));
                 }
-                assignments.Add(Expression.IfThen(closuresNotNull, Expression.Block(closureAssignments)));
-            }
-
-            // 4. Hydrate Locals
-            var localFields = fields.Where(f => IsLocalField(f) && !closureFields.Contains(f)).ToList();
-            if (localFields.Any())
-            {
-                var localsNotNull = Expression.NotEqual(localsParam, Expression.Constant(null, typeof(Dictionary<string, object>)));
-                var localAssignments = new List<Expression>();
-
-                foreach (var lf in localFields)
-                {
-                    var outVar = Expression.Variable(typeof(object), lf.Name + "_out");
-                    localVariables.Add(outVar);
-
-                    var tryGetCall = Expression.Call(localsParam, dictTryGetValueMethod, Expression.Constant(lf.Name), outVar);
-                    var assignField = Expression.Assign(Expression.Field(typedEnumerator, lf), Expression.Convert(outVar, lf.FieldType));
-
-                    localAssignments.Add(Expression.IfThen(tryGetCall, assignField));
-                }
-                assignments.Add(Expression.IfThen(localsNotNull, Expression.Block(localAssignments)));
+                assignments.Add(Expression.IfThen(variablesNotNull, Expression.Block(variableAssignments)));
             }
 
             var block = Expression.Block(localVariables, assignments);
-            var lambda = Expression.Lambda<Action<object, object, Dictionary<string, object>, Dictionary<string, object>, int>>(
-                block, enumeratorParam, instanceParam, closuresParam, localsParam, stateParam);
+            var lambda = Expression.Lambda<Action<object, MachineState>>(block, enumeratorParam, stateParam);
 
             return lambda.CompileFast();
         }
@@ -155,34 +132,33 @@ namespace Workflows.Runner
             if (stateField != null)
             {
                 assignments.Add(Expression.Assign(
-                    Expression.Property(stateVar, nameof(MachineState.State)),
+                    Expression.Property(stateVar, nameof(MachineState.StateIndex)),
                     Expression.Field(typedEnumerator, stateField)
                 ));
             }
 
-            var dictAddMethod = typeof(Dictionary<string, object>).GetMethod("Add", new[] { typeof(string), typeof(object) });
-
-            // 2. Extract Closures
-            var closureFields = fields.Where(IsClosureField).ToList();
-            foreach (var cf in closureFields)
+            // 2. Extract Instance ('this' pointer)
+            var thisField = fields.FirstOrDefault(f => f.Name.EndsWith(CompilerConstants.CallerSuffix, StringComparison.Ordinal));
+            if (thisField != null)
             {
-                var fieldAccess = Expression.Field(typedEnumerator, cf);
-                var castedField = Expression.Convert(fieldAccess, typeof(object));
-                var isNotNull = Expression.NotEqual(castedField, Expression.Constant(null, typeof(object)));
-
-                var addCall = Expression.Call(Expression.Property(stateVar, nameof(MachineState.Closures)), dictAddMethod, Expression.Constant(cf.Name), castedField);
-                assignments.Add(Expression.IfThen(isNotNull, addCall));
+                assignments.Add(Expression.Assign(
+                    Expression.Property(stateVar, nameof(MachineState.Instance)),
+                    Expression.Convert(Expression.Field(typedEnumerator, thisField), typeof(object))
+                ));
             }
 
-            // 3. Extract Locals
-            var localFields = fields.Where(f => IsLocalField(f) && !closureFields.Contains(f)).ToList();
-            foreach (var lf in localFields)
+            // 3. Extract Variables (Locals + Closures combined)
+            var dictAddMethod = typeof(Dictionary<string, object>).GetMethod("Add", new[] { typeof(string), typeof(object) });
+            var variablesProp = Expression.Property(stateVar, nameof(MachineState.Variables));
+
+            var stateFieldsToDehydrate = fields.Where(f => IsClosureField(f) || IsLocalField(f)).ToList();
+            foreach (var f in stateFieldsToDehydrate)
             {
-                var fieldAccess = Expression.Field(typedEnumerator, lf);
+                var fieldAccess = Expression.Field(typedEnumerator, f);
                 var castedField = Expression.Convert(fieldAccess, typeof(object));
                 var isNotNull = Expression.NotEqual(castedField, Expression.Constant(null, typeof(object)));
 
-                var addCall = Expression.Call(Expression.Property(stateVar, nameof(MachineState.Locals)), dictAddMethod, Expression.Constant(lf.Name), castedField);
+                var addCall = Expression.Call(variablesProp, dictAddMethod, Expression.Constant(f.Name), castedField);
                 assignments.Add(Expression.IfThen(isNotNull, addCall));
             }
 
@@ -202,13 +178,10 @@ namespace Workflows.Runner
 
         private static bool IsLocalField(FieldInfo field)
         {
-            // A local is something that has the lifted marker, the synthesized marker, 
-            // or the legacy wrap marker.
             bool isLiftedOrSynthesized = field.Name.Contains(CompilerConstants.LiftedLocalMarker)
                                       || field.Name.Contains(CompilerConstants.SynthesizedLocalMarker)
                                       || field.Name.Contains(CompilerConstants.LegacyLocalWrapMarker);
 
-            // Ensure we don't accidentally grab the state tracker or the class instance
             bool isSpecialInternal = field.Name == CompilerConstants.StateFieldName
                                   || field.Name.EndsWith(CompilerConstants.CallerSuffix);
 

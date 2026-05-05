@@ -1,34 +1,36 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 
 namespace Workflows.Definition
 {
     /// <summary>
-    /// Represents a passive wait for an external signal event.
-    /// Signals do not initiate side effects, so they can be safely combined
-    /// with other passive waits in group scenarios.
+    /// Represents a passive wait for an external signal event. Signals do not initiate side effects, so they can be
+    /// safely combined with other passive waits in group scenarios.
     /// </summary>
     public partial class SignalWait<SignalData> : Wait, IPassiveWait, ISignalWait
     {
         internal Action<SignalData> AfterMatchAction { get; set; }
 
-        internal SignalWait(string signalIdentifier, string waitName, int inCodeLine, string callerName, string callerFilepath)
-            : base(WaitType.SignalWait, waitName, inCodeLine, callerName, callerFilepath)
+        internal SignalWait(
+            string signalIdentifier,
+            string waitName,
+            int inCodeLine,
+            string callerName,
+            string callerFilepath) : base(WaitType.SignalWait, waitName, inCodeLine, callerName, callerFilepath)
         {
             SignalIdentifier = signalIdentifier;
         }
 
         internal LambdaExpression MatchExpression { get; set; }
+
         internal string MatchExpressionAsText { get; set; }
+
         internal string SignalIdentifier { get; set; }
 
-        LambdaExpression ISignalWait.MatchExpression
-        {
-            get => MatchExpression;
-            set => MatchExpression = value;
-        }
+        LambdaExpression ISignalWait.MatchExpression { get => MatchExpression; set => MatchExpression = value; }
 
         public SignalWait<SignalData> AfterMatch(Action<SignalData> afterMatchAction)
         {
@@ -57,7 +59,8 @@ namespace Workflows.Definition
 
         public SignalWait<SignalData> WithCancelToken(string token)
         {
-            if (string.IsNullOrWhiteSpace(token)) return this;
+            if (string.IsNullOrWhiteSpace(token))
+                return this;
             CancelTokens ??= new HashSet<string>();
             CancelTokens.Add(token);
             return this;

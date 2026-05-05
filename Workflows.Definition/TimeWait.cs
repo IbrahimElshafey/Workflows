@@ -14,7 +14,6 @@ namespace Workflows.Definition
 
         internal TimeSpan TimeToWait { get; set; }
         internal string UniqueMatchId { get; set; }
-        internal string CancelActionSerialized { get; set; }
 
         public HashSet<string> CancelTokens { get; set; }
 
