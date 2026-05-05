@@ -1,7 +1,7 @@
 ﻿using System;
-using Workflows.Abstraction.Communication;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Runner;
+using Workflows.Common.Abstraction.Communication;
 
 namespace Workflows.Orchestrator
 {

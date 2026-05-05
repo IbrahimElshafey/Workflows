@@ -25,6 +25,6 @@ namespace Workflows.Abstraction.DTOs
         /// </summary>
         public TimeSpan DefaultTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
-        public CommandExecutionMode ExecutionMode { get; set; }
+        public Common.Abstraction.CommandExecutionMode ExecutionMode { get; set; }
     }
 }

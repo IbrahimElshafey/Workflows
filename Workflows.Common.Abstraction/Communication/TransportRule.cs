@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Linq;
 
-namespace Workflows.Abstraction.Communication
+
+
+
+namespace Workflows.Common.Abstraction.Communication
 {
     internal class TransportRule
     {

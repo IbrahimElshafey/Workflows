@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Workflows.Common.Abstraction;
 
 namespace Workflows.Definition
 {

@@ -14,6 +14,8 @@ namespace Workflows.Abstraction.DTOs
         /// Serialized match expression for filtering incoming signals.
         /// </summary>
         public string MatchExpression { get; set; }
+        public string MatchClosureKey { get; set; }
+        public string AfterMatchClosureKey { get; set; }
 
         /// <summary>
         /// Hash of the match expression for optimization and deduplication.

@@ -1,8 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 
-namespace Workflows.Abstraction.Communication
+
+
+
+namespace Workflows.Common.Abstraction.Communication
 {
     public interface ITransportFactory
     {

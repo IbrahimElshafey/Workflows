@@ -1,6 +1,8 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Workflows.Abstraction.Runner;
+using Workflows.Common.Abstraction;
 using Workflows.Runner.ExpressionTransformers;
+using Workflows.Runner.Helpers;
 
 namespace Workflows.Runner
 {
@@ -15,7 +17,7 @@ namespace Workflows.Runner
             //services.AddScoped<IWorkflowRunner, WorkflowRunner>();
             services.AddSingleton<MatchExpressionTransformer>();
             services.AddSingleton<StateMachineAdvancer>();
-            services.AddSingleton<IExpressionSerializer, ExpressionSerializer>();
+            services.AddSingleton<WaitMapper>();
             return services;
         }
     }

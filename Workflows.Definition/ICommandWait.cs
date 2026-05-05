@@ -1,3 +1,5 @@
+using Workflows.Common.Abstraction;
+
 namespace Workflows.Definition
 {
     /// <summary>

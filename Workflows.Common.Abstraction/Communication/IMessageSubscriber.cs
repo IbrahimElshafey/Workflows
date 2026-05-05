@@ -2,7 +2,10 @@
 using System;
 using System.Threading.Tasks;
 
-namespace Workflows.Abstraction.Communication
+
+
+
+namespace Workflows.Common.Abstraction.Communication
 {
     public interface IMessageSubscriber : IDisposable
     {

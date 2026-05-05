@@ -1,6 +1,5 @@
 ﻿using System;
-using Workflows.Abstraction.Common;
-using Workflows.Abstraction.Enums;
+using Workflows.Common.Abstraction;
 
 namespace Workflows.Common
 {

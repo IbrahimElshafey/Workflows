@@ -15,6 +15,6 @@ namespace Workflows.Abstraction.Runner
         /// <summary>
         /// Determines whether the command runs fast (auto-advance) or slow (suspend and persist).
         /// </summary>
-        CommandExecutionMode ExecutionMode { get; }
+        Common.Abstraction.CommandExecutionMode ExecutionMode { get; }
     }
 }

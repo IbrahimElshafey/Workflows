@@ -1,9 +1,10 @@
-﻿namespace Workflows.Abstraction.Enums
-{
-    /// <summary>
-    /// Specifies the target scope for serialization, allowing the engine to 
-    /// handle standard data and complex compiler-generated state differently.
-    /// </summary>
+﻿using System;
+
+namespace Workflows.Common.Abstraction
+{/// <summary>
+ /// Specifies the target scope for serialization, allowing the engine to 
+ /// handle standard data and complex compiler-generated state differently.
+ /// </summary>
     public enum SerializationScope
     {
         /// <summary>

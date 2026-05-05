@@ -2,7 +2,11 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-namespace Workflows.Abstraction.Communication
+
+
+
+
+namespace Workflows.Common.Abstraction.Communication
 {
     public interface IMessageDispatcher
     {

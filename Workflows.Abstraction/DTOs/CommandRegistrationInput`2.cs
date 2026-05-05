@@ -10,7 +10,7 @@ namespace Workflows.Abstraction.DTOs
             CommandInputType = typeof(TCommand);
             CommandResultType = typeof(TResult);
         }
-        public CommandRegistrationInput(string handlerKey, CommandExecutionMode commandExecutionMode) : this()
+        public CommandRegistrationInput(string handlerKey, Common.Abstraction.CommandExecutionMode commandExecutionMode) : this()
         {
             HandlerKey = handlerKey;
             CommandExecutionMode = commandExecutionMode;
@@ -19,6 +19,6 @@ namespace Workflows.Abstraction.DTOs
         public Type CommandInputType { get; private set; }
         public Type CommandResultType { get; private set; }
         public string? HandlerKey { get; private set; }
-        public CommandExecutionMode CommandExecutionMode { get; }
+        public Common.Abstraction.CommandExecutionMode CommandExecutionMode { get; }
     }
 }

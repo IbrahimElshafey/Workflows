@@ -16,6 +16,8 @@ namespace Workflows.Abstraction.DTOs
         public object CommandData { get; set; }
 
         public object CommandResult { get; set; }
+        public string ResultClosureKey { get; set; }
+        public string CompensationClosureKey { get; set; }
 
         /// <summary>
         /// Maximum number of retry attempts for command execution.
@@ -50,6 +52,6 @@ namespace Workflows.Abstraction.DTOs
         /// <summary>
         /// Determines whether the command is processed as a direct (runner-handled) or indirect (orchestrator-signalled) operation.
         /// </summary>
-        public CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.Direct;
+        public Common.Abstraction.CommandExecutionMode ExecutionMode { get; set; } = Common.Abstraction.CommandExecutionMode.Direct;
     }
 }

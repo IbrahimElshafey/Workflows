@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using Workflows.Abstraction.Common;
-using Workflows.Abstraction.Communication;
-using Workflows.Abstraction.DTOs;
+using Workflows.Common.Abstraction;
+using Workflows.Common.Abstraction.Communication;
+using Workflows.Runner.ExpressionTransformers;
 
 namespace Workflows.Common
 {
@@ -10,6 +10,7 @@ namespace Workflows.Common
         public static IServiceCollection AddWorkflowsCommon(this IServiceCollection services)
         {
             services.AddSingleton<IObjectSerializer, JsonSerializer>();
+            services.AddSingleton<IExpressionSerializer, ExpressionSerializer>();
             //services.AddSingleton(sp =>
             //{
             //    var builder = new TransportRoutingBuilder();

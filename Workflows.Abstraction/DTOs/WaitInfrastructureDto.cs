@@ -24,6 +24,7 @@ namespace Workflows.Abstraction.DTOs
         /// State value after this wait completes (used for resumption logic).
         /// </summary>
         public int StateAfterWait { get; internal set; }
+        public string CancelClosureKey { get; set; }
 
         /// <summary>
         /// Serialized path to this wait in the workflow structure.

@@ -1,6 +1,6 @@
 ﻿using System.Linq.Expressions;
 
-namespace Workflows.Abstraction.Runner
+namespace Workflows.Common.Abstraction
 {
     /// <summary>
     /// Responsible for serializing C# Expression Trees used in workflow wait conditions.

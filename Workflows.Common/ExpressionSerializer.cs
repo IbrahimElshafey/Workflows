@@ -7,7 +7,7 @@ using Json = Nuqleon.Json.Expressions;
 namespace Workflows.Runner.ExpressionTransformers
 {
 
-    internal sealed class ExpressionSerializer : BonsaiExpressionSerializer, Workflows.Abstraction.Runner.IExpressionSerializer
+    internal sealed class ExpressionSerializer : BonsaiExpressionSerializer, Workflows.Common.Abstraction.IExpressionSerializer
     {
         protected override Func<object, Json.Expression> GetConstantSerializer(Type type)
         {

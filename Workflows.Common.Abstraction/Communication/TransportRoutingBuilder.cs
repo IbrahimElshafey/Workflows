@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 
-namespace Workflows.Abstraction.Communication
+
+
+
+namespace Workflows.Common.Abstraction.Communication
 {
     public class TransportRoutingBuilder
     {
@@ -12,8 +15,8 @@ namespace Workflows.Abstraction.Communication
         internal List<TransportRule> Rules { get; } = new();
 
         // 1. Configure the Fallback
-        public TransportRoutingBuilder UseDefault<TTransport, TSubscriber>()
-            where TTransport : IMessageTransport
+        public Communication.TransportRoutingBuilder UseDefault<TTransport, TSubscriber>()
+            where TTransport : Communication.IMessageTransport
             where TSubscriber : IMessageSubscriber
         {
             _defaultTransport = typeof(TTransport);
@@ -22,9 +25,9 @@ namespace Workflows.Abstraction.Communication
         }
 
         // 2. Start a Rule for a specific Type
-        public RuleBuilder<TMessage> ForMessage<TMessage>()
+        public Communication.TransportRoutingBuilder.RuleBuilder<TMessage> ForMessage<TMessage>()
         {
-            return new RuleBuilder<TMessage>(this);
+            return new Communication.TransportRoutingBuilder.RuleBuilder<TMessage>(this);
         }
 
         internal Type GetDefaultTransport() => _defaultTransport
@@ -36,13 +39,13 @@ namespace Workflows.Abstraction.Communication
         // Helper class for the Fluent API
         public class RuleBuilder<TMessage>
         {
-            private readonly TransportRoutingBuilder _parent;
+            private readonly Communication.TransportRoutingBuilder _parent;
             private Func<object, bool> _compiledCondition = _ => true; // Default: match all values of this type
 
-            internal RuleBuilder(TransportRoutingBuilder parent) => _parent = parent;
+            internal RuleBuilder(Communication.TransportRoutingBuilder parent) => _parent = parent;
 
             // The Expression Tree: Compiles at startup!
-            public RuleBuilder<TMessage> When(Expression<Func<TMessage, bool>> conditionExpr)
+            public Communication.TransportRoutingBuilder.RuleBuilder<TMessage> When(Expression<Func<TMessage, bool>> conditionExpr)
             {
                 var compiledFunc = conditionExpr.Compile();
                 // Wrap it so it takes an object (for fast runtime evaluation)
@@ -50,8 +53,8 @@ namespace Workflows.Abstraction.Communication
                 return this;
             }
 
-            public TransportRoutingBuilder Use<TTransport, TSubscriber>(string address)
-                where TTransport : IMessageTransport
+            public Communication.TransportRoutingBuilder Use<TTransport, TSubscriber>(string address)
+                where TTransport : Communication.IMessageTransport
                 where TSubscriber : IMessageSubscriber
             {
                 _parent.Rules.Add(new TransportRule(

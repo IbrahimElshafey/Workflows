@@ -1,4 +1,5 @@
-namespace Workflows.Abstraction.Enums
+
+namespace Workflows.Common.Abstraction
 {
     /// <summary>
     /// Defines who receives the command result and how execution resumes.
