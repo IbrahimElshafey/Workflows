@@ -35,12 +35,6 @@ namespace Workflows.Runner
         }
         public Task<AsyncResult> RunWorkflowAsync(WorkflowExecutionRequest runContext)
         {
-            //# Orchestrator
-            //* Wait Activation Time = Siganl caused it sent time
-            //* NewWaitsIds: To be indexed in SQL
-            //* ConsumedWaitsIds: To be removed from SQL
-            //* 
-            //
             //* Send run started signal and enque request in channel
             //* Check signal match, Signal match needs
             //* We need to deserialize(workflow instance class,active closure, signal)
