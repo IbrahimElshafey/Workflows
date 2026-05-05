@@ -1,6 +1,9 @@
 ﻿using System.Linq.Expressions;
+using Workflows.Runner.ExpressionTransformers;
+using Workflows;
+using Workflows.Runner;
 
-namespace Workflows.Runner.ExpressionTransformers
+namespace Workflows.Runner.DataObjects
 {
     internal class ExpressionPart
     {

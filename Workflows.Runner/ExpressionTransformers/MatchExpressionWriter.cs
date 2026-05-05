@@ -18,7 +18,7 @@ internal partial class MatchExpressionWriter : ExpressionVisitor
 {
     private LambdaExpression _matchExpression;
     private readonly object _currentWorkflowInstance;
-    private readonly List<ExpressionPart> _expressionParts = new();
+    private readonly List<DataObjects.ExpressionPart> _expressionParts = new();
 
     /// <summary>
     /// Gets the analyzed and transformed match expression parts.

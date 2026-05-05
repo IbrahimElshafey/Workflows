@@ -13,7 +13,7 @@ namespace Workflows.Runner.ExpressionTransformers
 {
     internal class MandatoryPartExpressionsGenerator : ExpressionVisitor
     {
-        private readonly List<ExpressionPart> _mandatoryParts;
+        private readonly List<DataObjects.ExpressionPart> _mandatoryParts;
         private readonly LambdaExpression _matchExpression;
 
         /// <summary>
@@ -32,7 +32,7 @@ namespace Workflows.Runner.ExpressionTransformers
 
         public MandatoryPartExpressionsGenerator(
             LambdaExpression matchExpression,
-            List<ExpressionPart> expressionParts)
+            List<DataObjects.ExpressionPart> expressionParts)
         {
             _matchExpression = matchExpression;
             _mandatoryParts = expressionParts

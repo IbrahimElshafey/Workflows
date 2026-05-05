@@ -17,7 +17,9 @@ namespace Workflows.Runner
             //services.AddScoped<IWorkflowRunner, WorkflowRunner>();
             services.AddSingleton<MatchExpressionTransformer>();
             services.AddSingleton<StateMachineAdvancer>();
-            services.AddSingleton<WaitMapper>();
+            services.AddSingleton<IDelegateSerializer, DelegateSerializer>();
+            services.AddSingleton<IClosureContextResolver, ClosureContextResolver>();
+            services.AddSingleton<Mapper>();
             return services;
         }
     }
