@@ -6,9 +6,12 @@ namespace Workflows.Definition
 {
     public class CommandWait<TCommand, TResult> : Wait, ICommandWait
     {
+        internal bool IsCompensated { get; set; }
         internal TCommand CommandData { get; set; }
+        internal Func<Exception, ValueTask> OnFailureAction { get; set; }
         internal Action<TResult> OnResultAction { get; set; }
-        internal Func<ValueTask> CompensationAction { get; set; }
+        internal Func<TResult, ValueTask> CompensationAction { get; set; }
+        internal string[] CompensationTokens { get; set; }
         internal int MaxRetryAttempts { get; set; } = 1;
         internal TimeSpan? RetryBackoff { get; set; }
         internal string HandlerKey { get; set; }
@@ -37,8 +40,17 @@ namespace Workflows.Definition
             RetryBackoff = backoff;
             return this;
         }
-
-        public CommandWait<TCommand, TResult> RegisterCompensation(Func<ValueTask> compensationAction)
+        public CommandWait<TCommand, TResult> OnFailure(Func<Exception, ValueTask> failureAction)
+        {
+            OnFailureAction = failureAction;
+            return this;
+        }
+        public CommandWait<TCommand, TResult> WithToken(params string[] tokens)
+        {
+            CompensationTokens = tokens;
+            return this;
+        }
+        public CommandWait<TCommand, TResult> RegisterCompensation(Func<TResult,ValueTask> compensationAction)
         {
             CompensationAction = compensationAction;
             return this;

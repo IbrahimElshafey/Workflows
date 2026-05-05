@@ -1,7 +1,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace Workflows.Runner.DataObjects
+namespace Workflows.Runner.Cache
 {
     internal class GroupTemplateCacheRecord
     {

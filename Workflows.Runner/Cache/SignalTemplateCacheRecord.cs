@@ -1,7 +1,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace Workflows.Runner.DataObjects
+namespace Workflows.Runner.Cache
 {
     /// <summary>
     /// The key for this record will be a hash that calcualted based on (MatchExpressionTextForm, CancelActionName, AfterMatchAction).
@@ -9,16 +9,22 @@ namespace Workflows.Runner.DataObjects
     /// </summary>
     internal class SignalTemplateCacheRecord
     {
-        // Tier 3 Execution: (signalData, workflowInstance, closure) => bool
+        /// <summary>
+        /// Wait.MatchExpression: (workflowInstance, signalData, closure) => bool
+        /// </summary>
         public Func<object, object, object, bool> CompiledMatchDelegate { get; set; }
 
-        // Callback: (workflowInstance, signalData, closure) => void
+        /// <summary>
+        /// Wait.AfterMatchAction (workflowInstance, signalData, closure) => void
+        /// </summary>
         public Action<object, object, object> AfterMatchAction { get; set; }
 
-        // Callback: (workflowInstance, closure) => ValueTask
+        /// <summary>
+        /// Wait.CancelAction (workflowInstance, closure) => ValueTask
+        /// </summary>
         public Func<object, object, ValueTask> CancelAction { get; set; }
 
         // Tier 1 Blueprint: (workflowInstance, closure) => object[]
-        public Func<object, object, object[]> CompiledInstanceExactMatchExpression { get; set; }
+        public Func<object, object, string> CompiledInstanceExactMatchExpression { get; set; }
     }
 }

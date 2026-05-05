@@ -39,7 +39,7 @@ namespace WorkflowSample
                 {
                     Console.WriteLine($"Confirmation email sent with MessageId: {result.MessageId}");
                 })
-                .RegisterCompensation(() =>
+                .RegisterCompensation(result =>
                 {
                     Console.WriteLine("Compensating: Marking email delivery as failed in database");
                     return default;
@@ -61,7 +61,7 @@ namespace WorkflowSample
                     // Can perform async operations here - they will be awaited
                     await LogPaymentAsync(result);
                 })
-                .RegisterCompensation(async () =>
+                .RegisterCompensation(async result =>
                 {
                     Console.WriteLine("Compensating: Refunding payment");
                     await RefundPaymentAsync();

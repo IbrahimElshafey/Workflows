@@ -8,6 +8,7 @@ namespace Workflows.Definition
         GroupWaitWithExpression,
         SubWorkflowWait,
         Command,
-        CommandsGroup
+        CommandsGroup,
+        Compensation
     }
 }

@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
-using Workflows.Runner.DataObjects;
 
-namespace Workflows.Runner.Helpers
+namespace Workflows.Runner.Cache
 {
     internal class WorkflowTemplateCache
     {

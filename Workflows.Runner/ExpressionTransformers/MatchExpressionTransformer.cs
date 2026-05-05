@@ -1,4 +1,5 @@
 ﻿using System;
+using Workflows.Abstraction.DTOs;
 using Workflows.Definition;
 using Workflows.Runner.DataObjects;
 
@@ -11,7 +12,7 @@ namespace Workflows.Runner.ExpressionTransformers
             if (signalWait == null)
                 throw new ArgumentNullException(nameof(signalWait));
 
-            var matchWriter = new ExpressionTransformers.MatchExpressionWriter(
+            var matchWriter = new MatchExpressionWriter(
                 signalWait.MatchExpression,
                 signalWait.WorkflowContainer);
 
