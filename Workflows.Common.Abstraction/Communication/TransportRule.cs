@@ -1,10 +1,5 @@
 ﻿using System;
-using System.Linq;
-
-
-
-
-namespace Workflows.Common.Abstraction.Communication
+namespace Workflows.Shared.Communication
 {
     internal class TransportRule
     {
@@ -12,7 +7,7 @@ namespace Workflows.Common.Abstraction.Communication
         public Func<object, bool> Condition { get; }
         public Type TransportType { get; }
         public Type SubscriberType { get; }
-        public string Address { get; } // <--- The Queue Name or URL
+        public string Address { get; } // <--- The Queue Name, URL,or Pipe Name
 
         public TransportRule(Type messageType, Func<object, bool> condition, Type transportType, Type subscriberType, string address)
         {

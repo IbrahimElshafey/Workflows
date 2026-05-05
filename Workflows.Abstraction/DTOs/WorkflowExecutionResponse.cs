@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.DTOs.Waits;
 
 namespace Workflows.Abstraction.DTOs
 {
@@ -11,7 +11,7 @@ namespace Workflows.Abstraction.DTOs
     public class WorkflowExecutionResponse
     {
         public WorkflowStateDto UpdatedState { get; set; } // The new JSON snapshot
-        public List<WaitInfrastructureDto> NewWaits { get; set; } // To be indexed in SQL
+        public List<Guid> NewWaitsIds { get; set; } // To be indexed in SQL
         public List<Guid> ConsumedWaitsIds { get; set; } // To be removed from SQL
         public string ExecutionCode { get; internal set; }
     }

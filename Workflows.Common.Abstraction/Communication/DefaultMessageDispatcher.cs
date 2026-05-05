@@ -3,7 +3,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Workflows.Common.Abstraction.Communication
+namespace Workflows.Shared.Communication
 {
     public class DefaultMessageDispatcher : IMessageDispatcher
     {
@@ -20,7 +20,7 @@ namespace Workflows.Common.Abstraction.Communication
         public async Task DispatchAsync<T>(T message)
         {
             var rule = FindRule(message);
-            var transport = (Communication.IMessageTransport)_serviceProvider.GetService(rule.TransportType);
+            var transport = (IMessageTransport)_serviceProvider.GetService(rule.TransportType);
             if (transport == null)
             {
                 throw new InvalidOperationException($"Service not registered for type: {rule.TransportType.Name}");
@@ -35,7 +35,7 @@ namespace Workflows.Common.Abstraction.Communication
             var rule = FindRule(message);
 
             // 2. Resolve the concrete transport (e.g., HttpTransport, RabbitMqTransport)
-            var transport = (Communication.IMessageTransport)_serviceProvider.GetService(rule.TransportType);
+            var transport = (IMessageTransport)_serviceProvider.GetService(rule.TransportType);
             if (transport == null)
             {
                 throw new InvalidOperationException($"Service not registered for type: {rule.TransportType.Name}");

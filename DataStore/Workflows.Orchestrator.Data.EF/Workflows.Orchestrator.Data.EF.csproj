@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
+  </ItemGroup>
+
 </Project>

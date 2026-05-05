@@ -1,6 +1,6 @@
 using System;
 using System.Threading.Tasks;
-using Workflows.Common.Abstraction;
+using Workflows.Shared.DataObject;
 
 namespace Workflows.Definition
 {

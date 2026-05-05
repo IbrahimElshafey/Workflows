@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Workflows.Definition;
 using Workflows.Runner.DataObjects;
 using Workflows.Runner.Helpers;
+using Workflows.Shared.DataObject;
 
 namespace Workflows.Runner
 {
@@ -18,16 +19,16 @@ namespace Workflows.Runner
     {
         // Cache of compiled hydrator delegates.
         // Action<enumerator, machineState>
-        private static readonly ConcurrentDictionary<Type, Action<object, MachineState>> _hydratorCache
-                = new ConcurrentDictionary<Type, Action<object, MachineState>>();
+        private static readonly ConcurrentDictionary<Type, Action<object, StateMachineObject>> _hydratorCache
+                = new ConcurrentDictionary<Type, Action<object, StateMachineObject>>();
 
         // Cache: Func<enumerator, MachineState>
-        private static readonly ConcurrentDictionary<Type, Func<object, MachineState>> _dehydratorCache
-            = new ConcurrentDictionary<Type, Func<object, MachineState>>();
+        private static readonly ConcurrentDictionary<Type, Func<object, StateMachineObject>> _dehydratorCache
+            = new ConcurrentDictionary<Type, Func<object, StateMachineObject>>();
 
         internal async Task<AdvancerResult> RunAsync(
             IAsyncEnumerable<Wait> workflow,
-            MachineState previousState,
+            StateMachineObject previousState,
             CancellationToken cancellationToken = default)
         {
             var enumerator = workflow.GetAsyncEnumerator(cancellationToken);
@@ -57,10 +58,10 @@ namespace Workflows.Runner
             return null; // Completed natively
         }
 
-        private static Action<object, MachineState> BuildHydratorDelegate(Type enumeratorType)
+        private static Action<object, StateMachineObject> BuildHydratorDelegate(Type enumeratorType)
         {
             var enumeratorParam = Expression.Parameter(typeof(object), "enumerator");
-            var stateParam = Expression.Parameter(typeof(MachineState), "stateObj");
+            var stateParam = Expression.Parameter(typeof(StateMachineObject), "stateObj");
 
             var typedEnumerator = Expression.Convert(enumeratorParam, enumeratorType);
             var assignments = new List<Expression>();
@@ -69,9 +70,9 @@ namespace Workflows.Runner
             var fields = enumeratorType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
 
             // Extract property accessors for MachineState
-            var stateIndexProp = Expression.Property(stateParam, nameof(MachineState.StateIndex));
-            var instanceProp = Expression.Property(stateParam, nameof(MachineState.Instance));
-            var variablesProp = Expression.Property(stateParam, nameof(MachineState.Variables));
+            var stateIndexProp = Expression.Property(stateParam, nameof(StateMachineObject.StateIndex));
+            var instanceProp = Expression.Property(stateParam, nameof(StateMachineObject.Instance));
+            var variablesProp = Expression.Property(stateParam, nameof(StateMachineObject.Variables));
 
             var dictTryGetValueMethod = typeof(Dictionary<string, object>).GetMethod("TryGetValue", new[] { typeof(string), typeof(object).MakeByRefType() });
 
@@ -111,28 +112,28 @@ namespace Workflows.Runner
             }
 
             var block = Expression.Block(localVariables, assignments);
-            var lambda = Expression.Lambda<Action<object, MachineState>>(block, enumeratorParam, stateParam);
+            var lambda = Expression.Lambda<Action<object, StateMachineObject>>(block, enumeratorParam, stateParam);
 
             return lambda.CompileFast();
         }
 
-        private static Func<object, MachineState> BuildDehydratorDelegate(Type enumeratorType)
+        private static Func<object, StateMachineObject> BuildDehydratorDelegate(Type enumeratorType)
         {
             var enumeratorParam = Expression.Parameter(typeof(object), "enumerator");
             var typedEnumerator = Expression.Convert(enumeratorParam, enumeratorType);
             var fields = enumeratorType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
 
-            var stateVar = Expression.Variable(typeof(MachineState), "stateObj");
+            var stateVar = Expression.Variable(typeof(StateMachineObject), "stateObj");
             var assignments = new List<Expression>();
 
-            assignments.Add(Expression.Assign(stateVar, Expression.New(typeof(MachineState))));
+            assignments.Add(Expression.Assign(stateVar, Expression.New(typeof(StateMachineObject))));
 
             // 1. Extract State Index
             var stateField = fields.FirstOrDefault(f => f.Name == CompilerConstants.StateFieldName);
             if (stateField != null)
             {
                 assignments.Add(Expression.Assign(
-                    Expression.Property(stateVar, nameof(MachineState.StateIndex)),
+                    Expression.Property(stateVar, nameof(StateMachineObject.StateIndex)),
                     Expression.Field(typedEnumerator, stateField)
                 ));
             }
@@ -142,14 +143,14 @@ namespace Workflows.Runner
             if (thisField != null)
             {
                 assignments.Add(Expression.Assign(
-                    Expression.Property(stateVar, nameof(MachineState.Instance)),
+                    Expression.Property(stateVar, nameof(StateMachineObject.Instance)),
                     Expression.Convert(Expression.Field(typedEnumerator, thisField), typeof(object))
                 ));
             }
 
             // 3. Extract Variables (Locals + Closures combined)
             var dictAddMethod = typeof(Dictionary<string, object>).GetMethod("Add", new[] { typeof(string), typeof(object) });
-            var variablesProp = Expression.Property(stateVar, nameof(MachineState.Variables));
+            var variablesProp = Expression.Property(stateVar, nameof(StateMachineObject.Variables));
 
             var stateFieldsToDehydrate = fields.Where(f => IsClosureField(f) || IsLocalField(f)).ToList();
             foreach (var f in stateFieldsToDehydrate)
@@ -165,7 +166,7 @@ namespace Workflows.Runner
             assignments.Add(stateVar); // Return value
 
             var block = Expression.Block(new[] { stateVar }, assignments);
-            var lambda = Expression.Lambda<Func<object, MachineState>>(block, enumeratorParam);
+            var lambda = Expression.Lambda<Func<object, StateMachineObject>>(block, enumeratorParam);
 
             return lambda.CompileFast();
         }

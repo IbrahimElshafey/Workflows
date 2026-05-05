@@ -1,7 +1,6 @@
-using System;
 using System.Threading.Tasks;
-using Workflows.Abstraction.DTOs;
-using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.DTOs.Registration;
+using Workflows.Shared.DataObject;
 
 namespace Workflows.Abstraction.DataStore
 {

@@ -1,4 +1,4 @@
-using Workflows.Common.Abstraction;
+using Workflows.Shared.DataObject;
 
 namespace Workflows.Definition
 {

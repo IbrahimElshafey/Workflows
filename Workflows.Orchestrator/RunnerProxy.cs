@@ -1,7 +1,6 @@
-﻿using System;
-using Workflows.Abstraction.DTOs;
+﻿using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Runner;
-using Workflows.Common.Abstraction.Communication;
+using Workflows.Shared.Communication;
 
 namespace Workflows.Orchestrator
 {
@@ -14,12 +13,12 @@ namespace Workflows.Orchestrator
             _dispatcher = dispatcher;
         }
 
-        public async Task<WorkflowRunId> RunWorkflowAsync(WorkflowExecutionRequest request)
+        public async Task<AsyncResult> RunWorkflowAsync(WorkflowExecutionRequest request)
         {
             // Fire and Forget. 
             // The Dispatcher handles evaluating the type, finding the RabbitMQ transport, 
             // and routing it to "orders-queue". The Orchestrator thread is immediately freed.
-            return await _dispatcher.DispatchAndReceiveAsync<WorkflowExecutionRequest, WorkflowRunId>(request);
+            return await _dispatcher.DispatchAndReceiveAsync<WorkflowExecutionRequest, AsyncResult>(request);
         }
     }
 }

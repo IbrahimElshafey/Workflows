@@ -1,5 +1,4 @@
 ﻿using WorkflowSample.DataObject;
-using Workflows;
 using Workflows.Definition;
 
 namespace WorkflowSample

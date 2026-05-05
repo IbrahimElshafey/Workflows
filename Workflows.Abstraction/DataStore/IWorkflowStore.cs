@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
-using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.DTOs.Waits;
 
 namespace Workflows.Abstraction.DataStore
 {

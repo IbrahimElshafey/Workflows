@@ -1,6 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using Workflows.Abstraction.Runner;
-using Workflows.Common.Abstraction;
+using Workflows.Definition;
 using Workflows.Runner.ExpressionTransformers;
 using Workflows.Runner.Helpers;
 
@@ -19,6 +18,8 @@ namespace Workflows.Runner
             services.AddSingleton<StateMachineAdvancer>();
             services.AddSingleton<IDelegateSerializer, DelegateSerializer>();
             services.AddSingleton<IClosureContextResolver, ClosureContextResolver>();
+            services.AddSingleton<IWorkflowBuilder, WorkflowBuilder>();
+            services.AddSingleton<IWorkflowRegistry, WorkflowBuilder>();
             services.AddSingleton<Mapper>();
             return services;
         }

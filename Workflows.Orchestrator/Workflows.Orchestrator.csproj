@@ -7,8 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Workflows.Abstraction\Workflows.Data.Abstraction.csproj" />
-    <ProjectReference Include="..\Workflows.Common.Abstraction\Workflows.Common.Abstraction.csproj" />
+    <ProjectReference Include="..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
+    <ProjectReference Include="..\Workflows.Common.Abstraction\Workflows.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>

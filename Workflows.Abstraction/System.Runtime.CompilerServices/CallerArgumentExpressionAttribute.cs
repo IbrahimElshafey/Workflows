@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Workflows.Abstraction.System.Runtime.CompilerServices
+namespace System.Runtime.CompilerServices
 {
     [AttributeUsage(AttributeTargets.Parameter, AllowMultiple = false, Inherited = false)]
     public sealed class CallerArgumentExpressionAttribute : Attribute

@@ -14,7 +14,7 @@ namespace Workflows.Abstraction.Runner
         /// which includes the current state and the incoming signal.
         /// </summary>
         /// <param name="runContext">The state and signal data required to resume execution.</param>
-        /// <returns>A <see cref="WorkflowRunId"/> identifying this specific execution attempt.</returns>
-        Task<WorkflowRunId> RunWorkflowAsync(WorkflowExecutionRequest runContext);
+        /// <returns>A <see cref="AsyncResult"/> identifying this specific execution attempt.</returns>
+        Task<AsyncResult> RunWorkflowAsync(WorkflowExecutionRequest runContext);
     }
 }

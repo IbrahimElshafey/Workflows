@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
-using Workflows.Abstraction.DTOs;
+using Workflows.Shared.DataObject;
 
 namespace Workflows.Abstraction.DTOs
 {
@@ -22,9 +23,9 @@ namespace Workflows.Abstraction.DTOs
         public DateTime Created { get; internal set; }
 
         /// <summary>
-        /// Serialized class instance that contains the resumable workflow instance data.
+        /// Serialized instance that contains the resumable workflow instance data and all locals (closures,methods private data) needed for execustion.
         /// </summary>
-        public object StateObject { get; internal set; }
+        public StateMachineObject StateObject { get; internal set; }
 
         /// <summary>
         /// List of current wait nodes (infrastructure DTOs) representing what the workflow is waiting for.

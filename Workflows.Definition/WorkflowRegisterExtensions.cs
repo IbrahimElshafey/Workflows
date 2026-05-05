@@ -4,8 +4,8 @@ namespace Workflows.Definition
 {
     public static class WorkflowRegisterExtensions
     {
-        public static IWorkflowRegister RegisterFromAssemblyContaining<T>(
-            this IWorkflowRegister register,
+        public static IWorkflowBuilder RegisterFromAssemblyContaining<T>(
+            this IWorkflowBuilder register,
             string version)
         {
             var assembly = typeof(T).Assembly;
@@ -17,9 +17,9 @@ namespace Workflows.Definition
             foreach (var type in workflowTypes)
             {
                 // Use reflection to call the generic RegisterWorkflow<T> method
-                var method = typeof(IWorkflowRegister).GetMethod(nameof(IWorkflowRegister.RegisterWorkflow))
+                var method = typeof(IWorkflowBuilder).GetMethod(nameof(IWorkflowBuilder.RegisterWorkflow))
                                                       .MakeGenericMethod(type);
-                method.Invoke(register, new object[] { version });
+                method.Invoke(register, [version]);
             }
 
             // 2. Do the same for Signals and Commands based on their marker interfaces...

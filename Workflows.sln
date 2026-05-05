@@ -5,13 +5,11 @@ VisualStudioVersion = 18.3.11512.155
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "_Documents", "_Documents\_Documents.shproj", "{A8DB2027-F414-4940-AAF4-2DC7EC35F99C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Data.Abstraction", "Workflows.Abstraction\Workflows.Data.Abstraction.csproj", "{C1A05515-8130-840D-DECE-641AC65F7914}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Abstraction", "Workflows.Abstraction\Workflows.Abstraction.csproj", "{C1A05515-8130-840D-DECE-641AC65F7914}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Definition", "Workflows.Definition\Workflows.Definition.csproj", "{FCD2A8FF-1AA6-A463-0AD2-237BA49D3B69}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Runner", "Workflows.Runner\Workflows.Runner.csproj", "{68754AD7-E45D-7DE4-DE97-6F6C388243F5}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Common", "Workflows.Common\Workflows.Common.csproj", "{8438EE5B-7C2A-44A5-9C87-6B1745EA5371}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WorkflowSample", "Samples\WorkflowSample\WorkflowSample.csproj", "{63BA3294-6BCB-4C56-A906-36381C9B86B5}"
 EndProject
@@ -23,7 +21,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "DataStore", "DataStore", "{
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Orchestrator.Data.EF", "DataStore\Workflows.Orchestrator.Data.EF\Workflows.Orchestrator.Data.EF.csproj", "{EBEE06CF-3F67-6E20-F1D6-CA0AD9B1BC80}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Common.Abstraction", "Workflows.Common.Abstraction\Workflows.Common.Abstraction.csproj", "{A15AABB3-908F-4D0D-BD77-E61A4E13CF41}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Shared", "Workflows.Common.Abstraction\Workflows.Shared.csproj", "{A15AABB3-908F-4D0D-BD77-E61A4E13CF41}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Hosting", "Hosting", "{D24B6D91-B7E6-45D1-9179-9F6A8F751134}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Hosting.InProcess", "Hosting\Workflows.Hosting.InProcess\Workflows.Hosting.InProcess.csproj", "{17C3F724-420C-F90E-4957-1DB844AE92F3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -43,10 +45,6 @@ Global
 		{68754AD7-E45D-7DE4-DE97-6F6C388243F5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{68754AD7-E45D-7DE4-DE97-6F6C388243F5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{68754AD7-E45D-7DE4-DE97-6F6C388243F5}.Release|Any CPU.Build.0 = Release|Any CPU
-		{8438EE5B-7C2A-44A5-9C87-6B1745EA5371}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{8438EE5B-7C2A-44A5-9C87-6B1745EA5371}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{8438EE5B-7C2A-44A5-9C87-6B1745EA5371}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{8438EE5B-7C2A-44A5-9C87-6B1745EA5371}.Release|Any CPU.Build.0 = Release|Any CPU
 		{63BA3294-6BCB-4C56-A906-36381C9B86B5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{63BA3294-6BCB-4C56-A906-36381C9B86B5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{63BA3294-6BCB-4C56-A906-36381C9B86B5}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -63,6 +61,10 @@ Global
 		{A15AABB3-908F-4D0D-BD77-E61A4E13CF41}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A15AABB3-908F-4D0D-BD77-E61A4E13CF41}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A15AABB3-908F-4D0D-BD77-E61A4E13CF41}.Release|Any CPU.Build.0 = Release|Any CPU
+		{17C3F724-420C-F90E-4957-1DB844AE92F3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{17C3F724-420C-F90E-4957-1DB844AE92F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{17C3F724-420C-F90E-4957-1DB844AE92F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{17C3F724-420C-F90E-4957-1DB844AE92F3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -70,6 +72,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{63BA3294-6BCB-4C56-A906-36381C9B86B5} = {E5E70ECB-5B3C-4CEB-AB9E-67E3CBFB30C5}
 		{EBEE06CF-3F67-6E20-F1D6-CA0AD9B1BC80} = {B0EC8713-8E22-4B9C-9C74-8CE3C9C8D101}
+		{17C3F724-420C-F90E-4957-1DB844AE92F3} = {D24B6D91-B7E6-45D1-9179-9F6A8F751134}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {AE5D3544-A75E-4511-ADAF-BEE3DA168EE9}

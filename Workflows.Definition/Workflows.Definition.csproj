@@ -19,7 +19,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\Workflows.Common.Abstraction\Workflows.Common.Abstraction.csproj" />
+	  <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.7" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\Workflows.Common.Abstraction\Workflows.Shared.csproj" />
 	</ItemGroup>
 
 </Project>

@@ -2,10 +2,11 @@
 using System.Collections.Generic;
 using System.Linq;
 using Workflows.Abstraction.DTOs;
-using Workflows.Abstraction.Enums;
-using Workflows.Common.Abstraction;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
 using Workflows.Runner.Helpers;
+using Workflows.Shared.DataObject;
+using Workflows.Shared.Serialization;
 
 namespace Workflows.Runner
 {
@@ -141,14 +142,7 @@ namespace Workflows.Runner
                 AfterMatchAction = afterMatchAction,
                 AfterMatchClosureKey = afterMatchClosureKey,
                 CancelAction = cancelAction,
-                CancelTokens = signalWait.CancelTokens,
-                MatchingTemplate = new MatchingTemplateDto
-                {
-                    MatchExpression = serializedMatch,
-                    AfterMatchAction = afterMatchAction,
-                    CancelAction = cancelAction,
-                    SignalIdentifier = signalWait.SignalIdentifier
-                }
+                CancelTokens = signalWait.CancelTokens
             };
 
             CopyBase(signalWait, dto);

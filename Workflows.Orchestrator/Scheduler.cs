@@ -1,5 +1,4 @@
-﻿using System;
-using Workflows.Abstraction.Orchestrator;
+﻿using Workflows.Abstraction.Orchestrator;
 
 namespace Workflows.Orchestrator
 {

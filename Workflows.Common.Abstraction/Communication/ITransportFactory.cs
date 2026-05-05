@@ -1,10 +1,4 @@
-﻿using System;
-using System.Linq;
-
-
-
-
-namespace Workflows.Common.Abstraction.Communication
+﻿namespace Workflows.Shared.Communication
 {
     public interface ITransportFactory
     {

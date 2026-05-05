@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using static FastExpressionCompiler.ExpressionCompiler;
 
 namespace Workflows.Runner.DataObjects
 {
