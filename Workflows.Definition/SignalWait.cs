@@ -31,6 +31,9 @@ namespace Workflows.Definition
 
         LambdaExpression ISignalWait.MatchExpression { get => MatchExpression; set => MatchExpression = value; }
 
+        string ISignalWait.SignalIdentifier => SignalIdentifier;
+        object ISignalWait.AfterMatchAction => AfterMatchAction;
+
         public SignalWait<SignalData> AfterMatch(Action<SignalData> afterMatchAction)
         {
             AfterMatchAction = afterMatchAction;

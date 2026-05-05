@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Workflows.Definition;
 using Workflows.Runner.ExpressionTransformers;
 using Workflows.Runner.Helpers;
@@ -20,6 +20,7 @@ namespace Workflows.Runner
             services.AddSingleton<IClosureContextResolver, ClosureContextResolver>();
             services.AddSingleton<IWorkflowBuilder, WorkflowBuilder>();
             services.AddSingleton<IWorkflowRegistry, WorkflowBuilder>();
+            services.AddSingleton<WorkflowTemplateCache>();
             services.AddSingleton<Mapper>();
             return services;
         }
