@@ -1,10 +1,12 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Numerics;
 using System.Threading.Tasks;
+using FastExpressionCompiler;
 using Microsoft.Extensions.DependencyInjection;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
@@ -57,75 +59,82 @@ namespace Workflows.Runner
                 throw new InvalidOperationException($"Triggering wait with ID {runContext.TriggeringWaitId} not found.");
             }
 
-            // 1. Resolve Workflow Types
+            // 1. Early Signal Validation
+            if (triggeringWaitDto is SignalWaitDto signalDto && runContext.Signal != null)
+            {
+                if (signalDto.SignalIdentifier != runContext.Signal.SignalIdentifier)
+                {
+                    return new AsyncResult(Guid.NewGuid(), null, "Error", "Signal identifier mismatch.", DateTime.UtcNow);
+                }
+            }
+
+            // 2. Resolve Workflow Types
             if (!_workflowRegistry.Workflows.TryGetValue(state.WorkflowType, out var workflowTypes))
             {
                 throw new InvalidOperationException($"Workflow {state.WorkflowType} not registered.");
             }
 
-            // 2. Instantiate/Hydrate Workflow Instance
-            var workflowInstance = (WorkflowContainer)ActivatorUtilities.CreateInstance(_serviceProvider, workflowTypes.WorkflowContainer);
+            // 3. Instantiate/Hydrate Workflow Instance (Optimized)
+            var factory = _templateCache.GetOrAddWorkflowFactory(workflowTypes.WorkflowContainer);
+            var workflowInstance = (WorkflowContainer)factory(_serviceProvider, null);
 
-            // 3. Reconstruct Wait object from DTO to access its metadata
-            var triggeringWait = _mapper.MapToWait(triggeringWaitDto, _workflowRegistry);
-            triggeringWait.WorkflowContainer = workflowInstance;
-
-            // 4. Handle Signal Match if applicable
-            if (triggeringWait is ISignalWait signalWait && runContext.Signal != null)
+            // 4. Handle Signal Match if applicable (Optimized)
+            if (triggeringWaitDto is SignalWaitDto signalWaitDto && runContext.Signal != null)
             {
-                if (signalWait.SignalIdentifier != runContext.Signal.SignalIdentifier)
+                Func<object, object, object, bool> compiledMatch = null;
+                if (signalWaitDto.TemplateHashKey is string hashKey)
                 {
-                    return new AsyncResult(Guid.NewGuid(), null, "Error", "Signal identifier mismatch.", DateTime.UtcNow);
+                    var cacheRecord = _templateCache.GetSignal(hashKey);
+                    if (cacheRecord != null)
+                    {
+                        compiledMatch = cacheRecord.CompiledMatchDelegate;
+                    }
                 }
 
-                if (signalWait.MatchExpression != null)
+                // If not cached, we MUST reconstruct to get the expression
+                ISignalWait signalWait = null;
+                if (compiledMatch == null)
                 {
-                    Func<object, object, object, bool> compiledMatch = null;
-                    if (triggeringWaitDto is SignalWaitDto signalWaitDto && signalWaitDto.TemplateHashKey is string hashKey)
+                    signalWait = (ISignalWait)_mapper.MapToWait(triggeringWaitDto, _workflowRegistry);
+                    if (signalWait.MatchExpression != null)
                     {
-                        var cacheRecord = _templateCache.GetSignal(hashKey);
-                        if (cacheRecord != null)
+                        var signalType = _workflowRegistry.SignalTypes.TryGetValue(signalWaitDto.SignalIdentifier, out var type) ? type : typeof(object);
+                        compiledMatch = CompileMatch(signalWait.MatchExpression, signalType);
+                        if (signalWaitDto.TemplateHashKey is string hKey)
                         {
-                            compiledMatch = cacheRecord.CompiledMatchDelegate;
-                        }
-                        else
-                        {
-                            // Compile and cache (simplified for this task)
-                            var compiled = signalWait.MatchExpression.Compile();
-                            compiledMatch = (sig, inst, clos) => (bool)compiled.DynamicInvoke(sig);
-                            _templateCache.GetOrAddSignal(hashKey, new SignalTemplateCacheRecord { CompiledMatchDelegate = compiledMatch });
-                        }
-                    }
-                    else
-                    {
-                        var compiled = signalWait.MatchExpression.Compile();
-                        compiledMatch = (sig, inst, clos) => (bool)compiled.DynamicInvoke(sig);
-                    }
-
-                    if (compiledMatch != null)
-                    {
-                        // Note: closure is not fully handled here as it requires more context from the DTO
-                        if (!compiledMatch(runContext.Signal.Data, workflowInstance, null))
-                        {
-                            return new AsyncResult(Guid.NewGuid(), null, "Error", "Signal match expression failed.", DateTime.UtcNow);
+                            _templateCache.GetOrAddSignal(hKey, new SignalTemplateCacheRecord { CompiledMatchDelegate = compiledMatch });
                         }
                     }
                 }
 
+                if (compiledMatch != null)
+                {
+                    if (!compiledMatch(runContext.Signal.Data, workflowInstance, null))
+                    {
+                        return new AsyncResult(Guid.NewGuid(), null, "Error", "Signal match expression failed.", DateTime.UtcNow);
+                    }
+                }
+
+                // Execute AfterMatchAction
+                signalWait ??= (ISignalWait)_mapper.MapToWait(triggeringWaitDto, _workflowRegistry);
                 var afterMatchAction = signalWait.AfterMatchAction;
                 if (afterMatchAction != null)
                 {
-                    afterMatchAction.GetType().GetMethod("Invoke").Invoke(afterMatchAction, new[] { runContext.Signal.Data });
+                    ((dynamic)afterMatchAction).Invoke((dynamic)runContext.Signal.Data);
                 }
             }
 
-            // 5. Advance State Machine
-            var workflowMethod = workflowTypes.WorkflowContainer.GetMethod(triggeringWait.CallerName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+            // 5. Reconstruct Wait object from DTO for state machine advancement
+            var triggeringWait = _mapper.MapToWait(triggeringWaitDto, _workflowRegistry);
+            triggeringWait.WorkflowContainer = workflowInstance;
+
+            // 6. Advance State Machine (Optimized)
+            var workflowMethod = _templateCache.GetOrAddWorkflowMethod(workflowTypes.WorkflowContainer, triggeringWait.CallerName);
             var workflowStream = (IAsyncEnumerable<Wait>)workflowMethod.Invoke(workflowInstance, null);
 
             var advancerResult = await _stateMachineAdvancer.RunAsync(workflowStream, state.StateObject);
 
-            // 6. Process Results
+            // 7. Process Results
             state.StateObject = advancerResult?.State;
             var consumedWaitsIds = new List<Guid> { triggeringWaitDto.Id };
             var newWaits = new List<WaitInfrastructureDto>();
@@ -157,6 +166,19 @@ namespace Workflows.Runner
                 if (child != null) return child;
             }
             return null;
+        }
+
+        private static Func<object, object, object, bool> CompileMatch(LambdaExpression matchExpression, Type signalType)
+        {
+            var signalParam = Expression.Parameter(typeof(object), "sig");
+            var instParam = Expression.Parameter(typeof(object), "inst");
+            var closureParam = Expression.Parameter(typeof(object), "clos");
+
+            var convertedSignal = Expression.Convert(signalParam, signalType);
+            var body = Expression.Invoke(matchExpression, convertedSignal);
+
+            var lambda = Expression.Lambda<Func<object, object, object, bool>>(body, signalParam, instParam, closureParam);
+            return lambda.CompileFast();
         }
     }
 }

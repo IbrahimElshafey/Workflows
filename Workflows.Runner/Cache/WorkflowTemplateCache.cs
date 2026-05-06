@@ -1,4 +1,7 @@
+using System;
 using System.Collections.Concurrent;
+using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Workflows.Runner.Cache
 {
@@ -7,6 +10,19 @@ namespace Workflows.Runner.Cache
         private readonly ConcurrentDictionary<string, SignalTemplateCacheRecord> _signalCache = new();
         private readonly ConcurrentDictionary<string, CommandTemplateCacheRecord> _commandCache = new();
         private readonly ConcurrentDictionary<string, GroupTemplateCacheRecord> _groupCache = new();
+        private readonly ConcurrentDictionary<Type, ObjectFactory> _workflowFactories = new();
+        private readonly ConcurrentDictionary<string, MethodInfo> _workflowMethods = new();
+
+        public ObjectFactory GetOrAddWorkflowFactory(Type workflowType)
+        {
+            return _workflowFactories.GetOrAdd(workflowType, type => ActivatorUtilities.CreateFactory(type, Array.Empty<Type>()));
+        }
+
+        public MethodInfo GetOrAddWorkflowMethod(Type containerType, string methodName)
+        {
+            var key = $"{containerType.FullName}:{methodName}";
+            return _workflowMethods.GetOrAdd(key, _ => containerType.GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic));
+        }
 
         public SignalTemplateCacheRecord GetOrAddSignal(string key, SignalTemplateCacheRecord record)
         {
