@@ -91,12 +91,12 @@ By using `ExecutionMode.Direct`, the workflow only yields a POCO (Plain Old C# O
 sequenceDiagram
     autonumber
     
-    box rgb(40, 44, 52) Compute Node
+    box rgb(235, 245, 255) Compute Node
         participant WF as C# Workflow
         participant Runner as Stateless Runner
     end
     
-    box rgb(20, 50, 80) IO & Routing
+    box rgb(245, 245, 255) IO & Routing
         participant Orch as Orchestrator
         participant DB as SQL / NoSQL
         participant Bus as Message Broker
@@ -105,7 +105,7 @@ sequenceDiagram
     participant Ext as External System
 
     %% DIRECT MODE
-    rect rgb(20, 60, 20)
+    rect rgb(230, 255, 230)
     note right of WF: Phase 1: ExecutionMode.Direct (Fast Command)
     WF->>Runner: yield return ExecuteCommand(new CalcTax())
     Runner->>Runner: Instantiate CommandHandler
@@ -116,20 +116,20 @@ sequenceDiagram
     %% DISPATCHED MODE
     note right of WF: Phase 2: ExecutionMode.Dispatched (Slow Command)
     
-    rect rgb(60, 20, 20)
+    rect rgb(255, 235, 235)
     WF->>Runner: yield return ExecuteCommand(new ChargeCard())
     Runner->>Orch: Suspend & Send [WorkflowContext + Command]
     Orch->>DB: Save Context & Create WaitId (Guid)
     Orch->>Bus: Publish Request (Header: WaitId)
     end
     
-    rect rgb(60, 40, 20)
+    rect rgb(255, 245, 230)
     Bus->>Ext: Consume Request
     note right of Ext: Processing... (Seconds to Hours)
     Ext->>Bus: Publish Response (Header: WaitId)
     end
     
-    rect rgb(20, 20, 60)
+    rect rgb(235, 235, 255)
     Bus->>Orch: Consume Response
     Orch->>DB: O(1) Lookup by WaitId
     DB-->>Orch: Return sleeping WorkflowContext
