@@ -17,6 +17,7 @@ namespace Workflows.Runner
         private readonly IObjectSerializer _objectSerializer;
         private readonly IDelegateSerializer _delegateSerializer;
         private readonly IClosureContextResolver _closureContextResolver;
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<object[], object>> _constructorCache = new();
 
         public Mapper(
             IExpressionSerializer expressionSerializer,
@@ -137,17 +138,16 @@ namespace Workflows.Runner
             var matchClosureKey = _closureContextResolver.CacheClosureIfAny(_closureContextResolver.TryGetClosureFromExpression(signalWait.MatchExpression), signalWait);
             var afterMatchClosureKey = _closureContextResolver.CacheClosureIfAny(signalWait.AfterMatchAction?.Target, signalWait);
 
-            var signalIdentifier = (string)signalWait.GetType().GetProperty("SignalIdentifier", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(signalWait);
-
             var dto = new SignalWaitDto
             {
-                SignalIdentifier = signalIdentifier,
+                SignalIdentifier = signalWait.SignalIdentifier,
                 MatchExpression = serializedMatch,
                 MatchClosureKey = matchClosureKey,
                 AfterMatchAction = afterMatchAction,
                 AfterMatchClosureKey = afterMatchClosureKey,
                 CancelAction = cancelAction,
-                CancelTokens = signalWait.CancelTokens
+                CancelTokens = signalWait.CancelTokens,
+                TemplateHashKey = $"{signalWait.SignalIdentifier}:{signalWait.MatchExpressionAsText}"
             };
 
             CopyBase(signalWait, dto);
@@ -212,7 +212,14 @@ namespace Workflows.Runner
             var signalType = registry.SignalTypes.TryGetValue(dto.SignalIdentifier, out var type) ? type : typeof(object);
             var waitType = typeof(SignalWait<>).MakeGenericType(signalType);
 
-            var wait = (ISignalWait)Activator.CreateInstance(waitType, BindingFlags.NonPublic | BindingFlags.Instance, new object[] { dto.SignalIdentifier, dto.WaitName, dto.InCodeLine, dto.CallerName, "" }, null);
+            var factory = _constructorCache.GetOrAdd(waitType, t =>
+            {
+                var ctor = t.GetConstructor(BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(string), typeof(string), typeof(int), typeof(string), typeof(string) }, null);
+                return args => ctor.Invoke(args);
+            });
+
+            var wait = (ISignalWait)factory(new object[] { dto.SignalIdentifier, dto.WaitName, dto.InCodeLine, dto.CallerName, "" });
+
             if (!string.IsNullOrEmpty((string)dto.MatchExpression))
             {
                 wait.MatchExpression = _expressionSerializer.Deserialize((string)dto.MatchExpression);
