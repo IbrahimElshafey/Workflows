@@ -6,6 +6,7 @@ namespace WorkflowSample
     // --- The Workflow Definition ---
     public class OrderProcessingWorkflow : WorkflowContainer
     {
+        private int _count;
         // Workflow State: This will be serialized and persisted automatically
         public int CurrentOrderId { get; set; }
 
@@ -14,7 +15,7 @@ namespace WorkflowSample
         /// <summary>
         /// The main entry point for the workflow.
         /// </summary>
-        public async IAsyncEnumerable<Wait> ProcessOrderWorkflow()
+        public override async IAsyncEnumerable<Wait> ExecuteWorkflowAsync()
         {
             // 1. Wait for a specific signal (Order Submitted)
             yield return WaitSignal<OrderSubmittedEvent>("OrderSubmittedSignal", "Wait for Order Submission")
@@ -33,7 +34,7 @@ namespace WorkflowSample
             yield return WaitDelay(TimeSpan.FromMinutes(5), "Wait 5 minutes before charging");
 
             // 3. Wait for payment, correlating it to the captured CurrentOrderId
-            yield return PaymentWait();
+            yield return PaymentWait(_count);
 
             // Yield a GroupWait that waits for ALL child waits to complete before continuing
             yield return WaitGroup(
@@ -49,7 +50,7 @@ namespace WorkflowSample
             Console.WriteLine($"[Workflow] Order {CurrentOrderId} processing complete!");
         }
 
-        private SignalWait<PaymentProcessedEvent> PaymentWait()
+        private SignalWait<PaymentProcessedEvent> PaymentWait(int count)
         {
             var x = 10;
             return WaitSignal<PaymentProcessedEvent>("PaymentProcessedSignal", "Wait for Payment")
@@ -57,7 +58,7 @@ namespace WorkflowSample
                 .AfterMatch(
                     payment =>
                     {
-                        Console.WriteLine($"[Workflow] Payment success: {payment.IsSuccessful}");
+                        Console.WriteLine($"[Workflow] Payment success: {payment.IsSuccessful} {count}");
                     });
         }
 
@@ -66,12 +67,13 @@ namespace WorkflowSample
         /// </summary>
         public async IAsyncEnumerable<Wait> ShippingSubWorkflow()
         {
+            var yy = "test";
             yield return WaitSignal<ShippingEvent>("OrderShipped", "Wait for Courier Pickup")
-                .MatchIf(shipping => shipping.OrderId == CurrentOrderId)
+                .MatchIf(shipping => shipping.OrderId == CurrentOrderId && yy == "test")
                 .AfterMatch(
                     shipping =>
                     {
-                        Console.WriteLine($"[SubWorkflow] Order shipped! Tracking: {shipping.TrackingNumber}");
+                        Console.WriteLine($"[SubWorkflow] Order shipped! Tracking: {shipping.TrackingNumber} - {yy} - {_count}");
                     })
                 .WithCancelToken("sdldfjk")
                 .OnCanceled(
@@ -80,6 +82,9 @@ namespace WorkflowSample
                         Console.WriteLine($"[SubWorkflow] Order shipment canceled for Order {CurrentOrderId}");
                         await Task.CompletedTask;
                     });
+            await Task.Delay(100);
+            Console.WriteLine("After waiting for shipping event, doing some async work in the sub-workflow...");
+            yy += "10";
         }
 
         // Optional Overrides from WorkflowContainer

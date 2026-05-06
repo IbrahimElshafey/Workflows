@@ -12,7 +12,7 @@ namespace WorkflowSample
         public string CustomerEmail { get; set; }
         public decimal OrderAmount { get; set; }
 
-        public async IAsyncEnumerable<Wait> ProcessOrderWithCommand()
+        public override async IAsyncEnumerable<Wait> ExecuteWorkflowAsync()
         {
             // Receive order details via signal
             yield return WaitSignal<OrderReceivedEvent>("OrderReceived")
