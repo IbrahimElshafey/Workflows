@@ -9,6 +9,7 @@
     <Import_RootNamespace>_Documents</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)Command Execution Modes.md" />
     <None Include="$(MSBuildThisFileDirectory)Runner Evaluation Logic.md" />
     <None Include="$(MSBuildThisFileDirectory)Workflow Compensation Logic %28Saga Pattern%29.md" />
     <None Include="$(MSBuildThisFileDirectory)Authoring Rules &amp; State Constraints.md" />
