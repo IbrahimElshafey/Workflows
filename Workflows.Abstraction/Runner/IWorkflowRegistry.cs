@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Workflows.Definition
+namespace Workflows.Abstraction.Runner
 {
     public interface IWorkflowRegistry
     {

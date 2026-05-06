@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using Workflows.Definition.Registration;
 
 namespace Workflows.Definition
 {

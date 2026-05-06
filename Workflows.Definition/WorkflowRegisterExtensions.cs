@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using Workflows.Definition.Registration;
 
 namespace Workflows.Definition
 {

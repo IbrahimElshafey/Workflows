@@ -1,6 +1,7 @@
 ﻿using System;
+using Workflows.Abstraction.Enums;
 
-namespace Workflows.Shared.Serialization
+namespace Workflows.Abstraction.Helpers
 {    /// <summary>
      /// Defines a pluggable mechanism for serializing and deserializing workflow data,
      /// supporting both clean data transfer and complex internal state hydration.

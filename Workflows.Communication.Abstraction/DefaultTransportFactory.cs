@@ -4,7 +4,7 @@ using System.Linq;
 
 
 
-namespace Workflows.Shared.Communication
+namespace Workflows.Communication.Abstraction
 {
     public class DefaultTransportFactory : ITransportFactory
     {

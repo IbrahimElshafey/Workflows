@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using Workflows.Primitives;
 
 namespace Workflows.Definition
 {
@@ -11,13 +12,13 @@ namespace Workflows.Definition
     /// </summary>
     public class GroupWait : Wait, IPassiveWait
     {
-        internal IReadOnlyList<Wait> ChildWaitsRuntime { get; }
 
         internal GroupWait(string waitName, IReadOnlyList<Wait> childWaits, int inCodeLine, string callerName, string callerFilePath)
             : base(WaitType.GroupWaitAll, waitName, inCodeLine, callerName, callerFilePath)
         {
-            ChildWaitsRuntime = childWaits;
             ChildWaits = childWaits?.ToList() ?? new List<Wait>();
+            WaitType = WaitType.GroupWaitAll; // Default to MatchAll, can be changed by caller
+            CancelTokens.Add($"GroupCancel_{Id}"); // Add waitName as a default cancel token for the group
         }
 
         internal Func<bool> GroupMatchFilter { get; set; }
@@ -55,7 +56,7 @@ namespace Workflows.Definition
             WaitType = WaitType.GroupWaitFirst;
             return this;
         }
-        public HashSet<string> CancelTokens { get; set; }
+        public HashSet<string> CancelTokens { get; set; } = new HashSet<string>();
 
         public GroupWait WithCancelToken(string token)
         {

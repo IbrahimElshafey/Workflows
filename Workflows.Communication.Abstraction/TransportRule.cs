@@ -1,5 +1,5 @@
 ﻿using System;
-namespace Workflows.Shared.Communication
+namespace Workflows.Communication.Abstraction
 {
     internal class TransportRule
     {

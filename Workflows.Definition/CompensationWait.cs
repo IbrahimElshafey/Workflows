@@ -1,3 +1,5 @@
+using Workflows.Primitives;
+
 namespace Workflows.Definition
 {
     public partial class CompensationWait : Wait

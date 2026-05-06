@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
-using Workflows.Shared.Communication;
+using Workflows.Abstraction.Helpers;
+using Workflows.Communication.Abstraction;
 using Workflows.Shared.Serialization;
 
 namespace Workflows.Shared

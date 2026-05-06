@@ -1,4 +1,4 @@
-namespace Workflows.Definition
+namespace Workflows.Primitives
 {
     public enum WaitType
     {

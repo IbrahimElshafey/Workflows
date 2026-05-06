@@ -1,6 +1,6 @@
 ﻿using System.Linq.Expressions;
 
-namespace Workflows.Shared.Serialization
+namespace Workflows.Abstraction.Helpers
 {
     /// <summary>
     /// Responsible for serializing C# Expression Trees used in workflow wait conditions.

@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
     <ProjectReference Include="..\Workflows.Common.Abstraction\Workflows.Shared.csproj" />
+    <ProjectReference Include="..\Workflows.Communication.Abstraction\Workflows.Communication.Abstraction.csproj" />
     <ProjectReference Include="..\Workflows.Definition\Workflows.Definition.csproj" />
   </ItemGroup>
 

@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Workflows.Shared.DataObject;
+using Workflows.Primitives;
 
-namespace Workflows.Definition
+namespace Workflows.Definition.Registration
 {
     public interface IWorkflowBuilder
     {

@@ -5,11 +5,11 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
-using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Registration;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition;
-using Workflows.Shared.DataObject;
+using Workflows.Definition.Registration;
+using Workflows.Primitives;
 
 namespace Workflows.Runner
 {

@@ -1,4 +1,5 @@
-using Workflows.Shared.DataObject;
+
+using Workflows.Primitives;
 
 namespace Workflows.Abstraction.Runner
 {

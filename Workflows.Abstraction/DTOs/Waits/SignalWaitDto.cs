@@ -12,6 +12,7 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// Serialized match expression for filtering incoming signals.
         /// </summary>
         public object MatchExpression { get; set; }
+        public object MatchExpressionAsText { get; set; }
         public string MatchClosureKey { get; set; }
         public string AfterMatchClosureKey { get; set; }
 

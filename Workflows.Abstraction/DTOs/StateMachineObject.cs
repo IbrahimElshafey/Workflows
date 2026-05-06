@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 
-namespace Workflows.Shared.DataObject
+namespace Workflows.Abstraction.DTOs
 {
     public class StateMachineObject
     {

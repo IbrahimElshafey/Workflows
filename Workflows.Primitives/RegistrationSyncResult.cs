@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Workflows.Shared.DataObject
+namespace Workflows.Primitives
 {
     public class RegistrationSyncResult
     {

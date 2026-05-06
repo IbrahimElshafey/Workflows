@@ -1,8 +1,8 @@
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs.Registration;
-using Workflows.Shared.DataObject;
+using Workflows.Primitives;
 
-namespace Workflows.Abstraction.DataStore
+namespace Workflows.Abstraction.Persistence
 {
     /// <summary>
     /// Internal DataStore service to query the registered blueprints.
@@ -19,4 +19,3 @@ namespace Workflows.Abstraction.DataStore
         Task<CommandDefinition> GetCommandDefinitionAsync(string commandName);
     }
 }
-

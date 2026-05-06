@@ -1,4 +1,3 @@
-using Workflows.Abstraction.Enums;
 
 namespace Workflows.Abstraction.DTOs.Waits
 {
@@ -8,11 +7,6 @@ namespace Workflows.Abstraction.DTOs.Waits
     /// </summary>
     public class GroupWaitDto : WaitInfrastructureDto
     {
-        internal GroupWaitDto()
-        {
-            WaitType = WaitType.GroupWaitAll;
-        }
-
         /// <summary>
         /// Name of the match function for custom group matching.
         /// </summary>

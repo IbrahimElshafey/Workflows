@@ -1,5 +1,5 @@
 using System;
-using Workflows.Shared.DataObject;
+using Workflows.Primitives;
 
 namespace Workflows.Abstraction.DTOs.Waits
 {

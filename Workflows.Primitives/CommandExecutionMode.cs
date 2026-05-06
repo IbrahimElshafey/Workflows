@@ -1,4 +1,4 @@
-namespace Workflows.Shared.DataObject
+namespace Workflows.Primitives
 {
     /// <summary>
     /// Defines who receives the command result and how execution resumes.

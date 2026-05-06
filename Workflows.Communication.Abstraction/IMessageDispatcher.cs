@@ -1,5 +1,5 @@
 ﻿using System.Threading.Tasks;
-namespace Workflows.Shared.Communication
+namespace Workflows.Communication.Abstraction
 {
     public interface IMessageDispatcher
     {

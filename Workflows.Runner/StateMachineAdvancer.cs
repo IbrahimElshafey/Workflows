@@ -7,10 +7,10 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Workflows.Abstraction.DTOs;
 using Workflows.Definition;
 using Workflows.Runner.DataObjects;
 using Workflows.Runner.Helpers;
-using Workflows.Shared.DataObject;
 
 namespace Workflows.Runner
 {

@@ -1,4 +1,4 @@
-﻿namespace Workflows.Shared.Communication
+﻿namespace Workflows.Communication.Abstraction
 {
     public interface ITransportFactory
     {

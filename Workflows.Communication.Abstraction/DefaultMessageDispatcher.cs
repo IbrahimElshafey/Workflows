@@ -3,7 +3,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Workflows.Shared.Communication
+namespace Workflows.Communication.Abstraction
 {
     public class DefaultMessageDispatcher : IMessageDispatcher
     {

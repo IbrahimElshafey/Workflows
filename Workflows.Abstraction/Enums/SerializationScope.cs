@@ -1,4 +1,4 @@
-﻿namespace Workflows.Shared.Serialization
+﻿namespace Workflows.Abstraction.Enums
 {/// <summary>
  /// Specifies the target scope for serialization, allowing the engine to 
  /// handle standard data and complex compiler-generated state differently.

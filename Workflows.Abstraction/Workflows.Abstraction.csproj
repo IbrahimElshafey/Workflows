@@ -22,7 +22,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <ProjectReference Include="..\Workflows.Common.Abstraction\Workflows.Shared.csproj" />
+	  <ProjectReference Include="..\Workflows.Primitives\Workflows.Primitives.csproj" />
 	</ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-namespace Workflows.Shared.DataObject
+namespace Workflows.Primitives
 {
     public class RegistrationError
     {

@@ -13,4 +13,8 @@
 		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
 		<PackageReference Include="Nuqleon.Linq.Expressions.Bonsai.Serialization" Version="1.0.0-beta.24" />
 	</ItemGroup>
+	<ItemGroup>
+	  <ProjectReference Include="..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
+	  <ProjectReference Include="..\Workflows.Communication.Abstraction\Workflows.Communication.Abstraction.csproj" />
+	</ItemGroup>
 </Project>

@@ -1,5 +1,5 @@
+using Workflows.Abstraction.DTOs;
 using Workflows.Definition;
-using Workflows.Shared.DataObject;
 
 namespace Workflows.Runner.DataObjects
 {

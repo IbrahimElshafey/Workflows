@@ -4,10 +4,11 @@ using System.Linq;
 using System.Reflection;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
+using Workflows.Abstraction.Enums;
+using Workflows.Abstraction.Helpers;
 using Workflows.Definition;
+using Workflows.Primitives;
 using Workflows.Runner.Helpers;
-using Workflows.Shared.DataObject;
-using Workflows.Shared.Serialization;
 
 namespace Workflows.Runner
 {
@@ -112,9 +113,7 @@ namespace Workflows.Runner
                 CancelAction = _delegateSerializer.Serialize(commandWait.CancelAction),
                 ResultAction = _delegateSerializer.Serialize(commandWait.OnResultAction),
                 HandlerKey = commandWait.HandlerKey,
-                ExecutionMode = commandWait.ExecutionMode == Workflows.Shared.DataObject.CommandExecutionMode.Indirect
-                    ? Workflows.Shared.DataObject.CommandExecutionMode.Indirect
-                    : Workflows.Shared.DataObject.CommandExecutionMode.Direct,
+                ExecutionMode = commandWait.ExecutionMode,
                 ResultClosureKey = _closureContextResolver.CacheClosureIfAny(commandWait.OnResultAction?.Target, commandWait),
                 CompensationClosureKey = _closureContextResolver.CacheClosureIfAny(commandWait.CompensationAction?.Target, commandWait)
             };
@@ -142,6 +141,7 @@ namespace Workflows.Runner
             {
                 SignalIdentifier = signalWait.SignalIdentifier,
                 MatchExpression = serializedMatch,
+                MatchExpressionAsText = signalWait.MatchExpressionAsText,
                 MatchClosureKey = matchClosureKey,
                 AfterMatchAction = afterMatchAction,
                 AfterMatchClosureKey = afterMatchClosureKey,
@@ -178,7 +178,7 @@ namespace Workflows.Runner
         {
             dto.Id = wait.Id;
             dto.WaitName = wait.WaitName;
-            dto.WaitType = (Abstraction.Enums.WaitType)(int)wait.WaitType;
+            dto.WaitType = wait.WaitType;
             dto.CallerName = wait.CallerName;
             dto.InCodeLine = wait.InCodeLine;
             dto.Created = wait.Created;
@@ -189,7 +189,7 @@ namespace Workflows.Runner
 
         #region From DTO
 
-        public Wait MapToWait(WaitInfrastructureDto dto, IWorkflowRegistry registry)
+        public Wait MapToWait(WaitInfrastructureDto dto, Abstraction.Runner.IWorkflowRegistry registry)
         {
             if (dto == null) throw new ArgumentNullException(nameof(dto));
 
@@ -207,7 +207,7 @@ namespace Workflows.Runner
             return wait;
         }
 
-        private Wait MapToWait(SignalWaitDto dto, IWorkflowRegistry registry)
+        private Wait MapToWait(SignalWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry)
         {
             var signalType = registry.SignalTypes.TryGetValue(dto.SignalIdentifier, out var type) ? type : typeof(object);
             var waitType = typeof(SignalWait<>).MakeGenericType(signalType);
@@ -231,7 +231,7 @@ namespace Workflows.Runner
             return baseWait;
         }
 
-        private Wait MapToWait(CommandWaitDto dto, IWorkflowRegistry registry)
+        private Wait MapToWait(CommandWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry)
         {
             var commandInfo = registry.CommandTypes.TryGetValue(dto.HandlerKey, out var info) ? info : (CommandPayloadType: typeof(object), CommandResultType: typeof(object));
             var waitType = typeof(CommandWait<,>).MakeGenericType(commandInfo.CommandPayloadType, commandInfo.CommandResultType);
@@ -242,7 +242,7 @@ namespace Workflows.Runner
 
             var type = wait.GetType();
             type.GetProperty("HandlerKey", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.HandlerKey);
-            type.GetProperty("ExecutionMode", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, (int)dto.ExecutionMode == (int)Workflows.Shared.DataObject.CommandExecutionMode.Indirect ? Workflows.Shared.DataObject.CommandExecutionMode.Indirect : Workflows.Shared.DataObject.CommandExecutionMode.Direct);
+            type.GetProperty("ExecutionMode", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, (int)dto.ExecutionMode == (int)CommandExecutionMode.Indirect ? CommandExecutionMode.Indirect : CommandExecutionMode.Direct);
             type.GetProperty("MaxRetryAttempts", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.MaxRetryAttempts);
             type.GetProperty("RetryBackoff", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.RetryBackoff);
 
@@ -256,7 +256,7 @@ namespace Workflows.Runner
             return wait;
         }
 
-        private Wait MapToWait(GroupWaitDto dto, IWorkflowRegistry registry)
+        private Wait MapToWait(GroupWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry)
         {
             var childWaits = dto.ChildWaits?.Select(c => MapToWait(c, registry)).ToList() ?? new List<Wait>();
             var wait = new GroupWait(dto.WaitName, childWaits, dto.InCodeLine, dto.CallerName, "");
@@ -265,7 +265,7 @@ namespace Workflows.Runner
             return wait;
         }
 
-        private Wait MapToWait(SubWorkflowWaitDto dto, IWorkflowRegistry registry)
+        private Wait MapToWait(SubWorkflowWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry)
         {
             var wait = new SubWorkflowWait(dto.WaitName, dto.InCodeLine, dto.CallerName, "");
             if (dto.ChildWaits?.Count > 0)

@@ -2,10 +2,7 @@
 using System.Collections.Generic;
 using System.Linq.Expressions;
 
-
-
-
-namespace Workflows.Shared.Communication
+namespace Workflows.Communication.Abstraction
 {
     public class TransportRoutingBuilder
     {

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
-using Workflows.Shared.DataObject;
 
 namespace Workflows.Abstraction.DTOs
 {

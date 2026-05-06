@@ -1,4 +1,6 @@
 ﻿using System;
+using Workflows.Abstraction.Enums;
+using Workflows.Abstraction.Helpers;
 
 namespace Workflows.Shared.Serialization
 {

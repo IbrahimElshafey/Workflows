@@ -26,8 +26,13 @@ namespace Workflows.Abstraction.DTOs
 
     public enum AsyncStatus
     {
-        Accepted,
-        Processing,
-        Queued
+        Accepted = 100,
+        Queued = 200,
+        Processing = 300,
+        Finished = 400,
+
+        Rejected = -100,
+        ProcessingFailed = -300,
+        UnableToComplete = -400,
     }
 }
