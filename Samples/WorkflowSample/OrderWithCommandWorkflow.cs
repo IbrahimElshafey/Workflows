@@ -6,7 +6,7 @@ namespace WorkflowSample
     /// <summary>
     /// Example workflow demonstrating the Command primitive usage.
     /// </summary>
-    public class OrderWithCommandWorkflow : WorkflowContainer
+    public sealed class OrderWithCommandWorkflow : WorkflowContainer
     {
         public int CurrentOrderId { get; set; }
         public string CustomerEmail { get; set; }

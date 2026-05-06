@@ -4,7 +4,7 @@ using Workflows.Definition;
 namespace WorkflowSample
 {
     // --- The Workflow Definition ---
-    public class OrderProcessingWorkflow : WorkflowContainer
+    public sealed class OrderProcessingWorkflow : WorkflowContainer
     {
         private int _count;
         // Workflow State: This will be serialized and persisted automatically

@@ -13,10 +13,5 @@
         /// </summary>
         public string PayloadTypeName { get; set; }
         public string PayloadSchema { get; set; }
-
-        /// <summary>
-        /// Description of what this signal represents for documentation/UI.
-        /// </summary>
-        public string Description { get; set; }
     }
 }
