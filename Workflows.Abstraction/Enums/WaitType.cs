@@ -8,6 +8,7 @@ namespace Workflows.Abstraction.Enums
         GroupWaitWithExpression,
         SubWorkflowWait,
         Command,
-        CommandsGroup
+        CommandsGroup,
+        Compensation
     }
 }
