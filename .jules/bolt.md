@@ -1,0 +1,3 @@
+## 2025-05-15 - [Reflection-heavy hot paths in WorkflowRunner]
+**Learning:** In high-throughput workflow engines, reflection-based method invocation (`MethodInfo.Invoke`) and dynamic callback execution (`Delegate.Method.Invoke`) can become a significant performance bottleneck, especially when triggered on every signal match or workflow advancement.
+**Action:** Use cached compiled delegates (via `Expression.Compile()` or `FastExpressionCompiler`) to replace reflection in hot execution paths. This typically yields a 10-20x speedup for those specific calls. Always ensure return types are robustly handled with `Expression.Convert` to prevent runtime cast errors.
