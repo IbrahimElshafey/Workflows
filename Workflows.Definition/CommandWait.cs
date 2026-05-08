@@ -23,6 +23,18 @@ namespace Workflows.Definition
             CommandData = data;
         }
 
+        public CommandWait<TCommand, TResult> WithState<TState>(TState state)
+        {
+            ExplicitState = state;
+            return this;
+        }
+
+        public CommandWait<TCommand, TResult> OnResult<TState>(Action<TResult, TState> onSuccess)
+        {
+            OnResultAction = new StatefulOnResultInvoker<TState>(this, onSuccess).Invoke;
+            return this;
+        }
+
         public CommandWait<TCommand, TResult> OnResult(Action<TResult> onSuccess)
         {
             OnResultAction = onSuccess;
@@ -45,6 +57,13 @@ namespace Workflows.Definition
             OnFailureAction = failureAction;
             return this;
         }
+
+        public CommandWait<TCommand, TResult> OnFailure<TState>(Func<Exception, TState, ValueTask> failureAction)
+        {
+            OnFailureAction = new StatefulOnFailureInvoker<TState>(this, failureAction).Invoke;
+            return this;
+        }
+
         public CommandWait<TCommand, TResult> WithToken(params string[] tokens)
         {
             CompensationTokens = tokens;
@@ -53,6 +72,12 @@ namespace Workflows.Definition
         public CommandWait<TCommand, TResult> RegisterCompensation(Func<TResult,ValueTask> compensationAction)
         {
             CompensationAction = compensationAction;
+            return this;
+        }
+
+        public CommandWait<TCommand, TResult> RegisterCompensation<TState>(Func<TResult, TState, ValueTask> compensationAction)
+        {
+            CompensationAction = new StatefulCompensationInvoker<TState>(this, compensationAction).Invoke;
             return this;
         }
 
@@ -71,6 +96,57 @@ namespace Workflows.Definition
         {
             ExecutionMode = mode;
             return this;
+        }
+
+        private sealed class StatefulOnResultInvoker<TState>
+        {
+            private readonly CommandWait<TCommand, TResult> _wait;
+            private readonly Action<TResult, TState> _action;
+
+            public StatefulOnResultInvoker(CommandWait<TCommand, TResult> wait, Action<TResult, TState> action)
+            {
+                _wait = wait;
+                _action = action;
+            }
+
+            public void Invoke(TResult result)
+            {
+                _action(result, (TState)_wait.ExplicitState);
+            }
+        }
+
+        private sealed class StatefulOnFailureInvoker<TState>
+        {
+            private readonly CommandWait<TCommand, TResult> _wait;
+            private readonly Func<Exception, TState, ValueTask> _action;
+
+            public StatefulOnFailureInvoker(CommandWait<TCommand, TResult> wait, Func<Exception, TState, ValueTask> action)
+            {
+                _wait = wait;
+                _action = action;
+            }
+
+            public ValueTask Invoke(Exception exception)
+            {
+                return _action(exception, (TState)_wait.ExplicitState);
+            }
+        }
+
+        private sealed class StatefulCompensationInvoker<TState>
+        {
+            private readonly CommandWait<TCommand, TResult> _wait;
+            private readonly Func<TResult, TState, ValueTask> _action;
+
+            public StatefulCompensationInvoker(CommandWait<TCommand, TResult> wait, Func<TResult, TState, ValueTask> action)
+            {
+                _wait = wait;
+                _action = action;
+            }
+
+            public ValueTask Invoke(TResult result)
+            {
+                return _action(result, (TState)_wait.ExplicitState);
+            }
         }
     }
 }

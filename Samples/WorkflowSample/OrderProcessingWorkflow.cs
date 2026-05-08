@@ -20,8 +20,9 @@ namespace WorkflowSample
             var count = 10;
             // 1. Wait for a specific signal (Order Submitted)
             yield return WaitSignal<OrderSubmittedEvent>("OrderSubmittedSignal", "Wait for Order Submission")
+                .WithState(0)
                 // MatchIf acts as a filter expression to only accept valid payloads
-                .MatchIf(order => order.OrderId > 0)
+                .MatchIf((order, minOrderId) => order.OrderId > minOrderId)
                 // AfterMatch captures data into the workflow's state
                 .AfterMatch(
                     order =>
@@ -40,9 +41,10 @@ namespace WorkflowSample
 
             // Yield a GroupWait that waits for ALL child waits to complete before continuing
             yield return WaitGroup(
-                [ WaitSignal<ShippingEvent>("InventoryAllocated").MatchIf(x => x.OrderId == CurrentOrderId), WaitSignal<ShippingEvent>(
+                [ WaitSignal<ShippingEvent>("InventoryAllocated").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId), WaitSignal<ShippingEvent>(
                     "LabelPrinted")
-                    .MatchIf(x => x.OrderId == CurrentOrderId) ],
+                    .WithState(CurrentOrderId)
+                    .MatchIf((x, orderId) => x.OrderId == orderId) ],
                 "Parallel Fulfillment Prep")
                 .MatchIf(() => count >= 10);
 
@@ -56,7 +58,8 @@ namespace WorkflowSample
         {
             var x = 10;
             return WaitSignal<PaymentProcessedEvent>("PaymentProcessedSignal", "Wait for Payment")
-                .MatchIf(payment => payment.OrderId == CurrentOrderId && x > 0)
+                .WithState((CurrentOrderId, x))
+                .MatchIf((payment, state) => payment.OrderId == state.CurrentOrderId && state.x > 0)
                 .AfterMatch(
                     payment =>
                     {
@@ -71,17 +74,18 @@ namespace WorkflowSample
         {
             var yy = "test";
             yield return WaitSignal<ShippingEvent>("OrderShipped", "Wait for Courier Pickup")
-                .MatchIf(shipping => shipping.OrderId == CurrentOrderId && yy == "test")
+                .WithState((CurrentOrderId, yy))
+                .MatchIf((shipping, state) => shipping.OrderId == state.CurrentOrderId && state.yy == "test")
                 .AfterMatch(
                     shipping =>
                     {
-                        Console.WriteLine($"[SubWorkflow] Order shipped! Tracking: {shipping.TrackingNumber} - {yy} - {_integerField}");
+                        Console.WriteLine($"[SubWorkflow] Order shipped! Tracking: {shipping.TrackingNumber} - {_integerField}");
                     })
                 .WithCancelToken("sdldfjk")
-                .OnCanceled(
-                    async () =>
+                .OnCanceled<(int CurrentOrderId, string yy)>(
+                    async state =>
                     {
-                        Console.WriteLine($"[SubWorkflow] Order shipment canceled for Order {CurrentOrderId}");
+                        Console.WriteLine($"[SubWorkflow] Order shipment canceled for Order {state.CurrentOrderId} marker:{state.yy}");
                         await Task.CompletedTask;
                     });
             await Task.Delay(100);

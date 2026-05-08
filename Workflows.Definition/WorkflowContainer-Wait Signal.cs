@@ -7,7 +7,7 @@ namespace Workflows.Definition
 {
     public abstract partial class WorkflowContainer
     {
-        protected SignalWait<SignalData> WaitSignal<SignalData>(
+        protected SignalBuilder<SignalData> WaitSignal<SignalData>(
             string signalIdentifier,
             string name = null,
             [CallerFilePath] string callerFilePath = "",
@@ -21,9 +21,10 @@ namespace Workflows.Definition
                 callerName,
                 callerFilePath)
             {
-                WorkflowContainer = this
+                WorkflowContainer = this,
+                ExplicitState = null
             };
-            return newSignalWait;
+            return new SignalBuilder<SignalData>(newSignalWait);
         }
 
         protected GroupWait WaitGroup(

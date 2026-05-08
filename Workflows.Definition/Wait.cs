@@ -40,14 +40,44 @@ namespace Workflows.Definition
         internal List<Wait> ChildWaits { get; set; } = new();
 
         public string ClosureKey { get; set; }
+        public object ExplicitState { get; internal set; }
         internal Func<ValueTask> CancelAction { get; set; }
 
         public WorkflowContainer WorkflowContainer { get; set; }
+
+        public Wait WithState<TState>(TState state)
+        {
+            ExplicitState = state;
+            return this;
+        }
 
         public Wait OnCanceled(Func<ValueTask> cancelAction)
         {
             CancelAction = cancelAction;
             return this;
+        }
+
+        public Wait OnCanceled<TState>(Func<TState, ValueTask> cancelAction)
+        {
+            CancelAction = new StatefulCancelActionInvoker<TState>(this, cancelAction).Invoke;
+            return this;
+        }
+
+        private sealed class StatefulCancelActionInvoker<TState>
+        {
+            private readonly Wait _wait;
+            private readonly Func<TState, ValueTask> _action;
+
+            public StatefulCancelActionInvoker(Wait wait, Func<TState, ValueTask> action)
+            {
+                _wait = wait;
+                _action = action;
+            }
+
+            public ValueTask Invoke()
+            {
+                return _action((TState)_wait.ExplicitState);
+            }
         }
     }
 }

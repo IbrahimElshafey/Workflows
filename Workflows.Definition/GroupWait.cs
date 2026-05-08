@@ -44,6 +44,18 @@ namespace Workflows.Definition
             return this;
         }
 
+        public Wait MatchIf<TState>(
+        Func<TState, bool> groupMatchFilter,
+        [CallerLineNumber] int inCodeLine = 0,
+        [CallerMemberName] string callerName = "")
+        {
+            WaitType = WaitType.GroupWaitWithExpression;
+            InCodeLine = inCodeLine;
+            CallerName = callerName;
+            GroupMatchFilter = new StatefulGroupMatchInvoker<TState>(this, groupMatchFilter).Invoke;
+            return this;
+        }
+
         public Wait MatchAll()
         {
             WaitType = WaitType.GroupWaitAll;
@@ -67,5 +79,22 @@ namespace Workflows.Definition
         }
 
         IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
+
+        private sealed class StatefulGroupMatchInvoker<TState>
+        {
+            private readonly GroupWait _wait;
+            private readonly Func<TState, bool> _predicate;
+
+            public StatefulGroupMatchInvoker(GroupWait wait, Func<TState, bool> predicate)
+            {
+                _wait = wait;
+                _predicate = predicate;
+            }
+
+            public bool Invoke()
+            {
+                return _predicate((TState)_wait.ExplicitState);
+            }
+        }
     }
 }
