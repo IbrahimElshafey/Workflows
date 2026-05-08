@@ -61,8 +61,8 @@ namespace WorkflowSample
             var groupThreshold = 0;
             yield return WaitGroup(
                 [
-                    WaitSignal<ShippingEvent>("InventoryAllocated").MatchIf(x => x.OrderId == CurrentOrderId),
-                    WaitSignal<ShippingEvent>("LabelPrinted").MatchIf(x => x.OrderId == CurrentOrderId)
+                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated").MatchIf(x => x.OrderId == CurrentOrderId),
+                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted").MatchIf(x => x.OrderId == CurrentOrderId)
                 ],
                 "Closure group wait")
                 .MatchIf(() => CurrentOrderId > groupThreshold);

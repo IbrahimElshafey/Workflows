@@ -31,23 +31,32 @@ namespace Workflows.Definition
             return this;
         }
 
-        public SignalWait<TSignal> MatchAny() => _wait.MatchAny();
+        public SignalBuilder<TSignal> MatchAny()
+        {
+            _wait.MatchAny();
+            return this;
+        }
 
-        public SignalWait<TSignal> MatchIf(
+        public SignalBuilder<TSignal> MatchIf(
             Expression<Func<TSignal, bool>> matchExpression,
             [CallerLineNumber] int callerLineNumber = 0,
             [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
-            return _wait.MatchIf(matchExpression, callerLineNumber, expression);
+            _wait.MatchIf(matchExpression, callerLineNumber, expression);
+            return this;
         }
 
         public StatefulSignalBuilder<TSignal, TState> WithState<TState>(TState state)
         {
-            _wait.WithState(state);
+            _wait.ExplicitState = state;
             return new StatefulSignalBuilder<TSignal, TState>(_wait);
         }
 
+        public SignalWait<TSignal> AsWait() => _wait;
+        public IPassiveWait AsPassiveWait() => _wait;
+
         public static implicit operator SignalWait<TSignal>(SignalBuilder<TSignal> builder) => builder._wait;
+        public static implicit operator Wait(SignalBuilder<TSignal> builder) => builder._wait;
     }
 
     public readonly struct StatefulSignalBuilder<TSignal, TState>
@@ -68,21 +77,53 @@ namespace Workflows.Definition
             return this;
         }
 
+        public StatefulSignalBuilder<TSignal, TState> OnCanceled(Func<ValueTask> cancelAction)
+        {
+            _wait.OnCanceled(cancelAction);
+            return this;
+        }
+
         public StatefulSignalBuilder<TSignal, TState> AfterMatch(Action<TSignal, TState> afterMatchAction)
         {
             _wait.AfterMatch(afterMatchAction);
             return this;
         }
 
-        public SignalWait<TSignal> MatchAny() => _wait.MatchAny();
+        public StatefulSignalBuilder<TSignal, TState> AfterMatch(Action<TSignal> afterMatchAction)
+        {
+            _wait.AfterMatch(afterMatchAction);
+            return this;
+        }
 
-        public SignalWait<TSignal> MatchIf(
+        public StatefulSignalBuilder<TSignal, TState> MatchAny()
+        {
+            _wait.MatchAny();
+            return this;
+        }
+
+        public StatefulSignalBuilder<TSignal, TState> MatchIf(
             Expression<Func<TSignal, TState, bool>> matchExpression,
             [CallerLineNumber] int callerLineNumber = 0,
             [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
-            return _wait.MatchIf(matchExpression, callerLineNumber, expression);
+            _wait.MatchIf(matchExpression, callerLineNumber, expression);
+            return this;
         }
+
+        public StatefulSignalBuilder<TSignal, TState> MatchIf(
+            Expression<Func<TSignal, bool>> matchExpression,
+            [CallerLineNumber] int callerLineNumber = 0,
+            [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
+        {
+            _wait.MatchIf(matchExpression, callerLineNumber, expression);
+            return this;
+        }
+
+        public SignalWait<TSignal> AsWait() => _wait;
+        public IPassiveWait AsPassiveWait() => _wait;
+
+        public static implicit operator SignalWait<TSignal>(StatefulSignalBuilder<TSignal, TState> builder) => builder._wait;
+        public static implicit operator Wait(StatefulSignalBuilder<TSignal, TState> builder) => builder._wait;
     }
 
     /// <summary>

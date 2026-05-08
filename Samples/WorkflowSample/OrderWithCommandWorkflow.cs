@@ -37,13 +37,13 @@ namespace WorkflowSample
                 })
                 .WithState(CurrentOrderId)
                 .WithRetries(maxAttempts: 3, backoff: TimeSpan.FromSeconds(5))
-                .OnResult<int>((result, orderId) =>
+                .OnResult((result, orderId) =>
                 {
                     Console.WriteLine($"Confirmation email sent with MessageId: {result.MessageId} for order {orderId}");
                 })
-                .RegisterCompensation<int>((result, orderId) =>
+                .RegisterCompensation(result =>
                 {
-                    Console.WriteLine($"Compensating: Marking email delivery as failed in database for order {orderId}");
+                    Console.WriteLine($"Compensating: Marking email delivery as failed in database for order {CurrentOrderId}");
                     return default;
                 });
 
@@ -58,13 +58,12 @@ namespace WorkflowSample
                 })
                 .WithState(CustomerEmail)
                 .WithRetries(maxAttempts: 2, backoff: TimeSpan.FromSeconds(10))
-                .OnResult<string>(async (result, email) =>
+                .OnResult((result, email) =>
                 {
                     Console.WriteLine($"Payment processed with TransactionId: {result.TransactionId} for {email}");
-                    // Can perform async operations here - they will be awaited
-                    await LogPaymentAsync(result);
+                    return;
                 })
-                .RegisterCompensation<string>(async (result, email) =>
+                .RegisterCompensation(async (result, email) =>
                 {
                     Console.WriteLine($"Compensating: Refunding payment for {email}");
                     await RefundPaymentAsync();

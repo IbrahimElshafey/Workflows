@@ -36,7 +36,7 @@ namespace Workflows.Definition
             return group;
         }
 
-        protected CommandWait<TCommand, TResult> ExecuteCommand<TCommand, TResult>(
+        protected CommandBuilder<TCommand, TResult> ExecuteCommand<TCommand, TResult>(
             string commandName,
             TCommand data,
             [CallerFilePath] string callerFilePath = "",
@@ -58,7 +58,7 @@ namespace Workflows.Definition
                 WorkflowContainer = this
             };
 
-            return commandWait;
+            return new CommandBuilder<TCommand, TResult>(commandWait);
         }
 
         protected CompensationWait Compensate(

@@ -73,8 +73,8 @@ namespace WorkflowSample
 
             yield return WaitGroup(
                     [
-                        WaitSignal<ShippingEvent>("InventoryAllocated").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId),
-                        WaitSignal<ShippingEvent>("LabelPrinted").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId)
+                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId),
+                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId)
                     ],
                     "Stateful group wait")
                 .MatchIf(() => CurrentOrderId > 0);
