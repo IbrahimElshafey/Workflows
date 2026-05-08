@@ -6,7 +6,7 @@ namespace WorkflowSample
     // --- The Workflow Definition ---
     public sealed class OrderProcessingWorkflow : WorkflowContainer
     {
-        private int _count;
+        private int _integerField;
         // Workflow State: This will be serialized and persisted automatically
         public int CurrentOrderId { get; set; }
 
@@ -17,6 +17,7 @@ namespace WorkflowSample
         /// </summary>
         public override async IAsyncEnumerable<Wait> ExecuteWorkflowAsync()
         {
+            var count = 10;
             // 1. Wait for a specific signal (Order Submitted)
             yield return WaitSignal<OrderSubmittedEvent>("OrderSubmittedSignal", "Wait for Order Submission")
                 // MatchIf acts as a filter expression to only accept valid payloads
@@ -27,6 +28,7 @@ namespace WorkflowSample
                     {
                         CurrentOrderId = order.OrderId;
                         CurrentCustomer = order.CustomerName;
+                        //count -= 5;;
                         Console.WriteLine($"[Workflow] Order {CurrentOrderId} received from {CurrentCustomer}.");
                     });
 
@@ -34,7 +36,7 @@ namespace WorkflowSample
             yield return WaitDelay(TimeSpan.FromMinutes(5), "Wait 5 minutes before charging");
 
             // 3. Wait for payment, correlating it to the captured CurrentOrderId
-            yield return PaymentWait(_count);
+            yield return PaymentWait(_integerField);
 
             // Yield a GroupWait that waits for ALL child waits to complete before continuing
             yield return WaitGroup(
@@ -42,7 +44,7 @@ namespace WorkflowSample
                     "LabelPrinted")
                     .MatchIf(x => x.OrderId == CurrentOrderId) ],
                 "Parallel Fulfillment Prep")
-                .MatchAll();
+                .MatchIf(() => count >= 10);
 
             // 5. Yield execution to a sub-workflow
             yield return WaitSubWorkflow(ShippingSubWorkflow(), "Run Shipping Sub-Workflow");
@@ -73,7 +75,7 @@ namespace WorkflowSample
                 .AfterMatch(
                     shipping =>
                     {
-                        Console.WriteLine($"[SubWorkflow] Order shipped! Tracking: {shipping.TrackingNumber} - {yy} - {_count}");
+                        Console.WriteLine($"[SubWorkflow] Order shipped! Tracking: {shipping.TrackingNumber} - {yy} - {_integerField}");
                     })
                 .WithCancelToken("sdldfjk")
                 .OnCanceled(

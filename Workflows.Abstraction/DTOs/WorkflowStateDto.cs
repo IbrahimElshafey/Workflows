@@ -7,7 +7,7 @@ namespace Workflows.Abstraction.DTOs
 {
     /// <summary>
     /// Represents the persistent state of a workflow instance.
-    /// Contains serialized workflow data and the current wait nodes.
+    /// Contains serialized workflow data and the current wait tree.
     /// </summary>
     public class WorkflowStateDto
     {

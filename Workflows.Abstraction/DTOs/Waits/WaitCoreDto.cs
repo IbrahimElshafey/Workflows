@@ -33,5 +33,7 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// UTC timestamp when this wait was created.
         /// </summary>
         public DateTime Created { get; internal set; }
+        public Guid? ClosureKey { get; internal set; }
+        public Guid? LocalsKey { get; internal set; }
     }
 }

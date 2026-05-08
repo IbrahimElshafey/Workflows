@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.3.11512.155
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "_Documents", "_Documents\_Documents.shproj", "{A8DB2027-F414-4940-AAF4-2DC7EC35F99C}"
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "_DOCS", "_Documents\_DOCS.shproj", "{A8DB2027-F414-4940-AAF4-2DC7EC35F99C}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Abstraction", "Workflows.Abstraction\Workflows.Abstraction.csproj", "{C1A05515-8130-840D-DECE-641AC65F7914}"
 EndProject
@@ -30,6 +30,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Communication.Abstraction", "Workflows.Communication.Abstraction\Workflows.Communication.Abstraction.csproj", "{1D16B2AB-D2E6-4232-9338-FEDE19524A92}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Primitives", "Workflows.Primitives\Workflows.Primitives.csproj", "{6B7B4545-050B-4182-AD4D-CCE85FF5E7AF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Workflows.Analyzers", "Workflows.Analyzers\Workflows.Analyzers.csproj", "{B2A5912D-26C5-4545-B1EF-2CA6B703140E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -77,6 +79,10 @@ Global
 		{6B7B4545-050B-4182-AD4D-CCE85FF5E7AF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6B7B4545-050B-4182-AD4D-CCE85FF5E7AF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6B7B4545-050B-4182-AD4D-CCE85FF5E7AF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2A5912D-26C5-4545-B1EF-2CA6B703140E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2A5912D-26C5-4545-B1EF-2CA6B703140E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2A5912D-26C5-4545-B1EF-2CA6B703140E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2A5912D-26C5-4545-B1EF-2CA6B703140E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
