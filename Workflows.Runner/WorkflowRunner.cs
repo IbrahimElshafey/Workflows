@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
@@ -84,8 +85,12 @@ namespace Workflows.Runner
                 }
             }
 
-            var workflowMethod = _templateCache.GetOrAddWorkflowMethod(workflowTypes.WorkflowContainer, triggeringWait.CallerName);
-            var workflowStream = (IAsyncEnumerable<Wait>)workflowMethod.Invoke(workflowInstance, null);
+            var workflowMethodDelegate = _templateCache.GetOrAddWorkflowMethodDelegate(workflowTypes.WorkflowContainer, triggeringWait.CallerName);
+            if (workflowMethodDelegate == null)
+            {
+                throw new InvalidOperationException($"Workflow method {triggeringWait.CallerName} not found on {workflowTypes.WorkflowContainer.FullName}.");
+            }
+            var workflowStream = workflowMethodDelegate(workflowInstance);
 
             var advancerResult = await _stateMachineAdvancer.RunAsync(workflowStream, state.StateObject).ConfigureAwait(false);
 
@@ -184,28 +189,17 @@ namespace Workflows.Runner
             return compiled;
         }
 
-        private static void InvokeAfterMatchAction(object action, object signalData)
+        private void InvokeAfterMatchAction(object action, object signalData)
         {
-            var invoke = action.GetType().GetMethod("Invoke");
-            if (invoke == null)
+            var actionType = action.GetType();
+            var invoker = _templateCache.GetOrAddAfterMatchInvoker(actionType);
+
+            if (invoker == null)
             {
-                throw new InvalidOperationException("AfterMatchAction has no Invoke method.");
+                throw new InvalidOperationException("AfterMatchAction signature is not supported or Invoke method not found.");
             }
 
-            var parameters = invoke.GetParameters();
-            if (parameters.Length == 0)
-            {
-                invoke.Invoke(action, null);
-                return;
-            }
-
-            if (parameters.Length == 1)
-            {
-                invoke.Invoke(action, new[] { signalData });
-                return;
-            }
-
-            throw new InvalidOperationException("AfterMatchAction signature is not supported.");
+            invoker(action, signalData);
         }
 
         private static WaitInfrastructureDto FindWaitById(IEnumerable<WaitInfrastructureDto> waits, Guid id)

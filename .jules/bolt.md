@@ -1,0 +1,3 @@
+## 2026-05-09 - [Reflection Elimination in Workflow Hot Paths]
+**Learning:** MethodInfo.Invoke and dynamic delegate invocation in frequent paths (like workflow advancement and signal matching) introduce significant overhead. Using FastExpressionCompiler to cache compiled delegates provides a measurable speedup. Additionally, when using Expression Trees to call methods returning interfaces (like IAsyncEnumerable), explicit Casting (Expression.Convert) is often required to avoid runtime TypeMismatch exceptions.
+**Action:** Always prefer cached compiled delegates over MethodInfo.Invoke in high-frequency execution paths. Centralize metadata and delegate caches in a dedicated TemplateCache service for better maintainability and consistency.
