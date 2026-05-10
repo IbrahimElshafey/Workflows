@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
+using FastExpressionCompiler;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
@@ -14,14 +16,14 @@ namespace Workflows.Runner
 {
     internal sealed class Mapper
     {
-        private readonly IExpressionSerializer _expressionSerializer;
+        private readonly Abstraction.Helpers.IExpressionSerializer _expressionSerializer;
         private readonly IObjectSerializer _objectSerializer;
         private readonly IDelegateSerializer _delegateSerializer;
         private readonly IClosureContextResolver _closureContextResolver;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<object[], object>> _constructorCache = new();
 
         public Mapper(
-            IExpressionSerializer expressionSerializer,
+            Abstraction.Helpers.IExpressionSerializer expressionSerializer,
             IObjectSerializer objectSerializer,
             IDelegateSerializer delegateSerializer,
             IClosureContextResolver closureContextResolver)
@@ -215,7 +217,18 @@ namespace Workflows.Runner
             var factory = _constructorCache.GetOrAdd(waitType, t =>
             {
                 var ctor = t.GetConstructor(BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(string), typeof(string), typeof(int), typeof(string), typeof(string) }, null);
-                return args => ctor.Invoke(args);
+                if (ctor == null) throw new InvalidOperationException($"Constructor not found for type {t.FullName}");
+
+                var argsParam = Expression.Parameter(typeof(object[]), "args");
+                var ctorParams = ctor.GetParameters();
+                var ctorArgs = new Expression[ctorParams.Length];
+                for (int i = 0; i < ctorParams.Length; i++)
+                {
+                    ctorArgs[i] = Expression.Convert(Expression.ArrayIndex(argsParam, Expression.Constant(i)), ctorParams[i].ParameterType);
+                }
+
+                var newExpr = Expression.New(ctor, ctorArgs);
+                return Expression.Lambda<Func<object[], object>>(newExpr, argsParam).CompileFast();
             });
 
             var wait = (ISignalWait)factory(new object[] { dto.SignalIdentifier, dto.WaitName, dto.InCodeLine, dto.CallerName, "" });

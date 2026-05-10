@@ -1,27 +1,44 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Linq.Expressions;
 using System.Reflection;
+using FastExpressionCompiler;
 using Microsoft.Extensions.DependencyInjection;
+using Workflows.Definition;
 
 namespace Workflows.Runner.Cache
 {
     internal class WorkflowTemplateCache
     {
         private readonly ConcurrentDictionary<string, SignalTemplateCacheRecord> _signalCache = new();
+        private readonly ConcurrentDictionary<Type, Action<object, object>> _afterMatchActionInvokers = new();
         private readonly ConcurrentDictionary<string, CommandTemplateCacheRecord> _commandCache = new();
         private readonly ConcurrentDictionary<string, GroupTemplateCacheRecord> _groupCache = new();
         private readonly ConcurrentDictionary<Type, ObjectFactory> _workflowFactories = new();
-        private readonly ConcurrentDictionary<string, MethodInfo> _workflowMethods = new();
+        private readonly ConcurrentDictionary<string, Func<object, object, IAsyncEnumerable<Wait>>> _workflowInvokers = new();
 
         public ObjectFactory GetOrAddWorkflowFactory(Type workflowType)
         {
             return _workflowFactories.GetOrAdd(workflowType, type => ActivatorUtilities.CreateFactory(type, Array.Empty<Type>()));
         }
 
-        public MethodInfo GetOrAddWorkflowMethod(Type containerType, string methodName)
+        public Func<object, object, IAsyncEnumerable<Wait>> GetOrAddWorkflowInvoker(Type containerType, string methodName)
         {
             var key = $"{containerType.FullName}:{methodName}";
-            return _workflowMethods.GetOrAdd(key, _ => containerType.GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic));
+            return _workflowInvokers.GetOrAdd(key, _ =>
+            {
+                var method = containerType.GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (method == null) return null;
+
+                var instanceParam = Expression.Parameter(typeof(object), "instance");
+                var argParam = Expression.Parameter(typeof(object), "arg");
+
+                var typedInstance = Expression.Convert(instanceParam, containerType);
+                var call = Expression.Call(typedInstance, method);
+
+                return Expression.Lambda<Func<object, object, IAsyncEnumerable<Wait>>>(call, instanceParam, argParam).CompileFast();
+            });
         }
 
         public SignalTemplateCacheRecord GetOrAddSignal(string key, SignalTemplateCacheRecord record)
@@ -55,6 +72,11 @@ namespace Workflows.Runner.Cache
         {
             _groupCache.TryGetValue(key, out var record);
             return record;
+        }
+
+        public Action<object, object> GetOrAddAfterMatchInvoker(Type actionType, Func<Type, Action<object, object>> factory)
+        {
+            return _afterMatchActionInvokers.GetOrAdd(actionType, factory);
         }
     }
 }
