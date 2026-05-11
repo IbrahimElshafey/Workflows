@@ -1,0 +1,3 @@
+## 2025-05-15 - Optimizing Hot Path Reflection with Compiled Delegates
+**Learning:** Hot paths involving reflection (like MethodInfo.Invoke and Activator.CreateInstance during signal matching and DTO mapping) are significant performance bottlenecks. While FastExpressionCompiler is powerful, Type.GetConstructor requires exact type matches and can fail in generic contexts where parameter types are derived at runtime.
+**Action:** Use compiled expression trees for constructors and method calls in hot paths. Favor manual constructor searching with parameter count/type checks over GetConstructor(Type[]) for robust generic type handling.

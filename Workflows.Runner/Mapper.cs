@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
+using FastExpressionCompiler;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
@@ -14,14 +16,16 @@ namespace Workflows.Runner
 {
     internal sealed class Mapper
     {
-        private readonly IExpressionSerializer _expressionSerializer;
+        private readonly Abstraction.Helpers.IExpressionSerializer _expressionSerializer;
         private readonly IObjectSerializer _objectSerializer;
         private readonly IDelegateSerializer _delegateSerializer;
         private readonly IClosureContextResolver _closureContextResolver;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<object[], object>> _constructorCache = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, Func<object[], object>> _commandConstructorCache = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<PropertyInfo, Action<object, object>> _propertyCache = new();
 
         public Mapper(
-            IExpressionSerializer expressionSerializer,
+            Abstraction.Helpers.IExpressionSerializer expressionSerializer,
             IObjectSerializer objectSerializer,
             IDelegateSerializer delegateSerializer,
             IClosureContextResolver closureContextResolver)
@@ -214,8 +218,19 @@ namespace Workflows.Runner
 
             var factory = _constructorCache.GetOrAdd(waitType, t =>
             {
-                var ctor = t.GetConstructor(BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(string), typeof(string), typeof(int), typeof(string), typeof(string) }, null);
-                return args => ctor.Invoke(args);
+                var ctor = t.GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)
+                    .FirstOrDefault(c => c.GetParameters().Length == 5 && c.GetParameters()[0].ParameterType == typeof(string));
+
+                var argsParam = Expression.Parameter(typeof(object[]), "args");
+                var ctorParams = ctor.GetParameters();
+                var ctorArgs = new Expression[ctorParams.Length];
+                for (int i = 0; i < ctorParams.Length; i++)
+                {
+                    ctorArgs[i] = Expression.Convert(Expression.ArrayIndex(argsParam, Expression.Constant(i)), ctorParams[i].ParameterType);
+                }
+                var body = Expression.New(ctor, ctorArgs);
+                var lambda = Expression.Lambda<Func<object[], object>>(body, argsParam);
+                return lambda.CompileFast();
             });
 
             var wait = (ISignalWait)factory(new object[] { dto.SignalIdentifier, dto.WaitName, dto.InCodeLine, dto.CallerName, "" });
@@ -226,8 +241,12 @@ namespace Workflows.Runner
             }
 
             var baseWait = (Wait)wait;
-            var cancelTokensField = baseWait.GetType().GetProperty("CancelTokens", BindingFlags.Public | BindingFlags.Instance);
-            cancelTokensField?.SetValue(baseWait, dto.CancelTokens);
+            var cancelTokensProperty = baseWait.GetType().GetProperty("CancelTokens", BindingFlags.Public | BindingFlags.Instance);
+            if (cancelTokensProperty != null)
+            {
+                var setter = GetPropertySetter(cancelTokensProperty);
+                setter(baseWait, dto.CancelTokens);
+            }
             return baseWait;
         }
 
@@ -238,13 +257,30 @@ namespace Workflows.Runner
 
             var commandData = dto.CommandData == null ? null : (dto.CommandData is string s ? _objectSerializer.Deserialize(s, commandInfo.CommandPayloadType) : dto.CommandData);
 
-            var wait = (Wait)Activator.CreateInstance(waitType, BindingFlags.NonPublic | BindingFlags.Instance, null, new object[] { dto.WaitName, commandData, dto.InCodeLine, dto.CallerName, "" }, null);
+            var factory = _commandConstructorCache.GetOrAdd(waitType, t =>
+            {
+                var ctor = t.GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance)
+                    .FirstOrDefault(c => c.GetParameters().Length == 5 && c.GetParameters()[1].ParameterType == commandInfo.CommandPayloadType);
+
+                var argsParam = Expression.Parameter(typeof(object[]), "args");
+                var ctorParams = ctor.GetParameters();
+                var ctorArgs = new Expression[ctorParams.Length];
+                for (int i = 0; i < ctorParams.Length; i++)
+                {
+                    ctorArgs[i] = Expression.Convert(Expression.ArrayIndex(argsParam, Expression.Constant(i)), ctorParams[i].ParameterType);
+                }
+                var body = Expression.New(ctor, ctorArgs);
+                var lambda = Expression.Lambda<Func<object[], object>>(body, argsParam);
+                return lambda.CompileFast();
+            });
+
+            var wait = (Wait)factory(new object[] { dto.WaitName, commandData, dto.InCodeLine, dto.CallerName, "" });
 
             var type = wait.GetType();
-            type.GetProperty("HandlerKey", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.HandlerKey);
-            type.GetProperty("ExecutionMode", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, (int)dto.ExecutionMode == (int)CommandExecutionMode.Indirect ? CommandExecutionMode.Indirect : CommandExecutionMode.Direct);
-            type.GetProperty("MaxRetryAttempts", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.MaxRetryAttempts);
-            type.GetProperty("RetryBackoff", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.RetryBackoff);
+            GetPropertySetter(type.GetProperty("HandlerKey", BindingFlags.NonPublic | BindingFlags.Instance))(wait, dto.HandlerKey);
+            GetPropertySetter(type.GetProperty("ExecutionMode", BindingFlags.NonPublic | BindingFlags.Instance))(wait, (int)dto.ExecutionMode == (int)CommandExecutionMode.Indirect ? CommandExecutionMode.Indirect : CommandExecutionMode.Direct);
+            GetPropertySetter(type.GetProperty("MaxRetryAttempts", BindingFlags.NonPublic | BindingFlags.Instance))(wait, dto.MaxRetryAttempts);
+            GetPropertySetter(type.GetProperty("RetryBackoff", BindingFlags.NonPublic | BindingFlags.Instance))(wait, dto.RetryBackoff);
 
             return wait;
         }
@@ -274,6 +310,22 @@ namespace Workflows.Runner
             }
             wait.CancelTokens = dto.CancelTokens;
             return wait;
+        }
+
+        private Action<object, object> GetPropertySetter(PropertyInfo? property)
+        {
+            if (property == null) return (inst, val) => { };
+
+            return _propertyCache.GetOrAdd(property, p =>
+            {
+                var instanceParam = Expression.Parameter(typeof(object), "instance");
+                var valueParam = Expression.Parameter(typeof(object), "value");
+                var body = Expression.Assign(
+                    Expression.Property(Expression.Convert(instanceParam, p.DeclaringType), p),
+                    Expression.Convert(valueParam, p.PropertyType));
+                var lambda = Expression.Lambda<Action<object, object>>(body, instanceParam, valueParam);
+                return lambda.CompileFast();
+            });
         }
 
         private static void RestoreBase(WaitInfrastructureDto dto, Wait wait)
