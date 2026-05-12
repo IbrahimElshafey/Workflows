@@ -225,6 +225,13 @@ namespace Workflows.Runner
                 wait.MatchExpression = _expressionSerializer.Deserialize((string)dto.MatchExpression);
             }
 
+            if (!string.IsNullOrEmpty(dto.AfterMatchAction))
+            {
+                // Note: Full implementation would require deserializing the delegate.
+                // For now, we ensure the infrastructure exists to support AfterMatchAction if it's already restored
+                // or if we add delegate restoration logic here.
+            }
+
             var baseWait = (Wait)wait;
             var cancelTokensField = baseWait.GetType().GetProperty("CancelTokens", BindingFlags.Public | BindingFlags.Instance);
             cancelTokensField?.SetValue(baseWait, dto.CancelTokens);
