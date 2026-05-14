@@ -84,8 +84,8 @@ namespace Workflows.Runner
                 }
             }
 
-            var workflowMethod = _templateCache.GetOrAddWorkflowMethod(workflowTypes.WorkflowContainer, triggeringWait.CallerName);
-            var workflowStream = (IAsyncEnumerable<Wait>)workflowMethod.Invoke(workflowInstance, null);
+            var workflowInvoker = _templateCache.GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, triggeringWait.CallerName);
+            var workflowStream = (IAsyncEnumerable<Wait>)workflowInvoker(workflowInstance);
 
             var advancerResult = await _stateMachineAdvancer.RunAsync(workflowStream, state.StateObject).ConfigureAwait(false);
 
@@ -184,28 +184,15 @@ namespace Workflows.Runner
             return compiled;
         }
 
-        private static void InvokeAfterMatchAction(object action, object signalData)
+        private void InvokeAfterMatchAction(object action, object signalData)
         {
-            var invoke = action.GetType().GetMethod("Invoke");
-            if (invoke == null)
+            var invoker = _templateCache.GetOrAddAfterMatchInvoker(action.GetType());
+            if (invoker == null)
             {
-                throw new InvalidOperationException("AfterMatchAction has no Invoke method.");
+                throw new InvalidOperationException("AfterMatchAction signature is not supported or Invoke method not found.");
             }
 
-            var parameters = invoke.GetParameters();
-            if (parameters.Length == 0)
-            {
-                invoke.Invoke(action, null);
-                return;
-            }
-
-            if (parameters.Length == 1)
-            {
-                invoke.Invoke(action, new[] { signalData });
-                return;
-            }
-
-            throw new InvalidOperationException("AfterMatchAction signature is not supported.");
+            invoker(action, signalData);
         }
 
         private static WaitInfrastructureDto FindWaitById(IEnumerable<WaitInfrastructureDto> waits, Guid id)
