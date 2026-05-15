@@ -11,7 +11,9 @@
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)Command Execution Modes.md" />
     <None Include="$(MSBuildThisFileDirectory)Runner Evaluation Logic.md" />
+    <None Include="$(MSBuildThisFileDirectory)State Management Implementation.md" />
     <None Include="$(MSBuildThisFileDirectory)Todo\_Todo.md" />
+    <None Include="$(MSBuildThisFileDirectory)TODO_Remaining_Tasks.md" />
     <None Include="$(MSBuildThisFileDirectory)Workflow Compensation Logic %28Saga Pattern%29.md" />
     <None Include="$(MSBuildThisFileDirectory)Authoring Rules &amp; State Constraints.md" />
     <None Include="$(MSBuildThisFileDirectory)Architectural Reference Guide.md" />

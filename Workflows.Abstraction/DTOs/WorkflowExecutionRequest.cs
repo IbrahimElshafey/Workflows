@@ -12,5 +12,10 @@ namespace Workflows.Abstraction.DTOs
         /// </summary>
         public Guid TriggeringWaitId { get; set; }
         public WorkflowStateDto WorkflowState { get; set; }
+
+        /// <summary>
+        /// Result from external command execution (Dispatched mode)
+        /// </summary>
+        public object CommandResult { get; set; }
     }
 }

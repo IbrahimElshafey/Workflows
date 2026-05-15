@@ -52,9 +52,6 @@ namespace Workflows.Definition
             return new StatefulSignalBuilder<TSignal, TState>(_wait);
         }
 
-        public SignalWait<TSignal> AsWait() => _wait;
-        public IPassiveWait AsPassiveWait() => _wait;
-
         public static implicit operator SignalWait<TSignal>(SignalBuilder<TSignal> builder) => builder._wait;
         public static implicit operator Wait(SignalBuilder<TSignal> builder) => builder._wait;
     }
@@ -118,9 +115,6 @@ namespace Workflows.Definition
             _wait.MatchIf(matchExpression, callerLineNumber, expression);
             return this;
         }
-
-        public SignalWait<TSignal> AsWait() => _wait;
-        public IPassiveWait AsPassiveWait() => _wait;
 
         public static implicit operator SignalWait<TSignal>(StatefulSignalBuilder<TSignal, TState> builder) => builder._wait;
         public static implicit operator Wait(StatefulSignalBuilder<TSignal, TState> builder) => builder._wait;

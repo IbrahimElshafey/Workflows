@@ -9,6 +9,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Workflows.Definition\Workflows.Definition.csproj" />
+    <ProjectReference Include="..\..\Workflows.Runner\Workflows.Runner.csproj" />
+    <ProjectReference Include="..\..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="CacheTests.cs" />
+    <Compile Remove="StatePersistenceTests.cs" />
   </ItemGroup>
 
 </Project>

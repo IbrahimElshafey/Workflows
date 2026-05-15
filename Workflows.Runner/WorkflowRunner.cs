@@ -10,6 +10,7 @@ using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition;
+using Workflows.Primitives;
 using Workflows.Runner.Cache;
 using Workflows.Runner.DataObjects;
 
@@ -71,8 +72,14 @@ namespace Workflows.Runner
             var workflowFactory = _templateCache.GetOrAddWorkflowFactory(workflowTypes.WorkflowContainer);
             var workflowInstance = (WorkflowContainer)workflowFactory(_serviceProvider, null);
 
-            // Map once, reuse.
-            var triggeringWait = _mapper.MapToWait(triggeringWaitDto, _workflowRegistry);
+            // Restore cancelled tokens to workflow instance
+            if (state.CancelledTokens != null)
+            {
+                workflowInstance.TokensToCancel = new HashSet<string>(state.CancelledTokens);
+            }
+
+            // Map once, reuse. Pass StateMachineObject to restore ExplicitState
+            var triggeringWait = _mapper.MapToWait(triggeringWaitDto, _workflowRegistry, state.StateObject);
             triggeringWait.WorkflowContainer = workflowInstance;
 
             if (triggeringWaitDto is SignalWaitDto signalWaitDto)
@@ -81,6 +88,14 @@ namespace Workflows.Runner
                 if (signalValidationResult != null)
                 {
                     return signalValidationResult;
+                }
+            }
+            else if (triggeringWaitDto is CommandWaitDto commandWaitDto)
+            {
+                var commandExecutionResult = await ExecuteCommandAsync(commandWaitDto, triggeringWait as Definition.ICommandWait, runContext, workflowInstance);
+                if (commandExecutionResult != null)
+                {
+                    return commandExecutionResult;
                 }
             }
 
@@ -96,11 +111,51 @@ namespace Workflows.Runner
 
             if (advancerResult?.Wait != null)
             {
-                newWaits.Add(_mapper.MapToDto(advancerResult.Wait));
+                var nextWait = advancerResult.Wait;
+
+                // Handle active wait types that execute immediately
+                if (nextWait is CompensationWait compensationWait)
+                {
+                    // Execute compensation logic in-memory
+                    await ExecuteCompensationAsync(compensationWait, state, workflowInstance);
+
+                    // Loop back to get next wait after compensation
+                    advancerResult = await _stateMachineAdvancer.RunAsync(workflowStream, state.StateObject).ConfigureAwait(false);
+                    nextWait = advancerResult?.Wait;
+                }
+
+                // Check if next wait is cancelled before processing
+                if (nextWait != null && IsWaitCancelled(nextWait, state.CancelledTokens))
+                {
+                    // Invoke OnCanceled callback if present
+                    await InvokeCancelActionAsync(nextWait);
+
+                    // Skip this wait and get next one
+                    advancerResult = await _stateMachineAdvancer.RunAsync(workflowStream, state.StateObject).ConfigureAwait(false);
+                    nextWait = advancerResult?.Wait;
+                }
+
+                if (nextWait != null)
+                {
+                    // Save ExplicitState to StateMachineObject.WaitStatesObjects (deduplicated)
+                    SaveWaitStatesToMachineState(nextWait, state.StateObject);
+
+                    newWaits.Add(_mapper.MapToDto(nextWait));
+                }
+                else
+                {
+                    state.Status = WorkflowInstanceStatus.Completed;
+                }
             }
             else
             {
                 state.Status = WorkflowInstanceStatus.Completed;
+            }
+
+            // Sync cancelled tokens from workflow instance back to state
+            if (workflowInstance.TokensToCancel.Count > 0)
+            {
+                state.CancelledTokens = new HashSet<string>(workflowInstance.TokensToCancel);
             }
 
             // NOTE: still single-branch semantics; group/tree merge logic should be added separately.
@@ -140,7 +195,7 @@ namespace Workflows.Runner
             }
 
             var compiledMatch = GetOrBuildCompiledMatch(signalWaitDto, signalWait);
-            if (compiledMatch != null && !compiledMatch(signal.Data, workflowInstance, null))
+            if (compiledMatch != null && !compiledMatch(signal.Data, workflowInstance, signalWait.ExplicitState))
             {
                 return Error("Signal match expression failed.");
             }
@@ -148,10 +203,143 @@ namespace Workflows.Runner
             var afterMatchAction = signalWait.AfterMatchAction;
             if (afterMatchAction != null)
             {
-                InvokeAfterMatchAction(afterMatchAction, signal.Data);
+                InvokeAfterMatchAction(afterMatchAction, signal.Data, signalWait.ExplicitState);
             }
 
             return null;
+        }
+
+        private async Task<AsyncResult> ExecuteCommandAsync(
+            CommandWaitDto commandWaitDto,
+            Definition.ICommandWait commandWait,
+            WorkflowExecutionRequest runContext,
+            WorkflowContainer workflowInstance)
+        {
+            if (commandWait == null)
+            {
+                return Error("Triggering wait could not be mapped to command wait.");
+            }
+
+            // Get command wait properties via reflection
+            var commandWaitType = commandWait.GetType();
+            var commandDataProperty = commandWaitType.GetProperty("CommandData", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var onResultActionProperty = commandWaitType.GetProperty("OnResultAction", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var onFailureActionProperty = commandWaitType.GetProperty("OnFailureAction", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var compensationActionProperty = commandWaitType.GetProperty("CompensationAction", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var tokensProperty = commandWaitType.GetProperty("Tokens", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            var explicitStateProperty = commandWaitType.BaseType.GetProperty("ExplicitState", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+
+            var commandData = commandDataProperty?.GetValue(commandWait);
+            var onResultAction = onResultActionProperty?.GetValue(commandWait);
+            var onFailureAction = onFailureActionProperty?.GetValue(commandWait);
+            var compensationAction = compensationActionProperty?.GetValue(commandWait);
+            var tokens = tokensProperty?.GetValue(commandWait) as List<string>;
+            var explicitState = explicitStateProperty?.GetValue(commandWait);
+
+            try
+            {
+                // TODO: Execute command through handler factory
+                // For now, simulate execution based on execution mode
+                object result = null;
+
+                // Check if this is a Direct mode command (fast, synchronous)
+                if (commandWaitDto.ExecutionMode == CommandExecutionMode.Direct)
+                {
+                    // Execute immediately via handler
+                    // var handler = _commandHandlerFactory.GetHandler(commandWait.HandlerKey);
+                    // result = await handler.ExecuteAsync(commandData);
+
+                    // Placeholder: simulate successful execution
+                    result = CreateMockResult(commandData);
+                }
+                else
+                {
+                    // Dispatched mode - command was already executed externally
+                    // Result should be in the execution request
+                    result = runContext.CommandResult;
+                }
+
+                // Track command execution for compensation
+                TrackCommandExecution(
+                    runContext.WorkflowState.StateObject,
+                    commandData?.GetType().Name ?? "UnknownCommand",
+                    result,
+                    explicitState,
+                    tokens,
+                    compensationAction);
+
+                // Invoke OnResult callback if present
+                if (onResultAction != null)
+                {
+                    InvokeOnResultAction(onResultAction, result, explicitState);
+                }
+
+                return null; // Success, continue workflow
+            }
+            catch (Exception ex)
+            {
+                // Invoke OnFailure callback if present
+                if (onFailureAction != null)
+                {
+                    await InvokeOnFailureActionAsync(onFailureAction, ex, explicitState);
+                }
+
+                return Error($"Command execution failed: {ex.Message}");
+            }
+        }
+
+        private object CreateMockResult(object commandData)
+        {
+            // Create a mock result for testing purposes
+            // In production, this would come from the actual handler
+            var resultType = commandData?.GetType().Name.Replace("Command", "Result");
+            return new { Success = true, ResultType = resultType };
+        }
+
+        private void TrackCommandExecution(
+            StateMachineObject stateObject,
+            string commandType,
+            object result,
+            object explicitState,
+            List<string> tokens,
+            object compensationAction)
+        {
+            var history = BuildCommandHistory(stateObject);
+
+            history.Add(new CommandHistoryEntry
+            {
+                CommandType = commandType,
+                Result = result,
+                ExplicitState = explicitState,
+                Tokens = tokens ?? new List<string>(),
+                CompensationAction = compensationAction,
+                IsCompensated = false,
+                ExecutionOrder = history.Count
+            });
+
+            UpdateCommandHistoryInState(stateObject, history);
+        }
+
+        private void InvokeOnResultAction(object action, object result, object explicitState)
+        {
+            var invoker = _templateCache.GetOrAddOnResultInvoker(action.GetType());
+            if (invoker == null)
+            {
+                throw new InvalidOperationException("OnResultAction signature is not supported or Invoke method not found.");
+            }
+
+            invoker(action, result, explicitState);
+        }
+
+        private async ValueTask InvokeOnFailureActionAsync(object action, Exception exception, object explicitState)
+        {
+            var invoker = _templateCache.GetOrAddOnFailureInvoker(action.GetType());
+            if (invoker == null)
+            {
+                throw new InvalidOperationException("OnFailureAction signature is not supported or Invoke method not found.");
+            }
+
+            await invoker(action, exception, explicitState);
         }
 
         private Func<object, object, object, bool> GetOrBuildCompiledMatch(SignalWaitDto dto, ISignalWait wait)
@@ -184,7 +372,7 @@ namespace Workflows.Runner
             return compiled;
         }
 
-        private void InvokeAfterMatchAction(object action, object signalData)
+        private void InvokeAfterMatchAction(object action, object signalData, object explicitState)
         {
             var invoker = _templateCache.GetOrAddAfterMatchInvoker(action.GetType());
             if (invoker == null)
@@ -192,7 +380,7 @@ namespace Workflows.Runner
                 throw new InvalidOperationException("AfterMatchAction signature is not supported or Invoke method not found.");
             }
 
-            invoker(action, signalData);
+            invoker(action, signalData, explicitState);
         }
 
         private static WaitInfrastructureDto FindWaitById(IEnumerable<WaitInfrastructureDto> waits, Guid id)
@@ -235,6 +423,146 @@ namespace Workflows.Runner
         private static AsyncResult Error(string message)
         {
             return new AsyncResult(Guid.NewGuid(), null, "Error", message, DateTime.UtcNow);
+        }
+
+        private static void SaveWaitStatesToMachineState(Wait wait, StateMachineObject stateMachineObject)
+        {
+            if (wait == null || stateMachineObject == null) return;
+
+            stateMachineObject.WaitStatesObjects ??= new Dictionary<Guid, object>();
+
+            // Save current wait's ExplicitState if not null and not already saved (deduplication)
+            if (wait.ExplicitState != null && !stateMachineObject.WaitStatesObjects.ContainsKey(wait.Id))
+            {
+                stateMachineObject.WaitStatesObjects[wait.Id] = wait.ExplicitState;
+            }
+
+            // Recursively save child waits' states
+            if (wait.ChildWaits != null)
+            {
+                foreach (var childWait in wait.ChildWaits)
+                {
+                    SaveWaitStatesToMachineState(childWait, stateMachineObject);
+                }
+            }
+        }
+
+        private async Task ExecuteCompensationAsync(
+            CompensationWait compensationWait,
+            WorkflowStateDto state,
+            WorkflowContainer workflowInstance)
+        {
+            // Build command history from state
+            var commandHistory = BuildCommandHistory(state.StateObject);
+
+            // Filter commands by token (support multiple tokens)
+            var commandsToCompensate = commandHistory
+                .Where(cmd => cmd.Tokens != null && cmd.Tokens.Contains(compensationWait.Token))
+                .Where(cmd => !cmd.IsCompensated) // Skip already compensated
+                .OrderByDescending(cmd => cmd.ExecutionOrder) // LIFO order
+                .ToList();
+
+            // Execute compensation delegates
+            foreach (var command in commandsToCompensate)
+            {
+                if (command.CompensationAction != null)
+                {
+                    try
+                    {
+                        // Invoke compensation with the saved result
+                        var invoker = _templateCache.GetOrAddCompensationInvoker(command.CompensationAction.GetType());
+                        if (invoker != null)
+                        {
+                            await invoker(command.CompensationAction, command.Result, command.ExplicitState);
+                        }
+
+                        // Mark as compensated
+                        command.IsCompensated = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log compensation failure but continue with others
+                        await workflowInstance.OnError($"Compensation failed for command {command.CommandType}: {ex.Message}", ex);
+                    }
+                }
+            }
+
+            // Update command history in state
+            UpdateCommandHistoryInState(state.StateObject, commandHistory);
+        }
+
+        private List<CommandHistoryEntry> BuildCommandHistory(StateMachineObject stateObject)
+        {
+            // Extract command history from state using a well-known GUID
+            var commandHistoryKey = new Guid("00000000-0000-0000-0000-000000000001"); // Reserved for command history
+
+            if (stateObject.StateMachinesObjects?.TryGetValue(commandHistoryKey, out var historyObj) == true)
+            {
+                return historyObj as List<CommandHistoryEntry> ?? new List<CommandHistoryEntry>();
+            }
+
+            return new List<CommandHistoryEntry>();
+        }
+
+        private void UpdateCommandHistoryInState(StateMachineObject stateObject, List<CommandHistoryEntry> commandHistory)
+        {
+            stateObject.StateMachinesObjects ??= new Dictionary<Guid, object>();
+            var commandHistoryKey = new Guid("00000000-0000-0000-0000-000000000001"); // Reserved for command history
+            stateObject.StateMachinesObjects[commandHistoryKey] = commandHistory;
+        }
+
+        private bool IsWaitCancelled(Wait wait, HashSet<string> cancelledTokens)
+        {
+            if (cancelledTokens == null || cancelledTokens.Count == 0)
+            {
+                return false;
+            }
+
+            // Check if wait has cancel tokens through reflection
+            var waitType = wait.GetType();
+            var cancelTokensField = waitType.GetField("CancelTokens", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+            if (cancelTokensField != null)
+            {
+                var tokens = cancelTokensField.GetValue(wait) as List<string>;
+                if (tokens != null && tokens.Any(token => cancelledTokens.Contains(token)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private async ValueTask InvokeCancelActionAsync(Wait wait)
+        {
+            if (wait.CancelAction != null)
+            {
+                try
+                {
+                    await wait.CancelAction();
+                }
+                catch (Exception ex)
+                {
+                    // Log but don't throw - cancellation callbacks should not block workflow
+                    if (wait.WorkflowContainer != null)
+                    {
+                        await wait.WorkflowContainer.OnError($"Cancel action failed for wait {wait.WaitName}: {ex.Message}", ex);
+                    }
+                }
+            }
+        }
+
+        // Helper class to track command execution history
+        private class CommandHistoryEntry
+        {
+            public string CommandType { get; set; }
+            public object Result { get; set; }
+            public object ExplicitState { get; set; }
+            public List<string> Tokens { get; set; }
+            public object CompensationAction { get; set; }
+            public bool IsCompensated { get; set; }
+            public int ExecutionOrder { get; set; }
         }
     }
 }

@@ -53,13 +53,13 @@ namespace WorkflowSample
             // Explicitly passing CurrentOrderId into the child waits
             yield return WaitGroup(
                [
-                    WaitSignal<ShippingEvent>("InventoryAllocated")
+                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated")
                         .WithState(CurrentOrderId)
-                        .MatchIf((shipping, targetId) => shipping.OrderId == targetId).AsWait(),
+                        .MatchIf((shipping, targetId) => shipping.OrderId == targetId),
 
-                    WaitSignal<ShippingEvent>("LabelPrinted")
+                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted")
                         .WithState(CurrentOrderId)
-                        .MatchIf((shipping, targetId) => shipping.OrderId == targetId).AsWait()
+                        .MatchIf((shipping, targetId) => shipping.OrderId == targetId)
                 ],
                 "Parallel Fulfillment Prep"
             ).MatchIf(() => ProcessCount >= 10); // Domain state evaluation

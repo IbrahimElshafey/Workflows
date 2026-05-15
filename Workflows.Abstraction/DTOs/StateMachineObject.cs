@@ -23,10 +23,13 @@ namespace Workflows.Abstraction.DTOs
         public object Instance { get; set; }
 
         /// <summary>
-        /// The extracted local variables and closures captured at the time of suspension.
-        /// KEY: A unique identifier (Guid) linking this memory block to a specific execution scope or Wait ID.
-        /// VALUE: The captured data (e.g., an anonymous closure object or a dictionary of local variables).
+        /// The extracted state machine local variables for workflow methods (one or more IAsyncEnumrable<Wait>)
         /// </summary>
-        public Dictionary<Guid, object> Variables { get; set; } = new();
+        public Dictionary<Guid, object> StateMachinesObjects { get; set; } = new();
+
+        /// <summary>
+        /// State object passed to .WithState(...) method
+        /// </summary>
+        public Dictionary<Guid, object> WaitStatesObjects { get; set; } = new();
     }
 }

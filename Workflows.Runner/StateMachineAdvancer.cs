@@ -72,7 +72,7 @@ namespace Workflows.Runner
             // Extract property accessors for MachineState
             var stateIndexProp = Expression.Property(stateParam, nameof(StateMachineObject.StateIndex));
             var instanceProp = Expression.Property(stateParam, nameof(StateMachineObject.Instance));
-            var variablesProp = Expression.Property(stateParam, nameof(StateMachineObject.Variables));
+            var variablesProp = Expression.Property(stateParam, nameof(StateMachineObject.StateMachinesObjects));
 
             var dictTryGetValueMethod = typeof(Dictionary<string, object>).GetMethod("TryGetValue", new[] { typeof(string), typeof(object).MakeByRefType() });
 
@@ -91,7 +91,7 @@ namespace Workflows.Runner
                 assignments.Add(Expression.Assign(Expression.Field(typedEnumerator, thisField), typedInstance));
             }
 
-            // 3. Hydrate Variables (Locals + Closures combined)
+            // 3. Hydrate StateMachinesObjects (Locals + Closures combined)
             var stateFieldsToHydrate = fields.Where(f => IsClosureField(f) || IsLocalField(f)).ToList();
             if (stateFieldsToHydrate.Any())
             {
@@ -148,9 +148,9 @@ namespace Workflows.Runner
                 ));
             }
 
-            // 3. Extract Variables (Locals + Closures combined)
+            // 3. Extract StateMachinesObjects (Locals + Closures combined)
             var dictAddMethod = typeof(Dictionary<string, object>).GetMethod("Add", new[] { typeof(string), typeof(object) });
-            var variablesProp = Expression.Property(stateVar, nameof(StateMachineObject.Variables));
+            var variablesProp = Expression.Property(stateVar, nameof(StateMachineObject.StateMachinesObjects));
 
             var stateFieldsToDehydrate = fields.Where(f => IsClosureField(f) || IsLocalField(f)).ToList();
             foreach (var f in stateFieldsToDehydrate)

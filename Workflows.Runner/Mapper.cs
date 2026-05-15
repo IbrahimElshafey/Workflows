@@ -189,7 +189,7 @@ namespace Workflows.Runner
 
         #region From DTO
 
-        public Wait MapToWait(WaitInfrastructureDto dto, Abstraction.Runner.IWorkflowRegistry registry)
+        public Wait MapToWait(WaitInfrastructureDto dto, Abstraction.Runner.IWorkflowRegistry registry, StateMachineObject stateMachineObject = null)
         {
             if (dto == null) throw new ArgumentNullException(nameof(dto));
 
@@ -198,12 +198,20 @@ namespace Workflows.Runner
                 SignalWaitDto signalDto => MapToWait(signalDto, registry),
                 CommandWaitDto commandDto => MapToWait(commandDto, registry),
                 TimeWaitDto timeDto => MapToWait(timeDto),
-                GroupWaitDto groupDto => MapToWait(groupDto, registry),
-                SubWorkflowWaitDto subWorkflowDto => MapToWait(subWorkflowDto, registry),
+                GroupWaitDto groupDto => MapToWait(groupDto, registry, stateMachineObject),
+                SubWorkflowWaitDto subWorkflowDto => MapToWait(subWorkflowDto, registry, stateMachineObject),
                 _ => throw new NotSupportedException($"Unsupported DTO type [{dto.GetType().FullName}].")
             };
 
             RestoreBase(dto, wait);
+
+            // Restore ExplicitState from StateMachineObject.WaitStatesObjects
+            if (stateMachineObject?.WaitStatesObjects != null && 
+                stateMachineObject.WaitStatesObjects.TryGetValue(wait.Id, out var explicitState))
+            {
+                wait.ExplicitState = explicitState;
+            }
+
             return wait;
         }
 
@@ -263,21 +271,21 @@ namespace Workflows.Runner
             return wait;
         }
 
-        private Wait MapToWait(GroupWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry)
+        private Wait MapToWait(GroupWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry, StateMachineObject stateMachineObject = null)
         {
-            var childWaits = dto.ChildWaits?.Select(c => MapToWait(c, registry)).ToList() ?? new List<Wait>();
+            var childWaits = dto.ChildWaits?.Select(c => MapToWait(c, registry, stateMachineObject)).ToList() ?? new List<Wait>();
             var wait = new GroupWait(dto.WaitName, childWaits, dto.InCodeLine, dto.CallerName, "");
             wait.WaitType = (WaitType)(int)dto.WaitType;
             wait.CancelTokens = dto.CancelTokens;
             return wait;
         }
 
-        private Wait MapToWait(SubWorkflowWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry)
+        private Wait MapToWait(SubWorkflowWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry, StateMachineObject stateMachineObject = null)
         {
             var wait = new SubWorkflowWait(dto.WaitName, dto.InCodeLine, dto.CallerName, "");
             if (dto.ChildWaits?.Count > 0)
             {
-                wait.FirstWait = MapToWait(dto.ChildWaits[0], registry);
+                wait.FirstWait = MapToWait(dto.ChildWaits[0], registry, stateMachineObject);
             }
             wait.CancelTokens = dto.CancelTokens;
             return wait;

@@ -61,6 +61,7 @@ namespace Workflows.Definition
         public CommandWait<TCommand, TResult> Build() => _wait;
 
         public static implicit operator CommandWait<TCommand, TResult>(CommandBuilder<TCommand, TResult> builder) => builder._wait;
+        public static implicit operator Wait(CommandBuilder<TCommand, TResult> builder) => builder._wait;
     }
 
     public readonly struct StatefulCommandBuilder<TCommand, TResult, TState>
@@ -132,6 +133,7 @@ namespace Workflows.Definition
         public CommandWait<TCommand, TResult> Build() => _wait;
 
         public static implicit operator CommandWait<TCommand, TResult>(StatefulCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
+        public static implicit operator Wait(StatefulCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
     }
 
     public class CommandWait<TCommand, TResult> : Wait, ICommandWait
