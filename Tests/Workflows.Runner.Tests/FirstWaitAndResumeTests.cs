@@ -66,11 +66,11 @@ namespace Workflows.Runner.Tests
             var workflow = new FirstWaitAndResumeWorkflow();
             workflow.ExecutionLog.Add("Execution1: Start"); // Simulate previous execution
 
-            var stateObject = new StateMachineObject
+            var stateObject = new WorkflowStateObject
             {
                 StateIndex = 0, // State after first wait
                 Instance = workflow,
-                StateMachinesObjects = new Dictionary<string, object>(),
+                StateMachinesObjects = new Dictionary<Guid, object>(),
                 WaitStatesObjects = new Dictionary<Guid, object>()
             };
 
@@ -133,11 +133,11 @@ namespace Workflows.Runner.Tests
             var waitId = Guid.NewGuid();
             var signalWait = builder.CreateSignalWaitDto("OrderReceived", "First wait", waitId);
 
-            var stateObject = new StateMachineObject
+            var stateObject = new WorkflowStateObject
             {
                 StateIndex = -1,
                 Instance = workflow,
-                StateMachinesObjects = new Dictionary<string, object>(),
+                StateMachinesObjects = new Dictionary<Guid, object>(),
                 WaitStatesObjects = new Dictionary<Guid, object>
                 {
                     { waitId, 1000 } // State for MatchIf
@@ -179,11 +179,11 @@ namespace Workflows.Runner.Tests
             var waitId = Guid.NewGuid();
             var signalWait = builder.CreateSignalWaitDto("OrderReceived", "First wait", waitId);
 
-            var stateObject = new StateMachineObject
+            var stateObject = new WorkflowStateObject
             {
                 StateIndex = -1,
                 Instance = workflow,
-                StateMachinesObjects = new Dictionary<string, object>(),
+                StateMachinesObjects = new Dictionary<Guid, object>(),
                 WaitStatesObjects = new Dictionary<Guid, object>
                 {
                     { waitId, 1000 } // State for MatchIf

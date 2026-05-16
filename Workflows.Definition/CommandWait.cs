@@ -40,7 +40,7 @@ namespace Workflows.Definition
             return this;
         }
 
-        public CommandBuilder<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Direct)
+        public CommandBuilder<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.ImmediateCommand)
         {
             _wait.WithHandlerKey(key, mode);
             return this;
@@ -118,7 +118,7 @@ namespace Workflows.Definition
             return this;
         }
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Direct)
+        public StatefulCommandBuilder<TCommand, TResult, TState> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.ImmediateCommand)
         {
             _wait.WithHandlerKey(key, mode);
             return this;
@@ -147,7 +147,7 @@ namespace Workflows.Definition
         internal int MaxRetryAttempts { get; set; } = 1;
         internal TimeSpan? RetryBackoff { get; set; }
         internal string HandlerKey { get; set; }
-        internal CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.Direct;
+        internal CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.ImmediateCommand;
 
         internal CommandWait(string commandName, TCommand data, int inCodeLine, string caller, string callerFilePath)
             : base(WaitType.Command, commandName, inCodeLine, caller, callerFilePath)
@@ -217,7 +217,7 @@ namespace Workflows.Definition
 
         CommandExecutionMode ICommandWait.ExecutionMode => ExecutionMode;
 
-        public CommandWait<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Direct)
+        public CommandWait<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.ImmediateCommand)
         {
             HandlerKey = key;
             ExecutionMode = mode;

@@ -26,7 +26,7 @@ namespace WorkflowSample
             public string Reason { get; set; }
         }
 
-        public override async IAsyncEnumerable<Wait> ExecuteWorkflowAsync()
+        public override async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSignal<OrderReceivedEvent>("OrderReceived", "Receive order with explicit state")
                 .WithState(new SignalState { MinOrderId = 1, Status = "Received" })

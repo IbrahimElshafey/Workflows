@@ -21,7 +21,7 @@ namespace Workflows.Runner.Tests
             };
 
             // Act
-            var enumerator = workflow.ExecuteWorkflowAsync().GetAsyncEnumerator();
+            var enumerator = workflow.Run().GetAsyncEnumerator();
 
             int waitCount = 0;
             while (await enumerator.MoveNextAsync())
@@ -46,7 +46,7 @@ namespace Workflows.Runner.Tests
             };
 
             // Act
-            var enumerator = workflow.ExecuteWorkflowAsync().GetAsyncEnumerator();
+            var enumerator = workflow.Run().GetAsyncEnumerator();
 
             while (await enumerator.MoveNextAsync())
             {
@@ -67,7 +67,7 @@ namespace Workflows.Runner.Tests
             };
 
             // Act
-            var enumerator = workflow.ExecuteWorkflowAsync().GetAsyncEnumerator();
+            var enumerator = workflow.Run().GetAsyncEnumerator();
 
             while (await enumerator.MoveNextAsync())
             {

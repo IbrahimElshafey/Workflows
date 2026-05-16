@@ -16,6 +16,40 @@ using Workflows.Runner.DataObjects;
 
 namespace Workflows.Runner
 {
+
+    public interface ISignalValidator
+    {
+        /// <summary>
+        /// Evaluates if the incoming signal matches the wait condition.
+        /// If it matches, the payload is applied to the workflow's state/closure.
+        /// </summary>
+        ValueTask<bool> ValidateAndApplySignalAsync(
+            ISignalWait signalWait,
+            object signalData,
+            WorkflowContainer workflowInstance,
+            object closure);
+    }
+
+    public interface ICommandExecutor
+    {
+        /// <summary>
+        /// Executes an active command wait. 
+        /// Returns a result indicating whether the command was executed immediately (Fast) 
+        /// or requires suspension (Slow).
+        /// </summary>
+        ValueTask<CommandExecutionResult> ExecuteCommandAsync(
+            Definition.ICommandWait commandWait,
+            WorkflowContainer workflowInstance,
+            object closure);
+    }
+
+    // Helper DTO for the executor result
+    public class CommandExecutionResult
+    {
+        public bool IsCompleted { get; set; }
+        public object ResultData { get; set; }
+        public bool RequiresSuspension => !IsCompleted;
+    }
     internal class WorkflowRunner : IWorkflowRunner
     {
         private readonly IWorkflowRegistry _workflowRegistry;
@@ -78,9 +112,35 @@ namespace Workflows.Runner
                 workflowInstance.TokensToCancel = new HashSet<string>(state.CancelledTokens);
             }
 
-            // Map once, reuse. Pass StateMachineObject to restore ExplicitState
+            // Map once, reuse. Pass WorkflowStateObject to restore ExplicitState
             var triggeringWait = _mapper.MapToWait(triggeringWaitDto, _workflowRegistry, state.StateObject);
             triggeringWait.WorkflowContainer = workflowInstance;
+
+            // Check if this wait belongs to a sub-workflow
+            var parentSubWorkflowDto = triggeringWaitDto.ParentWaitId.HasValue
+                ? FindWaitById(state.Waits, triggeringWaitDto.ParentWaitId.Value) as SubWorkflowWaitDto
+                : null;
+
+            SubWorkflowWait parentSubWorkflow = null;
+            WorkflowStateObject subWorkflowState = null;
+
+            if (parentSubWorkflowDto != null)
+            {
+                // This wait belongs to a sub-workflow - we need to resume the child, not the parent
+                parentSubWorkflow = _mapper.MapToWait(parentSubWorkflowDto, _workflowRegistry, state.StateObject) as SubWorkflowWait;
+                parentSubWorkflow.WorkflowContainer = workflowInstance;
+
+                // Retrieve child state
+                if (state.StateObject.StateMachinesObjects?.TryGetValue(parentSubWorkflow.Id, out var storedChildState) == true)
+                {
+                    subWorkflowState = storedChildState as WorkflowStateObject;
+                }
+
+                if (subWorkflowState == null)
+                {
+                    throw new InvalidOperationException($"Sub-workflow state not found for SubWorkflowWait '{parentSubWorkflow.WaitName}'.");
+                }
+            }
 
             if (triggeringWaitDto is SignalWaitDto signalWaitDto)
             {
@@ -99,12 +159,43 @@ namespace Workflows.Runner
                 }
             }
 
-            var workflowInvoker = _templateCache.GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, triggeringWait.CallerName);
-            var workflowStream = (IAsyncEnumerable<Wait>)workflowInvoker(workflowInstance);
+            IAsyncEnumerable<Wait> workflowStream;
+            WorkflowStateObject activeState;
 
-            var advancerResult = await _stateMachineAdvancer.RunAsync(workflowStream, state.StateObject).ConfigureAwait(false);
+            if (parentSubWorkflow != null)
+            {
+                // Resume child sub-workflow
+                if (parentSubWorkflow.Runner == null)
+                {
+                    throw new InvalidOperationException($"Sub-workflow '{parentSubWorkflow.WaitName}' has no Runner.");
+                }
+                workflowStream = parentSubWorkflow.Runner;
+                activeState = subWorkflowState;
+            }
+            else
+            {
+                // Resume parent workflow
+                var workflowInvoker = _templateCache.GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, triggeringWait.CallerName);
+                workflowStream = (IAsyncEnumerable<Wait>)workflowInvoker(workflowInstance);
+                activeState = state.StateObject;
+            }
 
-            state.StateObject = advancerResult?.State;
+            var advancerResult = await _stateMachineAdvancer.RunAsync(workflowStream, activeState).ConfigureAwait(false);
+
+            // Update state
+            if (parentSubWorkflow != null)
+            {
+                // Update child state in parent's state object
+                if (advancerResult?.State != null)
+                {
+                    state.StateObject.StateMachinesObjects ??= new Dictionary<Guid, object>();
+                    state.StateObject.StateMachinesObjects[parentSubWorkflow.Id] = advancerResult.State;
+                }
+            }
+            else
+            {
+                state.StateObject = advancerResult?.State;
+            }
 
             var consumedWaitsIds = new List<Guid> { triggeringWaitDto.Id };
             var newWaits = new List<WaitInfrastructureDto>();
@@ -124,6 +215,39 @@ namespace Workflows.Runner
                     nextWait = advancerResult?.Wait;
                 }
 
+                // Handle sub-workflow context switching
+                if (nextWait is SubWorkflowWait subWorkflowWait)
+                {
+                    // Execute child workflow and get first wait
+                    var childWait = await ExecuteSubWorkflowAsync(subWorkflowWait, state.StateObject, workflowInstance);
+
+                    if (childWait != null)
+                    {
+                        // Replace parent wait with child wait
+                        // Set ParentWaitId so we can find the sub-workflow context later
+                        var childDto = _mapper.MapToDto(childWait);
+                        childDto.ParentWaitId = subWorkflowWait.Id;
+
+                        nextWait = childWait;
+
+                        // Also save the sub-workflow wait as parent context
+                        SaveWaitStatesToMachineState(subWorkflowWait, state.StateObject);
+                        var subWorkflowDto = _mapper.MapToDto(subWorkflowWait);
+                        subWorkflowDto.ChildWaits = new List<WaitInfrastructureDto> { childDto };
+
+                        newWaits.Add(subWorkflowDto);
+                        // Skip adding child wait separately - it's already in ChildWaits
+                        nextWait = null; // Prevent double-add below
+                    }
+                    else
+                    {
+                        // Child completed immediately, advance parent
+                        advancerResult = await _stateMachineAdvancer.RunAsync(workflowStream, state.StateObject).ConfigureAwait(false);
+                        nextWait = advancerResult?.Wait;
+                        state.StateObject = advancerResult?.State;
+                    }
+                }
+
                 // Check if next wait is cancelled before processing
                 if (nextWait != null && IsWaitCancelled(nextWait, state.CancelledTokens))
                 {
@@ -137,7 +261,7 @@ namespace Workflows.Runner
 
                 if (nextWait != null)
                 {
-                    // Save ExplicitState to StateMachineObject.WaitStatesObjects (deduplicated)
+                    // Save ExplicitState to WorkflowStateObject.WaitStatesObjects (deduplicated)
                     SaveWaitStatesToMachineState(nextWait, state.StateObject);
 
                     newWaits.Add(_mapper.MapToDto(nextWait));
@@ -149,7 +273,74 @@ namespace Workflows.Runner
             }
             else
             {
-                state.Status = WorkflowInstanceStatus.Completed;
+                // No more waits - check if this was a sub-workflow or main workflow
+                if (parentSubWorkflow != null)
+                {
+                    // Sub-workflow completed - resume parent workflow
+                    // Remove child state
+                    if (state.StateObject.StateMachinesObjects?.ContainsKey(parentSubWorkflow.Id) == true)
+                    {
+                        state.StateObject.StateMachinesObjects.Remove(parentSubWorkflow.Id);
+                    }
+
+                    // Resume parent workflow
+                    var parentWorkflowInvoker = _templateCache.GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, parentSubWorkflow.CallerName);
+                    var parentWorkflowStream = (IAsyncEnumerable<Wait>)parentWorkflowInvoker(workflowInstance);
+
+                    var parentAdvancerResult = await _stateMachineAdvancer.RunAsync(parentWorkflowStream, state.StateObject).ConfigureAwait(false);
+                    state.StateObject = parentAdvancerResult?.State;
+
+                    if (parentAdvancerResult?.Wait != null)
+                    {
+                        var parentNextWait = parentAdvancerResult.Wait;
+
+                        // Handle sub-workflow in parent (recursively)
+                        if (parentNextWait is SubWorkflowWait parentSubWorkflowWait)
+                        {
+                            var childWait = await ExecuteSubWorkflowAsync(parentSubWorkflowWait, state.StateObject, workflowInstance);
+
+                            if (childWait != null)
+                            {
+                                var childDto = _mapper.MapToDto(childWait);
+                                childDto.ParentWaitId = parentSubWorkflowWait.Id;
+
+                                SaveWaitStatesToMachineState(parentSubWorkflowWait, state.StateObject);
+                                var subWorkflowDto = _mapper.MapToDto(parentSubWorkflowWait);
+                                subWorkflowDto.ChildWaits = new List<WaitInfrastructureDto> { childDto };
+
+                                newWaits.Add(subWorkflowDto);
+                            }
+                            else
+                            {
+                                // Child completed immediately, advance parent again (rare case)
+                                parentAdvancerResult = await _stateMachineAdvancer.RunAsync(parentWorkflowStream, state.StateObject).ConfigureAwait(false);
+                                if (parentAdvancerResult?.Wait != null)
+                                {
+                                    SaveWaitStatesToMachineState(parentAdvancerResult.Wait, state.StateObject);
+                                    newWaits.Add(_mapper.MapToDto(parentAdvancerResult.Wait));
+                                }
+                                else
+                                {
+                                    state.Status = WorkflowInstanceStatus.Completed;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            SaveWaitStatesToMachineState(parentNextWait, state.StateObject);
+                            newWaits.Add(_mapper.MapToDto(parentNextWait));
+                        }
+                    }
+                    else
+                    {
+                        state.Status = WorkflowInstanceStatus.Completed;
+                    }
+                }
+                else
+                {
+                    // Main workflow completed
+                    state.Status = WorkflowInstanceStatus.Completed;
+                }
             }
 
             // Sync cancelled tokens from workflow instance back to state
@@ -242,8 +433,8 @@ namespace Workflows.Runner
                 // For now, simulate execution based on execution mode
                 object result = null;
 
-                // Check if this is a Direct mode command (fast, synchronous)
-                if (commandWaitDto.ExecutionMode == CommandExecutionMode.Direct)
+                // Check if this is a ImmediateCommand mode command (fast, synchronous)
+                if (commandWaitDto.ExecutionMode == CommandExecutionMode.ImmediateCommand)
                 {
                     // Execute immediately via handler
                     // var handler = _commandHandlerFactory.GetHandler(commandWait.HandlerKey);
@@ -297,7 +488,7 @@ namespace Workflows.Runner
         }
 
         private void TrackCommandExecution(
-            StateMachineObject stateObject,
+            WorkflowStateObject stateObject,
             string commandType,
             object result,
             object explicitState,
@@ -425,7 +616,7 @@ namespace Workflows.Runner
             return new AsyncResult(Guid.NewGuid(), null, "Error", message, DateTime.UtcNow);
         }
 
-        private static void SaveWaitStatesToMachineState(Wait wait, StateMachineObject stateMachineObject)
+        private static void SaveWaitStatesToMachineState(Wait wait, WorkflowStateObject stateMachineObject)
         {
             if (wait == null || stateMachineObject == null) return;
 
@@ -444,6 +635,69 @@ namespace Workflows.Runner
                 {
                     SaveWaitStatesToMachineState(childWait, stateMachineObject);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Executes a sub-workflow and returns its first wait.
+        /// Stores the sub-workflow's state machine separately keyed by the SubWorkflowWait.Id.
+        /// </summary>
+        private async Task<Wait> ExecuteSubWorkflowAsync(
+            SubWorkflowWait subWorkflowWait,
+            WorkflowStateObject parentState,
+            WorkflowContainer parentWorkflowInstance)
+        {
+            if (subWorkflowWait.Runner == null)
+            {
+                throw new InvalidOperationException($"SubWorkflowWait '{subWorkflowWait.WaitName}' has no Runner (child enumerator).");
+            }
+
+            // Check if we have a suspended child state (resuming)
+            var subWorkflowStateKey = subWorkflowWait.Id; // Use wait ID as state key
+            WorkflowStateObject childState = null;
+
+            if (parentState.StateMachinesObjects?.TryGetValue(subWorkflowStateKey, out var storedChildState) == true)
+            {
+                childState = storedChildState as WorkflowStateObject;
+            }
+
+            // If no child state, this is the first execution
+            childState ??= new WorkflowStateObject
+            {
+                StateIndex = -1,
+                Instance = parentWorkflowInstance, // Share workflow instance
+                StateMachinesObjects = new Dictionary<Guid, object>(),
+                WaitStatesObjects = new Dictionary<Guid, object>()
+            };
+
+            // Advance child workflow
+            var childAdvancerResult = await _stateMachineAdvancer.RunAsync(subWorkflowWait.Runner, childState).ConfigureAwait(false);
+
+            if (childAdvancerResult?.Wait != null)
+            {
+                // Child yielded a wait - save child state and return the wait
+                parentState.StateMachinesObjects ??= new Dictionary<Guid, object>();
+                parentState.StateMachinesObjects[subWorkflowStateKey] = childAdvancerResult.State;
+
+                // Mark the wait as belonging to this sub-workflow for later resumption
+                var childWait = childAdvancerResult.Wait;
+                childWait.WorkflowContainer = parentWorkflowInstance;
+
+                // Store parent context in the child wait so we can resume parent later
+                subWorkflowWait.FirstWait = childWait;
+                subWorkflowWait.ChildWaits = new List<Wait> { childWait };
+
+                return childWait;
+            }
+            else
+            {
+                // Child completed - remove child state
+                if (parentState.StateMachinesObjects?.ContainsKey(subWorkflowStateKey) == true)
+                {
+                    parentState.StateMachinesObjects.Remove(subWorkflowStateKey);
+                }
+
+                return null; // Signal parent to continue
             }
         }
 
@@ -491,7 +745,7 @@ namespace Workflows.Runner
             UpdateCommandHistoryInState(state.StateObject, commandHistory);
         }
 
-        private List<CommandHistoryEntry> BuildCommandHistory(StateMachineObject stateObject)
+        private List<CommandHistoryEntry> BuildCommandHistory(WorkflowStateObject stateObject)
         {
             // Extract command history from state using a well-known GUID
             var commandHistoryKey = new Guid("00000000-0000-0000-0000-000000000001"); // Reserved for command history
@@ -504,7 +758,7 @@ namespace Workflows.Runner
             return new List<CommandHistoryEntry>();
         }
 
-        private void UpdateCommandHistoryInState(StateMachineObject stateObject, List<CommandHistoryEntry> commandHistory)
+        private void UpdateCommandHistoryInState(WorkflowStateObject stateObject, List<CommandHistoryEntry> commandHistory)
         {
             stateObject.StateMachinesObjects ??= new Dictionary<Guid, object>();
             var commandHistoryKey = new Guid("00000000-0000-0000-0000-000000000001"); // Reserved for command history

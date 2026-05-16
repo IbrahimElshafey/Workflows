@@ -24,7 +24,7 @@ namespace Workflows.Abstraction.DTOs
         /// <summary>
         /// Serialized instance that contains the resumable workflow instance data and all locals (closures,methods private data) needed for execustion.
         /// </summary>
-        public StateMachineObject StateObject { get; internal set; }
+        public WorkflowStateObject StateObject { get; internal set; }
 
         /// <summary>
         /// List of current wait nodes (infrastructure DTOs) representing what the workflow is waiting for.

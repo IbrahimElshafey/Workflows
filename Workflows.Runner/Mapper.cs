@@ -189,7 +189,7 @@ namespace Workflows.Runner
 
         #region From DTO
 
-        public Wait MapToWait(WaitInfrastructureDto dto, Abstraction.Runner.IWorkflowRegistry registry, StateMachineObject stateMachineObject = null)
+        public Wait MapToWait(WaitInfrastructureDto dto, Abstraction.Runner.IWorkflowRegistry registry, WorkflowStateObject stateMachineObject = null)
         {
             if (dto == null) throw new ArgumentNullException(nameof(dto));
 
@@ -205,7 +205,7 @@ namespace Workflows.Runner
 
             RestoreBase(dto, wait);
 
-            // Restore ExplicitState from StateMachineObject.WaitStatesObjects
+            // Restore ExplicitState from WorkflowStateObject.WaitStatesObjects
             if (stateMachineObject?.WaitStatesObjects != null && 
                 stateMachineObject.WaitStatesObjects.TryGetValue(wait.Id, out var explicitState))
             {
@@ -257,7 +257,7 @@ namespace Workflows.Runner
 
             var type = wait.GetType();
             type.GetProperty("HandlerKey", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.HandlerKey);
-            type.GetProperty("ExecutionMode", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, (int)dto.ExecutionMode == (int)CommandExecutionMode.Indirect ? CommandExecutionMode.Indirect : CommandExecutionMode.Direct);
+            type.GetProperty("ExecutionMode", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, (int)dto.ExecutionMode == (int)CommandExecutionMode.DeferredCommand ? CommandExecutionMode.DeferredCommand : CommandExecutionMode.ImmediateCommand);
             type.GetProperty("MaxRetryAttempts", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.MaxRetryAttempts);
             type.GetProperty("RetryBackoff", BindingFlags.NonPublic | BindingFlags.Instance).SetValue(wait, dto.RetryBackoff);
 
@@ -271,7 +271,7 @@ namespace Workflows.Runner
             return wait;
         }
 
-        private Wait MapToWait(GroupWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry, StateMachineObject stateMachineObject = null)
+        private Wait MapToWait(GroupWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry, WorkflowStateObject stateMachineObject = null)
         {
             var childWaits = dto.ChildWaits?.Select(c => MapToWait(c, registry, stateMachineObject)).ToList() ?? new List<Wait>();
             var wait = new GroupWait(dto.WaitName, childWaits, dto.InCodeLine, dto.CallerName, "");
@@ -280,7 +280,7 @@ namespace Workflows.Runner
             return wait;
         }
 
-        private Wait MapToWait(SubWorkflowWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry, StateMachineObject stateMachineObject = null)
+        private Wait MapToWait(SubWorkflowWaitDto dto, Abstraction.Runner.IWorkflowRegistry registry, WorkflowStateObject stateMachineObject = null)
         {
             var wait = new SubWorkflowWait(dto.WaitName, dto.InCodeLine, dto.CallerName, "");
             if (dto.ChildWaits?.Count > 0)

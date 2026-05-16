@@ -52,6 +52,6 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// <summary>
         /// Determines whether the command is processed as a direct (runner-handled) or indirect (orchestrator-signalled) operation.
         /// </summary>
-        public CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.Direct;
+        public CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.ImmediateCommand;
     }
 }

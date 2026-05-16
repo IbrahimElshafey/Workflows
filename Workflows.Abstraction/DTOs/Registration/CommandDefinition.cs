@@ -13,8 +13,8 @@ namespace Workflows.Abstraction.DTOs.Registration
         /// <summary>
         /// The .NET type name of the request object sent to the external system.
         /// </summary>
-        public string RequestTypeName { get; set; }
-        public string RequestSchema { get; set; }
+        public string PayloadTypeName { get; set; }
+        public string PayloadSchema { get; set; }
 
         /// <summary>
         /// The .NET type name of the result object expected back.

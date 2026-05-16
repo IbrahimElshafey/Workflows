@@ -23,7 +23,7 @@ namespace Workflows.Runner.Tests
             };
 
             // Act
-            var enumerator = workflow.ExecuteWorkflowAsync().GetAsyncEnumerator();
+            var enumerator = workflow.Run().GetAsyncEnumerator();
 
             // Execute until we hit compensation or completion
             while (await enumerator.MoveNextAsync())
@@ -53,7 +53,7 @@ namespace Workflows.Runner.Tests
             };
 
             // Act
-            var enumerator = workflow.ExecuteWorkflowAsync().GetAsyncEnumerator();
+            var enumerator = workflow.Run().GetAsyncEnumerator();
 
             while (await enumerator.MoveNextAsync())
             {
@@ -72,7 +72,7 @@ namespace Workflows.Runner.Tests
             var workflow = new CompensationTestWorkflow();
 
             // Act - Check that workflow DSL supports RegisterCompensation
-            var enumerator = workflow.ExecuteWorkflowAsync().GetAsyncEnumerator();
+            var enumerator = workflow.Run().GetAsyncEnumerator();
 
             // Assert - Verify workflow can be instantiated with compensation
             workflow.Should().NotBeNull();

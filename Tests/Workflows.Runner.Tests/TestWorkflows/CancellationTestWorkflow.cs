@@ -8,7 +8,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     {
         public List<string> ExecutionLog { get; } = new();
 
-        public override async IAsyncEnumerable<Wait> ExecuteWorkflowAsync()
+        public override async IAsyncEnumerable<Wait> Run()
         {
             ExecutionLog.Add("Start");
 
@@ -39,7 +39,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
             if (ShouldCancel)
             {
                 ExecutionLog.Add("Cancelling order flow");
-                Cancel("OrderFlow");
+                CancelToken("OrderFlow"); // Use the correct method name from WorkflowContainer
             }
 
             // This should be skipped if cancelled

@@ -51,11 +51,14 @@
    - Child wait tree traversal needs completion counter
    - Downward pruning for MatchAny losers
 
-2. **Sub-Workflow Execution** - NEEDS CONTEXT SWITCHING
-   - SubWorkflowWait defined
-   - Runner needs to shift evaluation context to child enumerator
-   - Parent suspension logic during child execution
+2. **Sub-Workflow Execution** ✅ **IMPLEMENTED - Runner Context Switching Complete**
+   - SubWorkflowWait fully supported in runner
+   - Automatic child enumerator execution when parent yields SubWorkflowWait
+   - Child state management via `StateMachineObject.StateMachinesObjects` keyed by SubWorkflowWait.Id
+   - Parent resumption after child completion
+   - Recursive sub-workflow support (sub-workflows can have sub-workflows)
    - State preservation across parent-child boundaries
+   - **Note:** Tests that directly enumerate workflow DSL without using the runner will NOT see child execution logs, because the child enumerator is not automatically advanced in DSL-only mode. Use the runner for full sub-workflow execution.
 
 3. **Time-Based Waits** - NEEDS ORCHESTRATOR TIMER
    - WaitDelay/WaitUntil exist
@@ -109,7 +112,7 @@
 
 ### ⏳ Medium Priority (Needs Orchestrator)
 5. Implement group wait evaluation logic in orchestrator
-6. Implement sub-workflow context switching in runner
+6. ✅ Implement sub-workflow context switching in runner **COMPLETE**
 7. Add timer/delay wait handling in orchestrator
 8. Implement Dispatched command mode in orchestrator
 
@@ -130,9 +133,10 @@
 - **UpdateCommandHistoryInState** - State update (7 lines)
 - **CommandHistoryEntry** - Helper class (10 lines)
 - Enhanced **ExecuteCommandAsync** - Command execution (70 lines)
-- Enhanced **RunWorkflowAsync** - Main loop with compensation/cancellation (40 lines)
+- Enhanced **RunWorkflowAsync** - Main loop with compensation/cancellation/sub-workflows (120 lines)
+- **ExecuteSubWorkflowAsync** - Sub-workflow context switching (70 lines)
 
-**Total New Lines:** ~250 lines of production code
+**Total New Lines:** ~400 lines of production code
 **Test Files:** 10 files
 **Test Cases:** 21 tests
 
@@ -151,6 +155,14 @@
 - Runner checks and skips cancelled waits
 - OnCanceled callbacks execute before skipping
 - State synchronization between workflow and DTOs
+
+✅ **Sub-Workflow Execution**
+- Parent workflows can yield SubWorkflowWait to invoke child workflows
+- Child workflows execute with isolated state machines
+- Automatic parent resumption after child completion
+- Recursive sub-workflow support
+- State preservation across parent-child boundaries
+- Child state stored in parent's StateMachinesObjects keyed by SubWorkflowWait.Id
 
 ✅ **Command Execution**
 - Direct mode executes immediately

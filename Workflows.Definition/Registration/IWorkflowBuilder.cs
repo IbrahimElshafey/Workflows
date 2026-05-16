@@ -14,7 +14,7 @@ namespace Workflows.Definition.Registration
 
         IWorkflowBuilder RegisterSignal<TSignal>(string signalIdentifier);
 
-        IWorkflowBuilder RegisterCommand<TCommand, TResult>(string commandIdentifier, TimeSpan timeout = default, CommandExecutionMode mode = CommandExecutionMode.Direct);
+        IWorkflowBuilder RegisterCommand<TCommand, TResult>(string commandIdentifier, TimeSpan timeout = default, CommandExecutionMode mode = CommandExecutionMode.ImmediateCommand);
 
         IWorkflowBuilder RegisterRunner(string runnerName);
         IWorkflowBuilder SettingsSection(string settingsSection);

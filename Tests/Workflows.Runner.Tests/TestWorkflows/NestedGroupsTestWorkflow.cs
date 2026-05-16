@@ -8,7 +8,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     {
         public List<string> ExecutionLog { get; } = new();
 
-        public override async IAsyncEnumerable<Wait> ExecuteWorkflowAsync()
+        public override async IAsyncEnumerable<Wait> Run()
         {
             ExecutionLog.Add("Start");
 
@@ -41,28 +41,23 @@ namespace Workflows.Runner.Tests.TestWorkflows
 
             ExecutionLog.Add("Both payment and shipment completed");
 
-            // Another nested scenario: Group of groups with commands
-            var warehouse1 = WaitGroup([
-                (CommandWait<ReserveInventoryCommand, ReserveInventoryResult>)
-                    ExecuteCommand<ReserveInventoryCommand, ReserveInventoryResult>(
-                        "ReserveInventory",
-                        new ReserveInventoryCommand { ProductId = "WH1-PROD1", Quantity = 2 })
-                    .OnResult((result) => ExecutionLog.Add($"WH1-Item1: {result.ReservationId}")),
+            // Another nested scenario: Group of groups with multiple signals
+            var wh1item1 = (SignalWait<ShipmentSignal>)WaitSignal<ShipmentSignal>("Warehouse1Item1", "WH1-Item1")
+                    .AfterMatch((signal) => ExecutionLog.Add($"WH1-Item1: {signal.TrackingNumber}"));
+            var wh1item2 = (SignalWait<ShipmentSignal>)WaitSignal<ShipmentSignal>("Warehouse1Item2", "WH1-Item2")
+                    .AfterMatch((signal) => ExecutionLog.Add($"WH1-Item2: {signal.TrackingNumber}"));
 
-                (CommandWait<ReserveInventoryCommand, ReserveInventoryResult>)
-                    ExecuteCommand<ReserveInventoryCommand, ReserveInventoryResult>(
-                        "ReserveInventory",
-                        new ReserveInventoryCommand { ProductId = "WH1-PROD2", Quantity = 3 })
-                    .OnResult((result) => ExecutionLog.Add($"WH1-Item2: {result.ReservationId}"))
+            var warehouse1 = WaitGroup([
+                wh1item1,
+                wh1item2
             ], "Warehouse1Group")
             .MatchAll();
 
+            var wh2item1 = (SignalWait<ShipmentSignal>)WaitSignal<ShipmentSignal>("Warehouse2Item1", "WH2-Item1")
+                    .AfterMatch((signal) => ExecutionLog.Add($"WH2-Item1: {signal.TrackingNumber}"));
+
             var warehouse2 = WaitGroup([
-                (CommandWait<ReserveInventoryCommand, ReserveInventoryResult>)
-                    ExecuteCommand<ReserveInventoryCommand, ReserveInventoryResult>(
-                        "ReserveInventory",
-                        new ReserveInventoryCommand { ProductId = "WH2-PROD1", Quantity = 1 })
-                    .OnResult((result) => ExecutionLog.Add($"WH2-Item1: {result.ReservationId}"))
+                wh2item1
             ], "Warehouse2Group")
             .MatchAll();
 

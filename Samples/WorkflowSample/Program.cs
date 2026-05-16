@@ -10,7 +10,7 @@ Console.WriteLine("Test 1: Implicit Operator Conversions");
 try
 {
     var workflow = new OrderWithCommandWorkflow();
-    var workflowStream = workflow.ExecuteWorkflowAsync();
+    var workflowStream = workflow.Run();
     Console.WriteLine("✅ Workflow instantiation successful");
 }
 catch (Exception ex)
@@ -23,7 +23,7 @@ Console.WriteLine("\nTest 2: Stateful Builder Conversions");
 try
 {
     var workflow = new StatePatternWorkflowSample();
-    var workflowStream = workflow.ExecuteWorkflowAsync();
+    var workflowStream = workflow.Run();
     Console.WriteLine("✅ Stateful workflow instantiation successful");
 }
 catch (Exception ex)
@@ -243,7 +243,7 @@ Console.WriteLine("\n=== All DSL Tests Completed Successfully! ===");
 // Helper workflow for testing
 public class TestWorkflow : WorkflowContainer
 {
-    public override async IAsyncEnumerable<Wait> ExecuteWorkflowAsync()
+    public override async IAsyncEnumerable<Wait> Run()
     {
         yield return WaitSignal<OrderReceivedEvent>("Test", "Test Signal");
         await Task.CompletedTask;

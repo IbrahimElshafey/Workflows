@@ -8,7 +8,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     {
         public List<string> ExecutionLog { get; } = new();
 
-        public override async IAsyncEnumerable<Wait> ExecuteWorkflowAsync()
+        public override async IAsyncEnumerable<Wait> Run()
         {
             ExecutionLog.Add("Start");
 
@@ -17,7 +17,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
                 "ReserveInventory",
                 new ReserveInventoryCommand { ProductId = "PROD-001", Quantity = 5 })
                 .WithState("InventoryReservation")
-                .WithTokens("OrderSaga")
+                .WithToken("OrderSaga")
                 .OnResult((result, state) =>
                 {
                     ExecutionLog.Add($"Inventory reserved: {result.ReservationId}");
@@ -33,7 +33,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
                 "ProcessPayment",
                 new ProcessPaymentCommand { OrderId = "ORD-123", Amount = 100 })
                 .WithState("PaymentProcessing")
-                .WithTokens("OrderSaga", "PaymentScope")
+                .WithToken("OrderSaga", "PaymentScope")
                 .OnResult((result, state) =>
                 {
                     ExecutionLog.Add($"Payment processed: {result.TransactionId}");

@@ -47,14 +47,14 @@ namespace Workflows.Runner
         public IWorkflowBuilder RegisterCommand<TCommand, TResult>(
             string commandIdentifier,
             TimeSpan timeout = default,
-            CommandExecutionMode mode = CommandExecutionMode.Direct)
+            CommandExecutionMode mode = CommandExecutionMode.ImmediateCommand)
         {
             _commands[commandIdentifier] = (typeof(TCommand), typeof(TResult));
             registrationPackage.Commands.Add(new CommandDefinition
             {
                 CommandName = commandIdentifier,
-                RequestTypeName = typeof(TCommand).AssemblyQualifiedName,
-                RequestSchema = _schemaGenerator.Generate(typeof(TCommand)).ToString(),
+                PayloadTypeName = typeof(TCommand).AssemblyQualifiedName,
+                PayloadSchema = _schemaGenerator.Generate(typeof(TCommand)).ToString(),
                 ResultTypeName = typeof(TResult).AssemblyQualifiedName,
                 ResultSchema = _schemaGenerator.Generate(typeof(TResult)).ToString(),
                 DefaultTimeout = timeout,
@@ -94,7 +94,7 @@ namespace Workflows.Runner
 
             // 2. Locate the ExecuteWorkflowAsync method to get its compiler-generated state machine
             var methodInfo = workflowType.GetMethod(
-                nameof(WorkflowContainer.ExecuteWorkflowAsync),
+                nameof(WorkflowContainer.Run),
                 BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
             if (methodInfo == null)

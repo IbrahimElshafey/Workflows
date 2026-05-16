@@ -12,7 +12,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
         public List<string> ExecutionLog { get; } = new();
         public int ResumeCount { get; set; }
 
-        public override async IAsyncEnumerable<Wait> ExecuteWorkflowAsync()
+        public override async IAsyncEnumerable<Wait> Run()
         {
             ExecutionLog.Add("Execution1: Start");
 
@@ -48,12 +48,13 @@ namespace Workflows.Runner.Tests.TestWorkflows
             var signal2 = WaitSignal<PaymentConfirmedSignal>("Payment2", "Payment option 2")
                 .AfterMatch((signal) => ExecutionLog.Add($"Execution3: Payment2 - {signal.TransactionId}"));
 
-            yield return WaitGroup([
+            var groupWait = WaitGroup([
                 (SignalWait<PaymentConfirmedSignal>)signal1,
                 (SignalWait<PaymentConfirmedSignal>)signal2
-            ], "PaymentGroup")
-            .WithState(3000)
-            .MatchAny();
+            ], "PaymentGroup");
+
+            groupWait.WithState(3000);
+            yield return groupWait.MatchAny();
 
             ExecutionLog.Add("Execution4: After third resume");
             ResumeCount++;

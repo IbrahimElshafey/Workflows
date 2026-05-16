@@ -1,60 +1,44 @@
-using Moq;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Enums;
-using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition;
+using Workflows.Primitives;
 using Workflows.Runner.Cache;
 
 namespace Workflows.Runner.Tests.Infrastructure
 {
     /// <summary>
-    /// Helper class to build test scenarios for WorkflowRunner
+    /// Helper class to build test scenarios for WorkflowRunner with real (non-mocked) dependencies
     /// </summary>
     public class WorkflowTestBuilder
     {
-        private readonly Mock<IWorkflowRegistry> _registryMock;
-        private readonly Mock<IWorkflowRunnerClient> _clientMock;
-        private readonly Mock<ICommandHandlerFactory> _handlerFactoryMock;
-        private readonly Mock<IServiceProvider> _serviceProviderMock;
-        private readonly Mock<IObjectSerializer> _serializerMock;
-
-        private readonly Dictionary<string, WorkflowType> _registeredWorkflows = new();
-        private readonly Dictionary<string, Type> _registeredSignals = new();
+        private readonly InMemoryWorkflowRegistry _registry;
+        private readonly InMemoryWorkflowRunnerClient _client;
+        private readonly InMemoryCommandHandlerFactory _handlerFactory;
+        private readonly TestServiceProvider _serviceProvider;
+        private readonly TestObjectSerializer _objectSerializer;
 
         public WorkflowTestBuilder()
         {
-            _registryMock = new Mock<IWorkflowRegistry>();
-            _clientMock = new Mock<IWorkflowRunnerClient>();
-            _handlerFactoryMock = new Mock<ICommandHandlerFactory>();
-            _serviceProviderMock = new Mock<IServiceProvider>();
-            _serializerMock = new Mock<IObjectSerializer>();
-
-            // Setup basic registry behavior
-            _registryMock.Setup(r => r.Workflows).Returns(_registeredWorkflows);
-            _registryMock.Setup(r => r.SignalTypes).Returns(_registeredSignals);
+            _registry = new InMemoryWorkflowRegistry();
+            _client = new InMemoryWorkflowRunnerClient();
+            _handlerFactory = new InMemoryCommandHandlerFactory();
+            _serviceProvider = new TestServiceProvider();
+            _objectSerializer = new TestObjectSerializer();
         }
 
         public WorkflowTestBuilder RegisterWorkflow<TWorkflow>(string workflowType) where TWorkflow : WorkflowContainer
         {
-            _registeredWorkflows[workflowType] = new WorkflowType
-            {
-                WorkflowContainer = typeof(TWorkflow)
-            };
-
-            // Setup service provider to create workflow instances
-            _serviceProviderMock.Setup(sp => sp.GetService(typeof(TWorkflow)))
-                .Returns(() => Activator.CreateInstance<TWorkflow>());
-
+            _registry.Workflows[workflowType] = (typeof(TWorkflow), typeof(TWorkflow));
             return this;
         }
 
         public WorkflowTestBuilder RegisterSignal<TSignal>(string signalIdentifier)
         {
-            _registeredSignals[signalIdentifier] = typeof(TSignal);
+            _registry.SignalTypes[signalIdentifier] = typeof(TSignal);
             return this;
         }
 
@@ -62,41 +46,41 @@ namespace Workflows.Runner.Tests.Infrastructure
             string handlerKey,
             Func<TCommand, Task<TResult>> handler)
         {
-            var handlerMock = new Mock<ICommandHandler>();
-            handlerMock.Setup(h => h.ExecuteAsync(It.IsAny<ICommandWait>(), It.IsAny<WorkflowExecutionRequest>()))
-                .Returns<ICommandWait, WorkflowExecutionRequest>(async (cmd, ctx) =>
-                {
-                    // Extract command data and execute handler
-                    await Task.CompletedTask;
-                });
-
-            _handlerFactoryMock.Setup(f => f.GetHandler(handlerKey))
-                .Returns(handlerMock.Object);
-
+            _handlerFactory.RegisterHandler(handlerKey, handler);
+            _registry.CommandTypes[handlerKey] = (typeof(TCommand), typeof(TResult));
             return this;
         }
 
         public IWorkflowRunner Build()
         {
-            var mapper = new Mapper(_serializerMock.Object);
+            var expressionSerializer = new TestExpressionSerializer();
+            var delegateSerializer = new TestDelegateSerializer();
+            var closureResolver = new TestClosureContextResolver();
+
+            var mapper = new Mapper(
+                expressionSerializer,
+                _objectSerializer,
+                delegateSerializer,
+                closureResolver);
+
             var advancer = new StateMachineAdvancer();
             var templateCache = new WorkflowTemplateCache();
 
             return new WorkflowRunner(
                 mapper,
-                _registryMock.Object,
+                _registry,
                 advancer,
-                _clientMock.Object,
-                _handlerFactoryMock.Object,
-                _serviceProviderMock.Object,
+                _client,
+                _handlerFactory,
+                _serviceProvider,
                 templateCache,
-                _serializerMock.Object);
+                _objectSerializer);
         }
 
         public WorkflowExecutionRequest CreateExecutionRequest<TWorkflow>(
             Guid triggeringWaitId,
             string workflowType,
-            StateMachineObject? stateObject = null,
+            WorkflowStateObject? stateObject = null,
             SignalDto? signal = null,
             List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto>? waits = null)
             where TWorkflow : WorkflowContainer
@@ -108,11 +92,11 @@ namespace Workflows.Runner.Tests.Infrastructure
                 WorkflowState = new WorkflowStateDto
                 {
                     WorkflowType = workflowType,
-                    StateObject = stateObject ?? new StateMachineObject
+                    StateObject = stateObject ?? new WorkflowStateObject
                     {
                         StateIndex = -1,
                         Instance = Activator.CreateInstance<TWorkflow>(),
-                        StateMachinesObjects = new Dictionary<string, object>(),
+                        StateMachinesObjects = new Dictionary<Guid, object>(),
                         WaitStatesObjects = new Dictionary<Guid, object>()
                     },
                     Waits = waits ?? new List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto>(),
@@ -132,7 +116,7 @@ namespace Workflows.Runner.Tests.Infrastructure
                 SignalIdentifier = signalIdentifier,
                 WaitName = waitName,
                 Status = WaitStatus.Waiting,
-                WaitType = WaitType.Signal,
+                WaitType = WaitType.SignalWait,
                 ChildWaits = new List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto>()
             };
         }

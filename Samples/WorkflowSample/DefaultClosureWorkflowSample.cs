@@ -7,7 +7,7 @@ namespace WorkflowSample
     {
         public int CurrentOrderId { get; set; }
 
-        public override async IAsyncEnumerable<Wait> ExecuteWorkflowAsync()
+        public override async IAsyncEnumerable<Wait> Run()
         {
             var minOrderId = 1;
             var status = "Received by closure";

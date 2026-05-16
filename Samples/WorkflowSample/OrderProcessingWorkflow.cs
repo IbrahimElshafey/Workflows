@@ -15,7 +15,7 @@ namespace WorkflowSample
         public string CurrentCustomer { get; set; }
         public int ProcessCount { get; set; }
 
-        public override async IAsyncEnumerable<Wait> ExecuteWorkflowAsync()
+        public override async IAsyncEnumerable<Wait> Run()
         {
             // Initialize domain state
             ProcessCount = 10;

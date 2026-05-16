@@ -1,3 +1,5 @@
+using System;
+
 namespace Workflows.Abstraction.DTOs.Waits
 {
     /// <summary>
@@ -6,6 +8,8 @@ namespace Workflows.Abstraction.DTOs.Waits
     /// </summary>
     public sealed class SubWorkflowWaitDto : WaitInfrastructureDto
     {
+        public int StateIndex { get; set; }
+        public Guid StateMachineObjectId { get; set; }
         internal SubWorkflowWaitDto()
         {
         }

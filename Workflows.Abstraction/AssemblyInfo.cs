@@ -18,3 +18,4 @@ using System.Runtime.InteropServices;
 [assembly: Guid("6c1ef3e5-25cf-467d-93cc-eef24f7820ce")]
 [assembly: InternalsVisibleTo("Workflows.Definition")]
 [assembly: InternalsVisibleTo("Workflows.Runner")]
+[assembly: InternalsVisibleTo("Workflows.Runner.Tests")]

@@ -6,6 +6,6 @@ namespace Workflows.Runner.DataObjects
     public class AdvancerResult
     {
         public Wait Wait { get; set; }
-        public StateMachineObject State { get; set; }
+        public WorkflowStateObject State { get; set; }
     }
 }
