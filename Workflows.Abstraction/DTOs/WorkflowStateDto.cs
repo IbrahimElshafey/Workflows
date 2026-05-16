@@ -37,10 +37,11 @@ namespace Workflows.Abstraction.DTOs
         public WorkflowInstanceStatus Status { get; internal set; }
 
         /// <summary>
-        /// Set of token IDs that have been explicitly cancelled during this workflow instance's lifetime.
-        /// Passive waits referencing any of these tokens will be interrupted before evaluation.
+        /// History of cancellation events for this workflow instance.
+        /// Used to determine which waits should be cancelled during evaluation.
         /// </summary>
-        public HashSet<string> CancelledTokens { get; internal set; } = new HashSet<string>();
+        public List<CancellationHistoryEntry> CancellationHistory { get; internal set; } = new();
+
         public string WorkflowType { get; internal set; }
     }
 }

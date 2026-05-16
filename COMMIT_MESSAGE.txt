@@ -1,0 +1,42 @@
+refactor: Improve WorkflowExecutionRequest and WorkflowStateDto design consistency
+
+## Changes Summary
+
+### 1. WorkflowExecutionRequest - Improved Signal and CommandResult documentation
+- Added clear documentation for mutually exclusive Signal and CommandResult properties
+- Clarified that Signal is for SignalWait triggers
+- Clarified that CommandResult is for deferred/dispatched CommandWait triggers
+- Improved property ordering and comments for better clarity
+
+### 2. WorkflowStateDto - Replaced CancelledTokens with CancellationHistory
+- Replaced `HashSet<string> CancelledTokens` with `List<CancellationHistoryEntry> CancellationHistory`
+- CancellationHistory provides full audit trail with timestamps and reasons
+- Better semantics: cancellation is history/audit data, not workflow state
+
+### 3. New Files Created
+- `Workflows.Abstraction/DTOs/CancellationHistoryEntry.cs`: Complete cancellation event structure with Token, CancelledAt, and Reason
+- `Workflows.Abstraction/DTOs/CancellationHistoryExtensions.cs`: Helper extension methods for backward compatibility
+- `WORKFLOW_DTO_REFACTORING.md`: Complete documentation of the refactoring
+- `PIPELINE_IMPLEMENTATION_COMPLETE.md`: Documentation of pipeline implementation
+
+### 4. Updated Pipeline Components
+- `WorkflowRunner.cs`: Updated to use CancellationHistory instead of CancelledTokens
+- `Pipeline/WorkflowStateService.cs`: Updated context creation and result mapping to use CancellationHistory
+- `Pipeline/CancelHandler.cs`: Updated to use CancellationHistory.GetCancelledTokens()
+- `Pipeline/Handlers/ImmediateCommandHandler.cs`: Fixed ExplicitState access by casting to Wait base class
+- `Pipeline/Handlers/CompensationHandler.cs`: Fixed to use CompensationWait.Token (singular) instead of Tokens
+
+### Benefits
+- ✅ Consistent API design between Signal and CommandResult
+- ✅ Full audit trail for cancellations with timestamps
+- ✅ Better semantics (history vs state)
+- ✅ Backward-compatible API via extension methods
+- ✅ Improved debuggability and compliance
+
+### Build Status
+✅ Build successful - All compilation errors resolved
+
+Breaking Changes:
+- WorkflowStateDto.CancelledTokens removed (replaced with CancellationHistory)
+- Data migration needed for existing persisted workflow states
+- Extension methods provide backward-compatible API: CancellationHistory.GetCancelledTokens()

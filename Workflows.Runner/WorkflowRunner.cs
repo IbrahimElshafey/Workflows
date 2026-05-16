@@ -107,9 +107,9 @@ namespace Workflows.Runner
             var workflowInstance = (WorkflowContainer)workflowFactory(_serviceProvider, null);
 
             // Restore cancelled tokens to workflow instance
-            if (state.CancelledTokens != null)
+            if (state.CancellationHistory != null && state.CancellationHistory.Count > 0)
             {
-                workflowInstance.TokensToCancel = new HashSet<string>(state.CancelledTokens);
+                workflowInstance.TokensToCancel = state.CancellationHistory.GetCancelledTokens();
             }
 
             // Map once, reuse. Pass WorkflowStateObject to restore ExplicitState
@@ -249,7 +249,8 @@ namespace Workflows.Runner
                 }
 
                 // Check if next wait is cancelled before processing
-                if (nextWait != null && IsWaitCancelled(nextWait, state.CancelledTokens))
+                var cancelledTokens = state.CancellationHistory.GetCancelledTokens();
+                if (nextWait != null && IsWaitCancelled(nextWait, cancelledTokens))
                 {
                     // Invoke OnCanceled callback if present
                     await InvokeCancelActionAsync(nextWait);
@@ -346,7 +347,20 @@ namespace Workflows.Runner
             // Sync cancelled tokens from workflow instance back to state
             if (workflowInstance.TokensToCancel.Count > 0)
             {
-                state.CancelledTokens = new HashSet<string>(workflowInstance.TokensToCancel);
+                // Add new cancellations to history (only if they don't exist)
+                var existingTokens = state.CancellationHistory.GetCancelledTokens();
+                foreach (var token in workflowInstance.TokensToCancel)
+                {
+                    if (!existingTokens.Contains(token))
+                    {
+                        state.CancellationHistory.Add(new CancellationHistoryEntry
+                        {
+                            Token = token,
+                            CancelledAt = DateTime.UtcNow,
+                            Reason = "Triggered during workflow execution"
+                        });
+                    }
+                }
             }
 
             // NOTE: still single-branch semantics; group/tree merge logic should be added separately.

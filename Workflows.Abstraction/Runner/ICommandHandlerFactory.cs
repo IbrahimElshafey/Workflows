@@ -1,13 +1,13 @@
 namespace Workflows.Abstraction.Runner
 {
     /// <summary>
-    /// Resolves an ICommandHandler based on a handler key.
+    /// Resolves command handlers based on a handler key.
     /// </summary>
     public interface ICommandHandlerFactory
     {
         /// <summary>
-        /// Returns the command handler registered for the given key.
+        /// Returns the immediate command handler registered for the given key.
         /// </summary>
-        ICommandHandler GetHandler(string handlerKey);
+        object GetHandler(string handlerKey);
     }
 }
