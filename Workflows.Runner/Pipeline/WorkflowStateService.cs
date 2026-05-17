@@ -19,6 +19,7 @@ namespace Workflows.Runner.Pipeline
     {
         private readonly IWorkflowRegistry _workflowRegistry;
         private readonly IServiceProvider _serviceProvider;
+        private readonly WorkflowExecutionContext _currentContext;
         private readonly Mapper _mapper;
 
         // Cache workflow factories and invokers
@@ -28,11 +29,13 @@ namespace Workflows.Runner.Pipeline
         public WorkflowStateService(
             IWorkflowRegistry workflowRegistry,
             IServiceProvider serviceProvider,
-            Mapper mapper)
+            Mapper mapper,
+            WorkflowExecutionContext currentContext)
         {
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _currentContext = currentContext ?? new WorkflowExecutionContext { };
         }
 
         /// <summary>
@@ -74,46 +77,33 @@ namespace Workflows.Runner.Pipeline
                 workflowInstance.TokensToCancel = state.CancellationHistory.GetCancelledTokens();
             }
 
-            // Map triggering wait
-            var triggeringWait = _mapper.MapToWait(triggeringWaitDto, _workflowRegistry, state.StateObject);
-            triggeringWait.WorkflowContainer = workflowInstance;
-
             // Check if this wait belongs to a sub-workflow
             var parentSubWorkflowDto = triggeringWaitDto.ParentWaitId.HasValue
                 ? FindWaitById(state.Waits, triggeringWaitDto.ParentWaitId.Value) as SubWorkflowWaitDto
                 : null;
 
-            Definition.SubWorkflowWait parentSubWorkflow = null;
-            WorkflowStateObject subWorkflowState = null;
             IAsyncEnumerable<Definition.Wait> workflowStream;
-            WorkflowStateObject activeState;
 
             if (parentSubWorkflowDto != null)
             {
-                // This wait belongs to a sub-workflow
-                parentSubWorkflow = _mapper.MapToWait(parentSubWorkflowDto, _workflowRegistry, state.StateObject) as Definition.SubWorkflowWait;
-                parentSubWorkflow.WorkflowContainer = workflowInstance;
-
+                // This wait belongs to a sub-workflow - use the parent's CallerName to invoke the workflow method
                 // Retrieve child state
-                if (state.StateObject.StateMachinesObjects?.TryGetValue(parentSubWorkflow.Id, out var storedChildState) == true)
+                if (!state.StateObject.StateMachinesObjects?.TryGetValue(parentSubWorkflowDto.Id, out var storedChildState) == true)
                 {
-                    subWorkflowState = storedChildState as WorkflowStateObject;
+                    throw new InvalidOperationException($"Sub-workflow state not found for SubWorkflowWait '{parentSubWorkflowDto.WaitName}'.");
                 }
 
-                if (subWorkflowState == null)
-                {
-                    throw new InvalidOperationException($"Sub-workflow state not found for SubWorkflowWait '{parentSubWorkflow.WaitName}'.");
-                }
-
-                workflowStream = parentSubWorkflow.Runner;
-                activeState = subWorkflowState;
+                // Use sub-workflow stream by invoking the workflow method from the parent DTO's CallerName
+                var workflowInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, parentSubWorkflowDto.CallerName);
+                workflowStream = (IAsyncEnumerable<Definition.Wait>)workflowInvoker(workflowInstance);
+                // Note: We'll use the child state from StateObject.StateMachinesObjects[parentSubWorkflowDto.Id]
             }
             else
             {
-                // Resume parent workflow
-                var workflowInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, triggeringWait.CallerName);
+                // Resume parent workflow using CallerName from the triggering wait DTO
+                var workflowInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, triggeringWaitDto.CallerName);
                 workflowStream = (IAsyncEnumerable<Definition.Wait>)workflowInvoker(workflowInstance);
-                activeState = state.StateObject;
+                // Note: We'll use state.StateObject directly
             }
 
             var context = new WorkflowExecutionContext
@@ -123,10 +113,6 @@ namespace Workflows.Runner.Pipeline
                 WorkflowState = state,
                 WorkflowInstance = workflowInstance,
                 TriggeringWaitId = incomingRequest.TriggeringWaitId,
-                TriggeringWaitDto = triggeringWaitDto,
-                TriggeringWait = triggeringWait,
-                ParentSubWorkflow = parentSubWorkflow,
-                ActiveState = activeState,
                 WorkflowStream = workflowStream,
                 ContinueExecutionLoop = false
             };
@@ -161,20 +147,14 @@ namespace Workflows.Runner.Pipeline
                 }
             }
 
-            // Update state status if completed
-            if (context.IsWorkflowCompleted)
-            {
-                state.Status = Abstraction.Enums.WorkflowInstanceStatus.Completed;
-            }
-
-            // Update waits
-            state.Waits = context.NewWaits;
+            // Note: State.Status and State.Waits are already updated by processors and matchers directly
+            // No need to copy from context since we're using WorkflowState.Waits and WorkflowState.Status directly
 
             return new AsyncResult(
                 Guid.NewGuid(),
                 new
                 {
-                    NewWaitsIds = context.NewWaits.Select(w => w.Id).ToList(),
+                    NewWaitsIds = state.Waits.Select(w => w.Id).ToList(),
                     ConsumedWaitsIds = context.ConsumedWaitsIds
                 },
                 "Accepted",
@@ -182,7 +162,7 @@ namespace Workflows.Runner.Pipeline
                 DateTime.UtcNow);
         }
 
-        private static WaitInfrastructureDto FindWaitById(IEnumerable<WaitInfrastructureDto> waits, Guid id)
+        public WaitInfrastructureDto FindWaitById(IEnumerable<WaitInfrastructureDto> waits, Guid id)
         {
             if (waits == null) return null;
 
@@ -200,7 +180,7 @@ namespace Workflows.Runner.Pipeline
 
         private static ObjectFactory GetOrAddWorkflowFactory(Type workflowType)
         {
-            return _workflowFactories.GetOrAdd(workflowType, type => 
+            return _workflowFactories.GetOrAdd(workflowType, type =>
                 ActivatorUtilities.CreateFactory(type, Array.Empty<Type>()));
         }
 
@@ -209,7 +189,7 @@ namespace Workflows.Runner.Pipeline
             var key = $"{containerType.FullName}:{methodName}";
             return _workflowInvokers.GetOrAdd(key, _ =>
             {
-                var method = containerType.GetMethod(methodName, 
+                var method = containerType.GetMethod(methodName,
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (method == null) return null;
 
@@ -225,8 +205,8 @@ namespace Workflows.Runner.Pipeline
         /// Gets parent workflow stream for resumption after sub-workflow completion.
         /// </summary>
         public IAsyncEnumerable<Definition.Wait> GetParentWorkflowStream(
-            string workflowType, 
-            Definition.WorkflowContainer workflowInstance, 
+            string workflowType,
+            Definition.WorkflowContainer workflowInstance,
             string callerName)
         {
             if (!_workflowRegistry.Workflows.TryGetValue(workflowType, out var workflowTypes))

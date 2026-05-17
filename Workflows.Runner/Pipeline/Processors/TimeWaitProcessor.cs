@@ -40,11 +40,11 @@ namespace Workflows.Runner.Pipeline.Processors
             }
 
             // Save ExplicitState to WorkflowStateObject.WaitStatesObjects
-            SaveWaitStatesToMachineState(yieldedWait, context.ActiveState);
+            SaveWaitStatesToMachineState(yieldedWait, context.WorkflowState.StateObject);
 
             // Map to DTO and add to new waits
             var waitDto = timeWaitDto ?? _mapper.MapToDto(yieldedWait);
-            context.NewWaits.Add(waitDto);
+            context.WorkflowState.Waits.Add(waitDto);
 
             // Return false - passive wait, suspend execution
             return Task.FromResult(false);

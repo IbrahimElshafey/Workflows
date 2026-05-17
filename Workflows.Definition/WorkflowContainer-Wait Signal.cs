@@ -22,8 +22,8 @@ namespace Workflows.Definition
                 callerFilePath)
             {
                 WorkflowContainer = this,
-                ExplicitState = null
             };
+            //newSignalWait.SetState(null);
             return new SignalBuilder<SignalData>(newSignalWait);
         }
 

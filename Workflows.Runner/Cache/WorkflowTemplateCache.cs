@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Workflows.Runner.Cache
 {
+    //to be refactoired and move to related classes
     internal class WorkflowTemplateCache
     {
         private readonly ConcurrentDictionary<string, SignalTemplateCacheRecord> _signalCache = new();

@@ -60,10 +60,10 @@ namespace Workflows.Runner.Pipeline.Processors
             }
 
             // Save ExplicitState to WorkflowStateObject.WaitStatesObjects
-            SaveWaitStatesToMachineState(yieldedWait, context.ActiveState);
+            SaveWaitStatesToMachineState(yieldedWait, context.WorkflowState.StateObject);
 
             // Add to new waits
-            context.NewWaits.Add(signalWaitDto);
+            context.WorkflowState.Waits.Add(signalWaitDto);
 
             // Return false - passive wait, suspend execution
             return Task.FromResult(false);

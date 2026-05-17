@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition.Registration;
 using Workflows.Runner.Cache;
@@ -23,6 +24,15 @@ namespace Workflows.Runner
             services.AddSingleton<StateMachineAdvancer>();
             services.AddSingleton<Mapper>();
 
+            services.AddScoped<SignalWaitMatcher>();
+            services.AddScoped<TimeWaitMatcher>();
+            services.AddScoped<DeferredCommandMatcher>();
+            services.AddScoped<GroupWaitMatcher>();
+            services.AddScoped<SubWorkflowWaitMatcher>();
+            services.AddScoped<WorkflowExecutionContext>();
+            services.AddScoped<StateMachineAdvancer>();
+            services.AddScoped<IWorkflowRunner, RefactoredWorkflowRunner>();
+           
             // The refactored runner (can be registered as IWorkflowRunner when ready to switch)
             // For now, register with a different lifetime to allow side-by-side testing
             services.AddScoped<RefactoredWorkflowRunner>();
@@ -32,15 +42,11 @@ namespace Workflows.Runner
             */
             //services.AddScoped<IWorkflowRunner, WorkflowRunner>();
             services.AddSingleton<MatchExpressionTransformer>();
-            services.AddSingleton<StateMachineAdvancer>();
             services.AddSingleton<IDelegateSerializer, DelegateSerializer>();
-            services.AddSingleton<IClosureContextResolver, ClosureContextResolver>();
             services.AddSingleton<IWorkflowBuilder, WorkflowBuilder>();
             services.AddSingleton<IWorkflowRegistry, WorkflowBuilder>();
             services.AddSingleton<WorkflowTemplateCache>();
             services.AddSingleton<Mapper>();
-            services.AddScoped<WorkflowExecutionContext>();
-            services.AddScoped<IWorkflowRunner, RefactoredWorkflowRunner>();
             return services;
         }
 

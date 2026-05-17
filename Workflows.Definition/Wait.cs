@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Workflows.Primitives;
 
@@ -39,15 +40,15 @@ namespace Workflows.Definition
 
         internal List<Wait> ChildWaits { get; set; } = new();
 
-        public string ClosureKey { get; set; }
-        public object ExplicitState { get; internal set; }
+        internal Guid StateKey { get; set; }
+        internal object ExplicitState => WorkflowContainer.WaitsStates[StateKey];
         internal Func<ValueTask> CancelAction { get; set; }
 
         public WorkflowContainer WorkflowContainer { get; set; }
 
         public Wait WithState<TState>(TState state)
         {
-            ExplicitState = state;
+            SetState(state);
             return this;
         }
 
@@ -61,6 +62,20 @@ namespace Workflows.Definition
         {
             CancelAction = new StatefulCancelActionInvoker<TState>(this, cancelAction).Invoke;
             return this;
+        }
+
+        internal void SetState(object state)
+        {
+            if (state == null) return;
+            if (WorkflowContainer.WaitsStates.TryGetValue(state, out var existingKey))
+            {
+                StateKey = existingKey;
+            }
+            else
+            {
+                StateKey = Guid.NewGuid();
+                WorkflowContainer.WaitsStates[state] = StateKey;
+            }
         }
 
         private sealed class StatefulCancelActionInvoker<TState>

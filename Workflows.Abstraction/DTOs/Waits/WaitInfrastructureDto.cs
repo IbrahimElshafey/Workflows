@@ -24,7 +24,7 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// State value after this wait completes (used for resumption logic).
         /// </summary>
         public int StateAfterWait { get; internal set; }
-        public string StateKey { get; set; }
+        public Guid StateKey { get; set; }
 
         /// <summary>
         /// ID of the parent wait (if this wait is part of a group).

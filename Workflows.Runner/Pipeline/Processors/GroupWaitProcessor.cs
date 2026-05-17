@@ -34,7 +34,7 @@ namespace Workflows.Runner.Pipeline.Processors
             ValidateChildWaitsArePassive(groupWait);
 
             // Save ExplicitState to WorkflowStateObject.WaitStatesObjects
-            SaveWaitStatesToMachineState(yieldedWait, context.ActiveState);
+            SaveWaitStatesToMachineState(yieldedWait, context.WorkflowState.StateObject);
 
             // Map parent group to DTO
             var groupWaitDto = _mapper.MapToDto(groupWait) as GroupWaitDto;
@@ -46,8 +46,8 @@ namespace Workflows.Runner.Pipeline.Processors
             // Recursively process and map all child waits
             groupWaitDto.ChildWaits = ProcessChildWaits(groupWait.ChildWaits, groupWait.Id, context);
 
-            // Add parent group to new waits
-            context.NewWaits.Add(groupWaitDto);
+            // Add parent group to waits collection
+            context.WorkflowState.Waits.Add(groupWaitDto);
 
             // Return false - passive wait, suspend execution
             return Task.FromResult(false);
@@ -92,7 +92,7 @@ namespace Workflows.Runner.Pipeline.Processors
             foreach (var child in childWaits)
             {
                 // Save child wait states
-                SaveWaitStatesToMachineState(child, context.ActiveState);
+                SaveWaitStatesToMachineState(child, context.WorkflowState.StateObject);
 
                 // Map child to DTO
                 var childDto = _mapper.MapToDto(child);
@@ -116,7 +116,7 @@ namespace Workflows.Runner.Pipeline.Processors
                         subWorkflowDto.ChildWaits = new List<WaitInfrastructureDto>();
                         foreach (var subChild in subWorkflow.ChildWaits)
                         {
-                            SaveWaitStatesToMachineState(subChild, context.ActiveState);
+                            SaveWaitStatesToMachineState(subChild, context.WorkflowState.StateObject);
                             var subChildDto = _mapper.MapToDto(subChild);
                             subChildDto.ParentWaitId = subWorkflow.Id;
                             subWorkflowDto.ChildWaits.Add(subChildDto);

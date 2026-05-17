@@ -23,8 +23,8 @@ namespace Workflows.Runner.Pipeline.Processors
                 throw new InvalidOperationException("CompensationProcessor requires a CompensationWait.");
             }
 
-            // Query history from context.ActiveState
-            var commandHistory = BuildCommandHistory(context.ActiveState);
+            // Query history from WorkflowState.StateObject
+            var commandHistory = BuildCommandHistory(context.WorkflowState.StateObject);
 
             // Filter to only commands that match the compensation token and are not already compensated
             var commandsToCompensate = commandHistory
@@ -65,7 +65,7 @@ namespace Workflows.Runner.Pipeline.Processors
             }
 
             // Update command history in state
-            UpdateCommandHistoryInState(context.ActiveState, commandHistory);
+            UpdateCommandHistoryInState(context.WorkflowState.StateObject, commandHistory);
 
             // Return true - active wait, continue execution loop
             return true;

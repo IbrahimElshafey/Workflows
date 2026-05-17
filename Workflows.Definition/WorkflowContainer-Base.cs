@@ -8,7 +8,7 @@ namespace Workflows.Definition
     {
         public abstract IAsyncEnumerable<Wait> Run();
 
-        internal Dictionary<string, object> Variables { get; set; } = new Dictionary<string, object>();
+        internal Dictionary<object, Guid> WaitsStates { get; set; } = new Dictionary<object, Guid>();
         internal HashSet<string> TokensToCancel { get; set; } = new HashSet<string>();
 
         protected void CancelToken(string token)

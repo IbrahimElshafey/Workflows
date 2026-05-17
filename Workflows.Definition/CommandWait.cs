@@ -54,7 +54,7 @@ namespace Workflows.Definition
 
         public StatefulCommandBuilder<TCommand, TResult, TState> WithState<TState>(TState state)
         {
-            _wait.ExplicitState = state;
+            _wait.SetState(state);
             return new StatefulCommandBuilder<TCommand, TResult, TState>(_wait);
         }
 
@@ -157,7 +157,7 @@ namespace Workflows.Definition
 
         public CommandWait<TCommand, TResult> WithState<TState>(TState state)
         {
-            ExplicitState = state;
+            SetState(state);
             return this;
         }
 

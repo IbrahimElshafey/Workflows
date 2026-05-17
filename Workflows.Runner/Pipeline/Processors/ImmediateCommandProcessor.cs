@@ -70,7 +70,7 @@ namespace Workflows.Runner.Pipeline.Processors
 
                 // Track command execution for compensation
                 TrackCommandExecution(
-                    context.ActiveState,
+                    context.WorkflowState.StateObject,
                     commandData?.GetType().Name ?? "UnknownCommand",
                     result,
                     explicitState,

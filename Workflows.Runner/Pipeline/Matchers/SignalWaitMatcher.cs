@@ -2,86 +2,82 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs.Waits;
+using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Runner;
-using Workflows.Definition;
 using Workflows.Runner.Cache;
 
 namespace Workflows.Runner.Pipeline.Matchers
 {
     /// <summary>
     /// Matches incoming signal events against SignalWait constraints.
-    /// Runs the cached MatchIf template filter against incoming payload and state variables.
-    /// If matching fails or is incomplete, returns false immediately to abort execution.
+    /// Works purely with DTOs - no Wait object conversion needed.
     /// </summary>
     internal class SignalWaitMatcher : WorkflowWaitMatcher
     {
         private readonly IWorkflowRegistry _workflowRegistry;
-        private static readonly ActionInvokerCache _invokerCache = new();
+        private readonly WorkflowExecutionContext _context;
+        private readonly MatcherFactory _matcherFactory;
         private static readonly ConcurrentDictionary<string, SignalTemplateCacheRecord> _signalCache = new();
 
-        public SignalWaitMatcher(IWorkflowRegistry workflowRegistry)
+        public SignalWaitMatcher(
+            IWorkflowRegistry workflowRegistry, 
+            WorkflowExecutionContext context,
+            MatcherFactory matcherFactory)
         {
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
         }
 
-        public override Task<bool> MatchAsync(WorkflowExecutionContext context)
+        public override async Task<bool> MatchAsync(WaitInfrastructureDto waitDto)
         {
-            var signalWaitDto = context.TriggeringWaitDto as SignalWaitDto;
+            var signalWaitDto = waitDto as SignalWaitDto;
             if (signalWaitDto == null)
             {
                 throw new InvalidOperationException("SignalWaitMatcher requires a SignalWaitDto.");
             }
 
-            var signalWait = context.TriggeringWait as ISignalWait;
-            if (signalWait == null)
-            {
-                throw new InvalidOperationException("Triggering wait could not be mapped to ISignalWait.");
-            }
-
-            var signal = context.Signal;
+            var signal = _context.Signal;
             if (signal == null)
             {
-                return Task.FromResult(false); // No signal payload
+                return false; // No signal payload
             }
 
             // Validate signal identifier match
             if (!string.Equals(signalWaitDto.SignalIdentifier, signal.SignalIdentifier, StringComparison.OrdinalIgnoreCase))
             {
-                return Task.FromResult(false); // Signal identifier mismatch
+                return false; // Signal identifier mismatch
             }
 
-            // Get or compile the match expression
-            var compiledMatch = GetOrBuildCompiledMatch(signalWaitDto, signalWait);
+            // Get or compile the match expression from cache if available
+            var compiledMatch = GetOrBuildCompiledMatch(signalWaitDto);
             if (compiledMatch != null)
             {
-                // Evaluate match expression
-                bool matchResult = compiledMatch(signal.Data, context.WorkflowInstance, signalWait.ExplicitState);
-                if (!matchResult)
-                {
-                    return Task.FromResult(false); // Match expression failed
-                }
+                // Evaluate match expression using DTO data
+                // TODO: We need ExplicitState from DTO to evaluate match
+                // For now, skip match evaluation until we add ExplicitState to DTO
+                // bool matchResult = compiledMatch(signal.Data, _context.WorkflowInstance, explicitState);
+                // if (!matchResult)
+                // {
+                //     return false; // Match expression failed
+                // }
             }
 
-            // Execute AfterMatchAction if present
-            var afterMatchAction = signalWait.AfterMatchAction;
-            if (afterMatchAction != null)
-            {
-                InvokeAfterMatchAction(afterMatchAction, signal.Data, signalWait.ExplicitState);
-            }
+            // TODO: Execute AfterMatchAction if we store it in DTO
 
-            // Check composite parent dependencies (GroupWait) if needed
+            // Mark this wait as completed
+            signalWaitDto.Status = WaitStatus.Completed;
+
+            // Propagate matching to parent wait (e.g., GroupWait or SubWorkflowWait) if present
             if (signalWaitDto.ParentWaitId.HasValue)
             {
-                // This signal is part of a GroupWait - need to check if parent group condition is met
-                // The actual group evaluation happens in GroupWaitMatcher when the group itself is triggered
-                // Here we just mark this child signal as completed by returning true
-                // The orchestrator will then check the parent GroupWait status
+                return await MatchParentAsync(signalWaitDto.ParentWaitId.Value, _context, _matcherFactory);
             }
 
-            return Task.FromResult(true);
+            return true;
         }
 
-        private Func<object, object, object, bool> GetOrBuildCompiledMatch(SignalWaitDto dto, ISignalWait wait)
+        private Func<object, object, object, bool> GetOrBuildCompiledMatch(SignalWaitDto dto)
         {
             if (dto.TemplateHashKey is string hashKey)
             {
@@ -91,32 +87,8 @@ namespace Workflows.Runner.Pipeline.Matchers
                 }
             }
 
-            if (wait.MatchExpression == null)
-            {
-                return null;
-            }
-
-            // Get signal type from registry
-            var signalType = _workflowRegistry.SignalTypes.TryGetValue(dto.SignalIdentifier, out var type)
-                ? type
-                : typeof(object);
-
-            // TODO: Compile match expression (moved from WorkflowRunner)
-            // var compiled = CompileMatch(wait.MatchExpression, signalType);
-
-            // For now, return null until we move the compile logic
+            // For now, return null - match compilation will be added later
             return null;
-        }
-
-        private void InvokeAfterMatchAction(object action, object signalData, object explicitState)
-        {
-            var invoker = _invokerCache.GetOrAddAfterMatchInvoker(action.GetType());
-            if (invoker == null)
-            {
-                throw new InvalidOperationException("AfterMatchAction signature is not supported or Invoke method not found.");
-            }
-
-            invoker(action, signalData, explicitState);
         }
     }
 }

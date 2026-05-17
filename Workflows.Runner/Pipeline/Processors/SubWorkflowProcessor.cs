@@ -50,11 +50,11 @@ namespace Workflows.Runner.Pipeline.Processors
                 var childWait = advancerResult.Wait;
 
                 // Store the child state in the parent's state machine objects
-                context.ActiveState.StateMachinesObjects ??= new System.Collections.Generic.Dictionary<System.Guid, object>();
-                context.ActiveState.StateMachinesObjects[subWorkflowWait.Id] = advancerResult.State;
+                context.WorkflowState.StateObject.StateMachinesObjects ??= new System.Collections.Generic.Dictionary<System.Guid, object>();
+                context.WorkflowState.StateObject.StateMachinesObjects[subWorkflowWait.Id] = advancerResult.State;
 
                 // Save parent sub-workflow wait states
-                SaveWaitStatesToMachineState(subWorkflowWait, context.ActiveState);
+                SaveWaitStatesToMachineState(subWorkflowWait, context.WorkflowState.StateObject);
 
                 // Save child wait states
                 SaveWaitStatesToMachineState(childWait, advancerResult.State);
@@ -72,38 +72,23 @@ namespace Workflows.Runner.Pipeline.Processors
                     // Add child to parent's ChildWaits
                     subWorkflowDto.ChildWaits = new System.Collections.Generic.List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto> { childDto };
 
-                    // Add parent sub-workflow to new waits
-                    context.NewWaits.Add(subWorkflowDto);
+                    // Add parent sub-workflow to waits collection
+                    context.WorkflowState.Waits.Add(subWorkflowDto);
 
                     // Return false - passive wait, suspend execution
                     return false;
                 }
                 else if (childWait is CompensationWait)
                 {
-                    // Active wait (compensation) - cascade to child processor
+                    // Active wait (compensation) - process directly
                     var childProcessor = _handlerFactory.GetProcessor(childWait);
 
-                    // Create temporary sub-context for child processing
-                    var childContext = new WorkflowExecutionContext
-                    {
-                        WorkflowInstance = context.WorkflowInstance,
-                        WorkflowState = context.WorkflowState,
-                        ActiveState = advancerResult.State,
-                        WorkflowStream = subWorkflowWait.Runner,
-                        ParentSubWorkflow = subWorkflowWait
-                    };
+                    // Process child wait with current context
+                    // The child state is already stored in WorkflowState.StateObject.StateMachinesObjects
+                    bool childContinues = await childProcessor.ProcessAsync(childWait, context);
 
-                    // Process child wait
-                    bool childContinues = await childProcessor.ProcessAsync(childWait, childContext);
-
-                    // Merge child results back to parent context
-                    foreach (var newWait in childContext.NewWaits)
-                    {
-                        context.NewWaits.Add(newWait);
-                    }
-
-                    // Update child state
-                    context.ActiveState.StateMachinesObjects[subWorkflowWait.Id] = childContext.ActiveState;
+                    // Update child state after processing
+                    // (Processor may have modified the state)
 
                     // If child continues, we need to advance the sub-workflow again
                     // For now, return false to suspend and let orchestrator resume
@@ -117,8 +102,8 @@ namespace Workflows.Runner.Pipeline.Processors
                     // Process nested sub-workflow
                     bool nestedContinues = await nestedProcessor.ProcessAsync(childWait, context);
 
-                    // Add parent sub-workflow to new waits
-                    context.NewWaits.Add(subWorkflowDto);
+                    // Add parent sub-workflow to waits collection
+                    context.WorkflowState.Waits.Add(subWorkflowDto);
 
                     return nestedContinues;
                 }

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using Workflows.Abstraction.DTOs;
-using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
 
 namespace Workflows.Runner.Pipeline
@@ -9,6 +8,7 @@ namespace Workflows.Runner.Pipeline
     /// <summary>
     /// Shared execution context passed through the matcher and processor pipelines.
     /// Contains all state required to match incoming events and process outgoing waits.
+    /// Most state is stored in WorkflowState to avoid duplication.
     /// </summary>
     internal class WorkflowExecutionContext
     {
@@ -18,21 +18,16 @@ namespace Workflows.Runner.Pipeline
         public SignalDto Signal { get; set; }
         public object CommandResult { get; set; }
 
+        /// <summary>
+        /// The workflow state containing all waits, status, and state objects.
+        /// Use WorkflowState.Waits instead of NewWaits.
+        /// Use WorkflowState.StateObject instead of ActiveState.
+        /// Use WorkflowState.Status instead of IsWorkflowCompleted.
+        /// </summary>
         public WorkflowStateDto WorkflowState { get; set; }
+
         public WorkflowContainer WorkflowInstance { get; set; }
         public Guid TriggeringWaitId { get; set; }
-        public WaitInfrastructureDto TriggeringWaitDto { get; set; }
-        public Wait TriggeringWait { get; set; }
-
-        /// <summary>
-        /// For sub-workflow scenarios, tracks the parent SubWorkflowWait.
-        /// </summary>
-        public SubWorkflowWait ParentSubWorkflow { get; set; }
-
-        /// <summary>
-        /// The active state machine state (parent or child).
-        /// </summary>
-        public WorkflowStateObject ActiveState { get; set; }
 
         /// <summary>
         /// The stream to advance (parent or child workflow).
@@ -46,18 +41,8 @@ namespace Workflows.Runner.Pipeline
         public bool ContinueExecutionLoop { get; set; }
 
         /// <summary>
-        /// Accumulates new waits that will be persisted.
-        /// </summary>
-        public List<WaitInfrastructureDto> NewWaits { get; } = new List<WaitInfrastructureDto>();
-
-        /// <summary>
         /// Tracks IDs of waits that have been consumed/completed.
         /// </summary>
         public List<Guid> ConsumedWaitsIds { get; } = new List<Guid>();
-
-        /// <summary>
-        /// Set to true when the workflow completes.
-        /// </summary>
-        public bool IsWorkflowCompleted { get; set; }
     }
 }

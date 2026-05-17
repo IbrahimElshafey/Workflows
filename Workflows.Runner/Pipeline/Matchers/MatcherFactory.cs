@@ -1,4 +1,5 @@
 using System;
+using Microsoft.Extensions.DependencyInjection;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Runner;
 using Workflows.Primitives;
@@ -8,24 +9,15 @@ namespace Workflows.Runner.Pipeline.Matchers
     /// <summary>
     /// Factory for resolving type-specific wait matchers.
     /// Matchers validate incoming events against wait conditions.
+    /// Matchers are created per-request since they depend on scoped WorkflowExecutionContext.
     /// </summary>
     internal class MatcherFactory
     {
-        private readonly IWorkflowRegistry _workflowRegistry;
-        private readonly SignalWaitMatcher _signalWaitMatcher;
-        private readonly TimeWaitMatcher _timeWaitMatcher;
-        private readonly DeferredCommandMatcher _deferredCommandMatcher;
-        private readonly GroupWaitMatcher _groupWaitMatcher;
+        private readonly IServiceProvider _serviceProvider;
 
-        public MatcherFactory(IWorkflowRegistry workflowRegistry)
+        public MatcherFactory(IServiceProvider serviceProvider)
         {
-            _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
-
-            // Initialize matchers (stateless, can be reused)
-            _signalWaitMatcher = new SignalWaitMatcher(_workflowRegistry);
-            _timeWaitMatcher = new TimeWaitMatcher();
-            _deferredCommandMatcher = new DeferredCommandMatcher();
-            _groupWaitMatcher = new GroupWaitMatcher();
+            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         }
 
         public WorkflowWaitMatcher GetMatcher(WaitInfrastructureDto triggeringWait)
@@ -37,11 +29,12 @@ namespace Workflows.Runner.Pipeline.Matchers
 
             return triggeringWait switch
             {
-                SignalWaitDto _ => _signalWaitMatcher,
-                TimeWaitDto _ => _timeWaitMatcher,
+                SignalWaitDto _ => _serviceProvider.GetRequiredService<SignalWaitMatcher>(),
+                TimeWaitDto _ => _serviceProvider.GetRequiredService<TimeWaitMatcher>(),
                 CommandWaitDto cmd when cmd.ExecutionMode == CommandExecutionMode.DeferredCommand 
-                    => _deferredCommandMatcher,
-                GroupWaitDto _ => _groupWaitMatcher,
+                    => _serviceProvider.GetRequiredService<DeferredCommandMatcher>(),
+                GroupWaitDto _ => _serviceProvider.GetRequiredService<GroupWaitMatcher>(),
+                SubWorkflowWaitDto _ => _serviceProvider.GetRequiredService<SubWorkflowWaitMatcher>(),
                 _ => throw new NotSupportedException($"No matcher found for wait type: {triggeringWait.GetType().Name}")
             };
         }

@@ -58,8 +58,8 @@ namespace Workflows.Runner.Pipeline.Processors
 
             var cancelledTokens = context.WorkflowState.CancellationHistory.GetCancelledTokens();
 
-            // Prune any new waits that match cancelled tokens before they get persisted
-            var waitsToRemove = context.NewWaits
+            // Prune any waits that match cancelled tokens before they get persisted
+            var waitsToRemove = context.WorkflowState.Waits
                 .Where(waitDto => ShouldWaitBeCancelled(waitDto, cancelledTokens))
                 .ToList();
 
@@ -67,7 +67,7 @@ namespace Workflows.Runner.Pipeline.Processors
             {
                 // Mark as consumed so it doesn't get persisted
                 context.ConsumedWaitsIds.Add(waitDto.Id);
-                context.NewWaits.Remove(waitDto);
+                context.WorkflowState.Waits.Remove(waitDto);
 
                 // Recursively prune children
                 PruneChildWaits(waitDto, context, cancelledTokens);
