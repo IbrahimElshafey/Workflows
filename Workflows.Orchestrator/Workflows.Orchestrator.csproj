@@ -9,10 +9,15 @@
   <ItemGroup>
     <ProjectReference Include="..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
     <ProjectReference Include="..\Workflows.Common.Abstraction\Workflows.Shared.csproj" />
+    <ProjectReference Include="..\DataStore\Workflows.Orchestrator.Data.EF\Workflows.Orchestrator.Data.EF.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Folder Include="_docs\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 
 </Project>

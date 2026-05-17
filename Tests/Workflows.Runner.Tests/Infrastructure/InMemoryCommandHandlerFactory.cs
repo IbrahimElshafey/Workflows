@@ -6,9 +6,6 @@ using Workflows.Abstraction.Runner;
 
 namespace Workflows.Runner.Tests.Infrastructure
 {
-    /// <summary>
-    /// In-memory command handler factory for testing
-    /// </summary>
     internal class InMemoryCommandHandlerFactory : ICommandHandlerFactory
     {
         private readonly Dictionary<string, Func<object, Task<object>>> _handlers = new();
@@ -25,7 +22,6 @@ namespace Workflows.Runner.Tests.Infrastructure
                 return new InMemoryCommandHandler(handler);
             }
 
-            // Return a default handler that creates mock results
             return new InMemoryCommandHandler(cmd => Task.FromResult<object>(new
             {
                 Success = true,
@@ -42,28 +38,20 @@ namespace Workflows.Runner.Tests.Infrastructure
                 _handler = handler;
             }
 
-            public async Task ExecuteAsync(ICommandWait commandWait, WorkflowExecutionRequest context)
+            public async Task<object> ExecuteAsync(object commandData)
             {
-                // Extract command data from wait
-                var commandWaitType = commandWait.GetType();
-                var commandDataProperty = commandWaitType.GetProperty("CommandData",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                var commandData = commandDataProperty?.GetValue(commandWait);
-
                 if (commandData == null)
                 {
-                    return;
+                    return null;
                 }
 
                 try
                 {
-                    var result = await _handler(commandData);
-                    // Store result in context for command wait processing
-                    context.CommandResult = result;
+                    return await _handler(commandData);
                 }
                 catch
                 {
-                    // Ignore exceptions in tests
+                    return null;
                 }
             }
         }
