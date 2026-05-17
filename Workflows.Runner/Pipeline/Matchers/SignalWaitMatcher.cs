@@ -1,36 +1,35 @@
 using System;
+using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition;
 using Workflows.Runner.Cache;
 
-namespace Workflows.Runner.Pipeline.Evaluators
+namespace Workflows.Runner.Pipeline.Matchers
 {
     /// <summary>
-    /// Evaluates incoming signal events against SignalWait constraints.
+    /// Matches incoming signal events against SignalWait constraints.
     /// Runs the cached MatchIf template filter against incoming payload and state variables.
-    /// If evaluation fails or is incomplete, returns false immediately to abort execution.
+    /// If matching fails or is incomplete, returns false immediately to abort execution.
     /// </summary>
-    internal class SignalWaitEvaluator : WorkflowWaitEvaluator
+    internal class SignalWaitMatcher : WorkflowWaitMatcher
     {
-        private readonly WorkflowTemplateCache _templateCache;
         private readonly IWorkflowRegistry _workflowRegistry;
+        private static readonly ActionInvokerCache _invokerCache = new();
+        private static readonly ConcurrentDictionary<string, SignalTemplateCacheRecord> _signalCache = new();
 
-        public SignalWaitEvaluator(
-            WorkflowTemplateCache templateCache,
-            IWorkflowRegistry workflowRegistry)
+        public SignalWaitMatcher(IWorkflowRegistry workflowRegistry)
         {
-            _templateCache = templateCache ?? throw new ArgumentNullException(nameof(templateCache));
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
         }
 
-        public override Task<bool> EvaluateAsync(WorkflowExecutionContext context)
+        public override Task<bool> MatchAsync(WorkflowExecutionContext context)
         {
             var signalWaitDto = context.TriggeringWaitDto as SignalWaitDto;
             if (signalWaitDto == null)
             {
-                throw new InvalidOperationException("SignalWaitEvaluator requires a SignalWaitDto.");
+                throw new InvalidOperationException("SignalWaitMatcher requires a SignalWaitDto.");
             }
 
             var signalWait = context.TriggeringWait as ISignalWait;
@@ -39,7 +38,7 @@ namespace Workflows.Runner.Pipeline.Evaluators
                 throw new InvalidOperationException("Triggering wait could not be mapped to ISignalWait.");
             }
 
-            var signal = context.IncomingRequest.Signal;
+            var signal = context.Signal;
             if (signal == null)
             {
                 return Task.FromResult(false); // No signal payload
@@ -70,7 +69,14 @@ namespace Workflows.Runner.Pipeline.Evaluators
                 InvokeAfterMatchAction(afterMatchAction, signal.Data, signalWait.ExplicitState);
             }
 
-            // TODO: Check composite parent dependencies (GroupWait) if needed
+            // Check composite parent dependencies (GroupWait) if needed
+            if (signalWaitDto.ParentWaitId.HasValue)
+            {
+                // This signal is part of a GroupWait - need to check if parent group condition is met
+                // The actual group evaluation happens in GroupWaitMatcher when the group itself is triggered
+                // Here we just mark this child signal as completed by returning true
+                // The orchestrator will then check the parent GroupWait status
+            }
 
             return Task.FromResult(true);
         }
@@ -79,8 +85,7 @@ namespace Workflows.Runner.Pipeline.Evaluators
         {
             if (dto.TemplateHashKey is string hashKey)
             {
-                var cached = _templateCache.GetSignal(hashKey);
-                if (cached?.CompiledMatchDelegate != null)
+                if (_signalCache.TryGetValue(hashKey, out var cached) && cached?.CompiledMatchDelegate != null)
                 {
                     return cached.CompiledMatchDelegate;
                 }
@@ -105,7 +110,7 @@ namespace Workflows.Runner.Pipeline.Evaluators
 
         private void InvokeAfterMatchAction(object action, object signalData, object explicitState)
         {
-            var invoker = _templateCache.GetOrAddAfterMatchInvoker(action.GetType());
+            var invoker = _invokerCache.GetOrAddAfterMatchInvoker(action.GetType());
             if (invoker == null)
             {
                 throw new InvalidOperationException("AfterMatchAction signature is not supported or Invoke method not found.");

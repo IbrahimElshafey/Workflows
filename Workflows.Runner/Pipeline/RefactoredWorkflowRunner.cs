@@ -2,33 +2,35 @@ using System;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Runner;
+using Workflows.Runner.Pipeline.Matchers;
+using Workflows.Runner.Pipeline.Processors;
 
 namespace Workflows.Runner.Pipeline
 {
     /// <summary>
     /// Refactored stateless workflow runner implementation.
-    /// Uses a pipeline architecture with evaluators and handlers to process workflow execution.
+    /// Uses a two-phase pipeline: Matchers validate incoming events, Processors handle yielded waits.
     /// </summary>
     internal class RefactoredWorkflowRunner : IWorkflowRunner
     {
         private readonly WorkflowStateService _stateService;
-        private readonly EvaluatorFactory _evaluatorFactory;
-        private readonly HandlerFactory _handlerFactory;
-        private readonly CancelHandler _cancelHandler;
+        private readonly MatcherFactory _matcherFactory;
+        private readonly ProcessorFactory _processorFactory;
+        private readonly CancelProcessor _cancelHandler;
         private readonly StateMachineAdvancer _stateMachineAdvancer;
         private readonly IWorkflowRunnerClient _resultSender;
 
         public RefactoredWorkflowRunner(
             WorkflowStateService stateService,
-            EvaluatorFactory evaluatorFactory,
-            HandlerFactory handlerFactory,
-            CancelHandler cancelHandler,
+            MatcherFactory matcherFactory,
+            ProcessorFactory processorFactory,
+            CancelProcessor cancelHandler,
             StateMachineAdvancer stateMachineAdvancer,
             IWorkflowRunnerClient resultSender)
         {
             _stateService = stateService ?? throw new ArgumentNullException(nameof(stateService));
-            _evaluatorFactory = evaluatorFactory ?? throw new ArgumentNullException(nameof(evaluatorFactory));
-            _handlerFactory = handlerFactory ?? throw new ArgumentNullException(nameof(handlerFactory));
+            _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
+            _processorFactory = processorFactory ?? throw new ArgumentNullException(nameof(processorFactory));
             _cancelHandler = cancelHandler ?? throw new ArgumentNullException(nameof(cancelHandler));
             _stateMachineAdvancer = stateMachineAdvancer ?? throw new ArgumentNullException(nameof(stateMachineAdvancer));
             _resultSender = resultSender ?? throw new ArgumentNullException(nameof(resultSender));
@@ -39,11 +41,11 @@ namespace Workflows.Runner.Pipeline
             // 1. Isolate and deserialize state into a clean context
             var context = _stateService.CreateExecutionContext(incomingContext);
 
-            // 2. Incoming Evaluation Phase
-            var evaluator = _evaluatorFactory.GetEvaluator(context.TriggeringWaitDto);
+            // 2. Incoming Matching Phase
+            var matcher = _matcherFactory.GetMatcher(context.TriggeringWaitDto);
 
-            // If evaluation fails or forms a partial match, exit immediately
-            bool shouldProceed = await evaluator.EvaluateAsync(context);
+            // If matching fails or forms a partial match, exit immediately
+            bool shouldProceed = await matcher.MatchAsync(context);
             if (!shouldProceed)
             {
                 // Return error result
@@ -51,7 +53,7 @@ namespace Workflows.Runner.Pipeline
                     Guid.NewGuid(),
                     null,
                     "Rejected",
-                    "Evaluation failed or partial match.",
+                    "Matching failed or partial match.",
                     DateTime.UtcNow);
             }
 
@@ -84,9 +86,18 @@ namespace Workflows.Runner.Pipeline
                 // Update active state
                 context.ActiveState = advancerResult?.State;
 
-                // Route over to specific outgoing wait handler
-                var handler = _handlerFactory.GetHandler(yieldedWait);
-                context.ContinueExecutionLoop = await handler.HandleAsync(yieldedWait, context);
+                // Check if this wait should be cancelled and skipped
+                bool wasCancelled = await _cancelHandler.CheckAndSkipCancelledWaitAsync(yieldedWait, context);
+                if (wasCancelled)
+                {
+                    // Skip this wait and continue to next iteration
+                    context.ContinueExecutionLoop = true;
+                    continue;
+                }
+
+                // Route to specific outgoing wait processor
+                var processor = _processorFactory.GetProcessor(yieldedWait);
+                context.ContinueExecutionLoop = await processor.ProcessAsync(yieldedWait, context);
 
                 // Execute interruption logic and trigger attached OnCancel callbacks
                 await _cancelHandler.ProcessCancellationsWithCallbacksAsync(context);
@@ -95,8 +106,7 @@ namespace Workflows.Runner.Pipeline
             // 4. Send updated snapshot back to Orchestrator to persist
             var runResultDto = _stateService.MapToResultDto(context);
 
-            // Note: IWorkflowRunnerClient.SendWorkflowRunResultAsync requires WorkflowExecutionResponse
-            // For now, we'll return the result directly. The client integration will be handled separately.
+            // Note: IWorkflowRunnerClient.SendWorkflowRunResultAsync requires WorkflowExecutionResponse            // For now, we'll return the result directly. The client integration will be handled separately.
             // await _resultSender.SendWorkflowRunResultAsync(runResultDto, new WorkflowExecutionResponse { ... });
 
             return runResultDto;
@@ -112,13 +122,44 @@ namespace Workflows.Runner.Pipeline
                 context.ActiveState.StateMachinesObjects.Remove(context.ParentSubWorkflow.Id);
             }
 
-            // Resume parent workflow - need to get parent workflow stream
-            // This requires access to the template cache to get the workflow invoker
-            // For now, we'll mark this as TODO since it requires additional dependencies
+            // Resume parent workflow after sub-workflow completion
+            var parentWorkflowStream = _stateService.GetParentWorkflowStream(
+                context.WorkflowState.WorkflowType,
+                context.WorkflowInstance,
+                context.ParentSubWorkflow.CallerName);
 
-            // TODO: Resume parent workflow after sub-workflow completion
-            // This needs to be implemented when we have access to parent workflow stream
-            context.IsWorkflowCompleted = true;
+            // Switch back to parent context
+            context.WorkflowStream = parentWorkflowStream;
+            context.ParentSubWorkflow = null; // Clear sub-workflow marker
+
+            // Advance parent workflow
+            var parentAdvancerResult = await _stateMachineAdvancer.RunAsync(parentWorkflowStream, context.ActiveState);
+
+            if (parentAdvancerResult?.Wait != null)
+            {
+                var parentNextWait = parentAdvancerResult.Wait;
+                context.ActiveState = parentAdvancerResult.State;
+
+                // Handle if parent yields another sub-workflow (recursive)
+                if (parentNextWait is Definition.SubWorkflowWait parentSubWorkflowWait)
+                {
+                    // Process parent sub-workflow using the processor
+                    var subWorkflowProcessor = _processorFactory.GetProcessor(parentNextWait);
+                    context.ContinueExecutionLoop = await subWorkflowProcessor.ProcessAsync(parentNextWait, context);
+                }
+                else
+                {
+                    // Route to appropriate processor
+                    var processor = _processorFactory.GetProcessor(parentNextWait);
+                    context.ContinueExecutionLoop = await processor.ProcessAsync(parentNextWait, context);
+                }
+            }
+            else
+            {
+                // Parent workflow also completed
+                context.IsWorkflowCompleted = true;
+                context.ContinueExecutionLoop = false;
+            }
         }
     }
 }

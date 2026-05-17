@@ -1,10 +1,14 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
+using System.Reflection;
+using FastExpressionCompiler;
+using Microsoft.Extensions.DependencyInjection;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Runner;
-using Workflows.Runner.Cache;
 
 namespace Workflows.Runner.Pipeline
 {
@@ -14,18 +18,19 @@ namespace Workflows.Runner.Pipeline
     internal class WorkflowStateService
     {
         private readonly IWorkflowRegistry _workflowRegistry;
-        private readonly WorkflowTemplateCache _templateCache;
         private readonly IServiceProvider _serviceProvider;
         private readonly Mapper _mapper;
 
+        // Cache workflow factories and invokers
+        private static readonly ConcurrentDictionary<Type, ObjectFactory> _workflowFactories = new();
+        private static readonly ConcurrentDictionary<string, Func<object, object>> _workflowInvokers = new();
+
         public WorkflowStateService(
             IWorkflowRegistry workflowRegistry,
-            WorkflowTemplateCache templateCache,
             IServiceProvider serviceProvider,
             Mapper mapper)
         {
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
-            _templateCache = templateCache ?? throw new ArgumentNullException(nameof(templateCache));
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
@@ -60,7 +65,7 @@ namespace Workflows.Runner.Pipeline
             }
 
             // Create workflow instance
-            var workflowFactory = _templateCache.GetOrAddWorkflowFactory(workflowTypes.WorkflowContainer);
+            var workflowFactory = GetOrAddWorkflowFactory(workflowTypes.WorkflowContainer);
             var workflowInstance = (Definition.WorkflowContainer)workflowFactory(_serviceProvider, null);
 
             // Restore cancelled tokens from history
@@ -106,14 +111,15 @@ namespace Workflows.Runner.Pipeline
             else
             {
                 // Resume parent workflow
-                var workflowInvoker = _templateCache.GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, triggeringWait.CallerName);
+                var workflowInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, triggeringWait.CallerName);
                 workflowStream = (IAsyncEnumerable<Definition.Wait>)workflowInvoker(workflowInstance);
                 activeState = state.StateObject;
             }
 
             var context = new WorkflowExecutionContext
             {
-                IncomingRequest = incomingRequest,
+                Signal = incomingRequest.Signal,
+                CommandResult = incomingRequest.CommandResult,
                 WorkflowState = state,
                 WorkflowInstance = workflowInstance,
                 TriggeringWaitId = incomingRequest.TriggeringWaitId,
@@ -190,6 +196,51 @@ namespace Workflows.Runner.Pipeline
             }
 
             return null;
+        }
+
+        private static ObjectFactory GetOrAddWorkflowFactory(Type workflowType)
+        {
+            return _workflowFactories.GetOrAdd(workflowType, type => 
+                ActivatorUtilities.CreateFactory(type, Array.Empty<Type>()));
+        }
+
+        private static Func<object, object> GetOrAddWorkflowInvoker(Type containerType, string methodName)
+        {
+            var key = $"{containerType.FullName}:{methodName}";
+            return _workflowInvokers.GetOrAdd(key, _ =>
+            {
+                var method = containerType.GetMethod(methodName, 
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (method == null) return null;
+
+                var instanceParam = Expression.Parameter(typeof(object), "instance");
+                var call = Expression.Call(Expression.Convert(instanceParam, containerType), method);
+                var lambda = Expression.Lambda<Func<object, object>>(
+                    Expression.Convert(call, typeof(object)), instanceParam);
+                return lambda.CompileFast();
+            });
+        }
+
+        /// <summary>
+        /// Gets parent workflow stream for resumption after sub-workflow completion.
+        /// </summary>
+        public IAsyncEnumerable<Definition.Wait> GetParentWorkflowStream(
+            string workflowType, 
+            Definition.WorkflowContainer workflowInstance, 
+            string callerName)
+        {
+            if (!_workflowRegistry.Workflows.TryGetValue(workflowType, out var workflowTypes))
+            {
+                throw new InvalidOperationException($"Workflow {workflowType} not registered.");
+            }
+
+            var workflowInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, callerName);
+            if (workflowInvoker == null)
+            {
+                throw new InvalidOperationException($"Workflow method {callerName} not found.");
+            }
+
+            return (IAsyncEnumerable<Definition.Wait>)workflowInvoker(workflowInstance);
         }
     }
 }

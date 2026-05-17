@@ -16,8 +16,6 @@ namespace Workflows.Abstraction.DTOs.Waits
         public object CommandData { get; set; }
 
         public object CommandResult { get; set; }
-        public string ResultClosureKey { get; set; }
-        public string CompensationClosureKey { get; set; }
 
         /// <summary>
         /// Maximum number of retry attempts for command execution.

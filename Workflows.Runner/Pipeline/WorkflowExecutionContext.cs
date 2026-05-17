@@ -7,12 +7,17 @@ using Workflows.Definition;
 namespace Workflows.Runner.Pipeline
 {
     /// <summary>
-    /// Shared execution context passed through the evaluation and handler pipelines.
-    /// Contains all state required to evaluate incoming events and handle outgoing waits.
+    /// Shared execution context passed through the matcher and processor pipelines.
+    /// Contains all state required to match incoming events and process outgoing waits.
     /// </summary>
-    public class WorkflowExecutionContext
+    internal class WorkflowExecutionContext
     {
-        public WorkflowExecutionRequest IncomingRequest { get; set; }
+        /// <summary>
+        /// The incoming trigger: either Signal or CommandResult (mutually exclusive).
+        /// </summary>
+        public SignalDto Signal { get; set; }
+        public object CommandResult { get; set; }
+
         public WorkflowStateDto WorkflowState { get; set; }
         public WorkflowContainer WorkflowInstance { get; set; }
         public Guid TriggeringWaitId { get; set; }
@@ -35,7 +40,7 @@ namespace Workflows.Runner.Pipeline
         public IAsyncEnumerable<Wait> WorkflowStream { get; set; }
 
         /// <summary>
-        /// Indicates whether the execution loop should continue immediately after handling a wait.
+        /// Indicates whether the execution loop should continue immediately after processing a wait.
         /// Set to true for active waits (ImmediateCommand, Compensation), false for passive waits.
         /// </summary>
         public bool ContinueExecutionLoop { get; set; }

@@ -4,20 +4,20 @@ using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Definition;
 
-namespace Workflows.Runner.Pipeline
+namespace Workflows.Runner.Pipeline.Processors
 {
     /// <summary>
-    /// Base class for wait handlers that process yielded waits after state machine advancement.
+    /// Base class for wait processors that process yielded waits after state machine advancement.
     /// Prepares out-bound footprints (indexes, schedules, command dispatches).
     /// Returns true if the execution loop should continue immediately (active waits),
     /// false if the workflow should suspend (passive waits).
     /// </summary>
-    internal abstract class WorkflowWaitHandler
+    internal abstract class WorkflowWaitProcessor
     {
         /// <summary>
-        /// Handles the yielded wait and returns whether the execution loop should continue.
+        /// Processes the yielded wait and returns whether the execution loop should continue.
         /// </summary>
-        public abstract Task<bool> HandleAsync(Wait yieldedWait, WorkflowExecutionContext context);
+        public abstract Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context);
 
         /// <summary>
         /// Helper to save wait explicit state to machine state object.

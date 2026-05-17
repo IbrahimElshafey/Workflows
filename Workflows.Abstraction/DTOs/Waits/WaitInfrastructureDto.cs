@@ -24,32 +24,12 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// State value after this wait completes (used for resumption logic).
         /// </summary>
         public int StateAfterWait { get; internal set; }
-        public string CancelClosureKey { get; set; }
-
-        /// <summary>
-        /// Serialized path to this wait in the workflow structure.
-        /// </summary>
-        public string Path { get; internal set; }
+        public string StateKey { get; set; }
 
         /// <summary>
         /// ID of the parent wait (if this wait is part of a group).
         /// </summary>
         public Guid? ParentWaitId { get; set; }
-
-        /// <summary>
-        /// ID of the workflow that requested this wait.
-        /// </summary>
-        public Guid RequestedByWorkflowId { get; set; }
-
-        /// <summary>
-        /// ID of the root workflow in the execution hierarchy.
-        /// </summary>
-        public Guid RootWorkflowId { get; internal set; }
-
-        /// <summary>
-        /// ID of the workflow state snapshot associated with this wait.
-        /// </summary>
-        public Guid WorkflowStateId { get; set; }
 
         /// <summary>
         /// Child waits if this is a composite wait (e.g., GroupWait).

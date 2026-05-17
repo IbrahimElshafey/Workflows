@@ -1,59 +1,49 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading.Tasks;
+using FastExpressionCompiler;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition;
-using Workflows.Runner.Cache;
 
-namespace Workflows.Runner.Pipeline.Handlers
+namespace Workflows.Runner.Pipeline.Processors
 {
     /// <summary>
     /// Handles immediate command execution.
     /// Resolves the transient side-effect implementation from ICommandHandlerFactory
     /// and executes it instantly in RAM. Returns true to advance again in cycle.
     /// </summary>
-    internal class ImmediateCommandHandler : WorkflowWaitHandler
+    internal class ImmediateCommandProcessor : WorkflowWaitProcessor
     {
         private readonly ICommandHandlerFactory _commandHandlerFactory;
-        private readonly WorkflowTemplateCache _templateCache;
+        private static readonly ActionInvokerCache _invokerCache = new();
+        private static readonly ConcurrentDictionary<Type, CommandWaitAccessor> _accessorCache = new();
 
-        public ImmediateCommandHandler(
-            ICommandHandlerFactory commandHandlerFactory,
-            WorkflowTemplateCache templateCache)
+        public ImmediateCommandProcessor(ICommandHandlerFactory commandHandlerFactory)
         {
             _commandHandlerFactory = commandHandlerFactory ?? throw new ArgumentNullException(nameof(commandHandlerFactory));
-            _templateCache = templateCache ?? throw new ArgumentNullException(nameof(templateCache));
         }
 
-        public override async Task<bool> HandleAsync(Wait yieldedWait, WorkflowExecutionContext context)
+        public override async Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
         {
             var commandWait = yieldedWait as Definition.ICommandWait;
             if (commandWait == null)
             {
-                throw new InvalidOperationException("ImmediateCommandHandler requires an ICommandWait.");
+                throw new InvalidOperationException("ImmediateCommandProcessor requires an ICommandWait.");
             }
 
-            // Get command wait properties via reflection
-            var commandWaitType = commandWait.GetType();
-            var commandDataProperty = commandWaitType.GetProperty("CommandData",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            var onResultActionProperty = commandWaitType.GetProperty("OnResultAction",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            var onFailureActionProperty = commandWaitType.GetProperty("OnFailureAction",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            var compensationActionProperty = commandWaitType.GetProperty("CompensationAction",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            var tokensProperty = commandWaitType.GetProperty("Tokens",
-                BindingFlags.Instance | BindingFlags.NonPublic);
+            // Get or create compiled accessor for this command wait type
+            var accessor = GetOrCreateAccessor(commandWait.GetType());
 
-            var commandData = commandDataProperty?.GetValue(commandWait);
-            var onResultAction = onResultActionProperty?.GetValue(commandWait);
-            var onFailureAction = onFailureActionProperty?.GetValue(commandWait);
-            var compensationAction = compensationActionProperty?.GetValue(commandWait);
-            var tokens = tokensProperty?.GetValue(commandWait) as List<string>;
-            var explicitState = ((Wait)commandWait).ExplicitState;
+            var commandData = accessor.GetCommandData(commandWait);
+            var onResultAction = accessor.GetOnResultAction(commandWait);
+            var onFailureAction = accessor.GetOnFailureAction(commandWait);
+            var compensationAction = accessor.GetCompensationAction(commandWait);
+            var tokens = accessor.GetTokens(commandWait);
+            var explicitState = accessor.GetExplicitState(commandWait);
 
             try
             {
@@ -154,7 +144,7 @@ namespace Workflows.Runner.Pipeline.Handlers
 
         private void InvokeOnResultAction(object action, object result, object explicitState)
         {
-            var invoker = _templateCache.GetOrAddOnResultInvoker(action.GetType());
+            var invoker = _invokerCache.GetOrAddOnResultInvoker(action.GetType());
             if (invoker == null)
             {
                 throw new InvalidOperationException("OnResultAction signature is not supported.");
@@ -165,13 +155,74 @@ namespace Workflows.Runner.Pipeline.Handlers
 
         private async ValueTask InvokeOnFailureActionAsync(object action, Exception exception, object explicitState)
         {
-            var invoker = _templateCache.GetOrAddOnFailureInvoker(action.GetType());
+            var invoker = _invokerCache.GetOrAddOnFailureInvoker(action.GetType());
             if (invoker == null)
             {
                 throw new InvalidOperationException("OnFailureAction signature is not supported.");
             }
 
             await invoker(action, exception, explicitState);
+        }
+
+        private static CommandWaitAccessor GetOrCreateAccessor(Type commandWaitType)
+        {
+            return _accessorCache.GetOrAdd(commandWaitType, type => new CommandWaitAccessor(type));
+        }
+
+        /// <summary>
+        /// Cached compiled property accessors for a specific CommandWait type.
+        /// Eliminates reflection overhead on every immediate command execution.
+        /// </summary>
+        private class CommandWaitAccessor
+        {
+            private readonly Func<object, object> _commandDataGetter;
+            private readonly Func<object, object> _onResultActionGetter;
+            private readonly Func<object, object> _onFailureActionGetter;
+            private readonly Func<object, object> _compensationActionGetter;
+            private readonly Func<object, List<string>> _tokensGetter;
+            private readonly Func<object, object> _explicitStateGetter;
+
+            public CommandWaitAccessor(Type commandWaitType)
+            {
+                // Compile property getters once
+                _commandDataGetter = CompilePropertyGetter<object>(commandWaitType, "CommandData", 
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                _onResultActionGetter = CompilePropertyGetter<object>(commandWaitType, "OnResultAction", 
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                _onFailureActionGetter = CompilePropertyGetter<object>(commandWaitType, "OnFailureAction", 
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                _compensationActionGetter = CompilePropertyGetter<object>(commandWaitType, "CompensationAction", 
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                _tokensGetter = CompilePropertyGetter<List<string>>(commandWaitType, "Tokens", 
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+
+                // ExplicitState is on the base Wait type
+                _explicitStateGetter = CompilePropertyGetter<object>(typeof(Wait), "ExplicitState", 
+                    BindingFlags.Instance | BindingFlags.Public);
+            }
+
+            public object GetCommandData(object commandWait) => _commandDataGetter?.Invoke(commandWait);
+            public object GetOnResultAction(object commandWait) => _onResultActionGetter?.Invoke(commandWait);
+            public object GetOnFailureAction(object commandWait) => _onFailureActionGetter?.Invoke(commandWait);
+            public object GetCompensationAction(object commandWait) => _compensationActionGetter?.Invoke(commandWait);
+            public List<string> GetTokens(object commandWait) => _tokensGetter?.Invoke(commandWait);
+            public object GetExplicitState(object commandWait) => _explicitStateGetter?.Invoke(commandWait);
+
+            private static Func<object, TResult> CompilePropertyGetter<TResult>(Type type, string propertyName, BindingFlags bindingFlags)
+            {
+                if (type == null) return null;
+
+                var property = type.GetProperty(propertyName, bindingFlags);
+                if (property == null) return null;
+
+                var parameter = Expression.Parameter(typeof(object), "instance");
+                var convert = Expression.Convert(parameter, type);
+                var getProperty = Expression.Property(convert, property);
+                var convertResult = Expression.Convert(getProperty, typeof(TResult));
+                var lambda = Expression.Lambda<Func<object, TResult>>(convertResult, parameter);
+
+                return lambda.CompileFast();
+            }
         }
     }
 
@@ -186,3 +237,4 @@ namespace Workflows.Runner.Pipeline.Handlers
         public int ExecutionOrder { get; set; }
     }
 }
+

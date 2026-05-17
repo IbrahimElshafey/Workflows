@@ -3,30 +3,24 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Workflows.Definition;
-using Workflows.Runner.Cache;
 
-namespace Workflows.Runner.Pipeline.Handlers
+namespace Workflows.Runner.Pipeline.Processors
 {
     /// <summary>
     /// Handles CompensationWait objects.
     /// Queries history, sorts past operations using Last-In, First-Out (LIFO) sequencing,
     /// invokes compiled undo delegates, and flags nodes as compensated. Returns true to continue execution.
     /// </summary>
-    internal class CompensationHandler : WorkflowWaitHandler
+    internal class CompensationProcessor : WorkflowWaitProcessor
     {
-        private readonly WorkflowTemplateCache _templateCache;
+        private static readonly ActionInvokerCache _invokerCache = new();
 
-        public CompensationHandler(WorkflowTemplateCache templateCache)
-        {
-            _templateCache = templateCache ?? throw new ArgumentNullException(nameof(templateCache));
-        }
-
-        public override async Task<bool> HandleAsync(Wait yieldedWait, WorkflowExecutionContext context)
+        public override async Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
         {
             var compensationWait = yieldedWait as CompensationWait;
             if (compensationWait == null)
             {
-                throw new InvalidOperationException("CompensationHandler requires a CompensationWait.");
+                throw new InvalidOperationException("CompensationProcessor requires a CompensationWait.");
             }
 
             // Query history from context.ActiveState
@@ -100,8 +94,7 @@ namespace Workflows.Runner.Pipeline.Handlers
 
         private async Task InvokeCompensationActionAsync(object action, object result, object explicitState)
         {
-            // Use template cache to get the compiled invoker
-            var invoker = _templateCache.GetOrAddCompensationInvoker(action.GetType());
+            var invoker = _invokerCache.GetOrAddCompensationInvoker(action.GetType());
             if (invoker == null)
             {
                 throw new InvalidOperationException("CompensationAction signature is not supported.");
@@ -111,3 +104,4 @@ namespace Workflows.Runner.Pipeline.Handlers
         }
     }
 }
+

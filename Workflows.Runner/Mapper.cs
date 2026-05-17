@@ -44,7 +44,7 @@ namespace Workflows.Runner
             };
 
             CopyBase(waitsGroup, dto);
-            dto.CancelClosureKey = _closureContextResolver.CacheClosureIfAny(waitsGroup.CancelAction?.Target, waitsGroup);
+            dto.StateKey = _closureContextResolver.CacheClosureIfAny(waitsGroup.CancelAction?.Target, waitsGroup);
 
             if (waitsGroup.FirstWait != null)
             {
@@ -71,7 +71,7 @@ namespace Workflows.Runner
             };
 
             CopyBase(waitsGroup, dto);
-            dto.CancelClosureKey = _closureContextResolver.CacheClosureIfAny(waitsGroup.CancelAction?.Target, waitsGroup);
+            dto.StateKey = _closureContextResolver.CacheClosureIfAny(waitsGroup.CancelAction?.Target, waitsGroup);
 
             return dto;
         }
@@ -88,7 +88,7 @@ namespace Workflows.Runner
             };
 
             CopyBase(waitsGroup, dto);
-            dto.CancelClosureKey = _closureContextResolver.CacheClosureIfAny(waitsGroup.CancelAction?.Target, waitsGroup);
+            dto.StateKey = _closureContextResolver.CacheClosureIfAny(waitsGroup.CancelAction?.Target, waitsGroup);
 
             if (waitsGroup.ChildWaits?.Count > 0)
             {
@@ -114,12 +114,11 @@ namespace Workflows.Runner
                 ResultAction = _delegateSerializer.Serialize(commandWait.OnResultAction),
                 HandlerKey = commandWait.HandlerKey,
                 ExecutionMode = commandWait.ExecutionMode,
-                ResultClosureKey = _closureContextResolver.CacheClosureIfAny(commandWait.OnResultAction?.Target, commandWait),
-                CompensationClosureKey = _closureContextResolver.CacheClosureIfAny(commandWait.CompensationAction?.Target, commandWait)
+                StateKey = _closureContextResolver.CacheClosureIfAny(commandWait.ExplicitState, commandWait),
             };
 
             CopyBase(commandWait, dto);
-            dto.CancelClosureKey = _closureContextResolver.CacheClosureIfAny(commandWait.CancelAction?.Target, commandWait);
+            dto.StateKey = _closureContextResolver.CacheClosureIfAny(commandWait.CancelAction?.Target, commandWait);
 
             return dto;
         }
@@ -151,7 +150,7 @@ namespace Workflows.Runner
             };
 
             CopyBase(signalWait, dto);
-            dto.CancelClosureKey = _closureContextResolver.CacheClosureIfAny(signalWait.CancelAction?.Target, signalWait);
+            dto.StateKey = _closureContextResolver.CacheClosureIfAny(signalWait.CancelAction?.Target, signalWait);
 
             return dto;
         }

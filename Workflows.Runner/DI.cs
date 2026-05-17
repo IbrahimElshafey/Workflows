@@ -5,6 +5,9 @@ using Workflows.Definition.Registration;
 using Workflows.Runner.Cache;
 using Workflows.Runner.ExpressionTransformers;
 using Workflows.Runner.Helpers;
+using Workflows.Runner.Pipeline;
+using Workflows.Runner.Pipeline.Matchers;
+using Workflows.Runner.Pipeline.Processors;
 
 namespace Workflows.Runner
 {
@@ -12,6 +15,17 @@ namespace Workflows.Runner
     {
         public static IServiceCollection AddWorkflowsRunner(this IServiceCollection services)
         {
+            // Core services - all internal, no interfaces
+            services.AddSingleton<WorkflowStateService>();
+            services.AddSingleton<MatcherFactory>();
+            services.AddSingleton<ProcessorFactory>();
+            services.AddSingleton<CancelProcessor>();
+            services.AddSingleton<StateMachineAdvancer>();
+            services.AddSingleton<Mapper>();
+
+            // The refactored runner (can be registered as IWorkflowRunner when ready to switch)
+            // For now, register with a different lifetime to allow side-by-side testing
+            services.AddScoped<RefactoredWorkflowRunner>();
             /*to add
              * RunWorkflowSettings settings,
             IWorkflowRunResultSender runResultSender,
@@ -25,6 +39,8 @@ namespace Workflows.Runner
             services.AddSingleton<IWorkflowRegistry, WorkflowBuilder>();
             services.AddSingleton<WorkflowTemplateCache>();
             services.AddSingleton<Mapper>();
+            services.AddScoped<WorkflowExecutionContext>();
+            services.AddScoped<IWorkflowRunner, RefactoredWorkflowRunner>();
             return services;
         }
 

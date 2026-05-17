@@ -10,6 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)Command Execution Modes.md" />
+    <None Include="$(MSBuildThisFileDirectory)Refactored Runner Review Report.md" />
     <None Include="$(MSBuildThisFileDirectory)Runner Evaluation Logic.md" />
     <None Include="$(MSBuildThisFileDirectory)State Management Implementation.md" />
     <None Include="$(MSBuildThisFileDirectory)Sub-Workflow Execution.md" />
