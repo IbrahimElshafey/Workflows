@@ -1,5 +1,7 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq.Expressions;
+using System.Text.Json;
 
 namespace Workflows.Runner.DataObjects
 {
@@ -17,15 +19,15 @@ namespace Workflows.Runner.DataObjects
         /// This is the expression that will be compiled and executed against incoming signals.
         /// It will look like Expression<Func<TSignalData, TInstance, TState, bool>>
         /// </summary>
-        public LambdaExpression MatchExpression { get; init; }
+        public Expression<Func<object,object,object,bool>> MatchExpression { get; init; }
 
         /// <summary>
         /// Match expression rewritten against generic object like JsonElement.
         /// If it can be generated (no method calls and all are POCOs), it will be used for 
         /// pre-filtering incoming signals at Tier 1.5 before waking up the Runners.
-        /// It will look like Expression<Func<TSignalDataGeneric, TInstanceGeneric, TStateGeneric, bool>>
+        /// It will look like Expression (Func(TSignalData, TState, TInstance, bool))
         /// </summary>
-        public Expression GenericMatchExpression { get; init; }
+        public Expression<Func<JsonElement, JsonElement, JsonElement, bool>> GenericMatchExpression { get; init; }
 
         /// <summary>
         /// Indicates if the generic match expression covers the full match logic
@@ -34,11 +36,11 @@ namespace Workflows.Runner.DataObjects
         public bool IsGenericMatchFullMatch { get; init; }
 
         /// <summary>
-        /// The lambda that produces an array of the mandatory exact match values from the original match expression.
+        /// The lambda that produces an array of the mandatory exact match values from current instance and state.
         /// It takes input parameters (workflowInstance, State) and evaluates the constant parts.
         /// Example: Expression<Func<workflowInstance, State, string[]>> with body: new string[] { "42", "Paid" }
         /// </summary>
-        public LambdaExpression InstanceExactMatchExpression { get; init; }
+        public Expression<Func<object,object,string[]>> InstanceExactMatchExpression { get; init; }
 
         /// <summary>
         /// Paths to the properties in the signal data that are used for exact matching.

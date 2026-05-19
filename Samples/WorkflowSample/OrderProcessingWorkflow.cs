@@ -25,7 +25,7 @@ namespace WorkflowSample
             // We use .WithState(minOrderId) to explicitly pass the local variable as a data contract
             yield return WaitSignal<OrderSubmittedEvent>("OrderSubmittedSignal", "Wait for Order Submission")
                 .WithState(minOrderId)
-                .MatchIf((order, minId) => order.OrderId > minId) // Pure lambda (no closure)
+                .MatchIf((order, minId) => order.OrderId > minId && order.CustomerName == CurrentCustomer) // Pure lambda (no closure)
                 .AfterMatch((order) =>
                 {
                     // Accessing 'this.' creates a stable <>4__this pointer, NOT a volatile closure

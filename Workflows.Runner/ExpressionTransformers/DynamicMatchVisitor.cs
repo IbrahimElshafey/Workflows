@@ -16,49 +16,55 @@ namespace Workflows.Runner.ExpressionTransformers
     /// </summary>
     internal class DynamicMatchVisitor : ExpressionVisitor
     {
-        private readonly LambdaExpression _originalLambda;
-        private readonly ParameterExpression _signalDataParam;
-        private readonly ParameterExpression _workflowInstanceParam;
-        private readonly ParameterExpression _stateDataParam;
+        private readonly LambdaExpression _normalizedLambda;
+        private readonly ParameterExpression _jsonSignalParam;
+        private readonly ParameterExpression _jsonInstanceParam;
+        private readonly ParameterExpression _jsonStateParam;
         private bool _isUnsupportedNodeFound;
 
-        // Signature is now exactly aligned with the 3 inputs: (Signal, Instance, State/Closure)
         public Expression<Func<JsonElement, JsonElement, JsonElement, bool>> Result { get; private set; }
         public bool IsFullMatch => !_isUnsupportedNodeFound;
 
-        public DynamicMatchVisitor(LambdaExpression matchExpression)
+        // Notice we now expect the NORMALIZED lambda: Func<object, object, object, bool>
+        public DynamicMatchVisitor(LambdaExpression normalizedLambda)
         {
-            _originalLambda = matchExpression;
+            _normalizedLambda = normalizedLambda;
+            _jsonSignalParam = Expression.Parameter(typeof(JsonElement), "signalData");
+            _jsonStateParam = Expression.Parameter(typeof(JsonElement), "stateData");
+            _jsonInstanceParam = Expression.Parameter(typeof(JsonElement), "workflowInstance");
+        }
 
-            // The JSON elements that the Orchestrator will pass in at runtime
-            _signalDataParam = Expression.Parameter(typeof(JsonElement), "signalData");
-            _workflowInstanceParam = Expression.Parameter(typeof(JsonElement), "workflowInstance");
-            _stateDataParam = Expression.Parameter(typeof(JsonElement), "stateData");
-
-            var visitedBody = Visit(matchExpression.Body);
+        public void Build()
+        {
+            var visitedBody = Visit(_normalizedLambda.Body);
 
             if (!_isUnsupportedNodeFound && visitedBody != null)
             {
+                // We align with the orchestrator's JsonElement parameter layout
                 Result = Expression.Lambda<Func<JsonElement, JsonElement, JsonElement, bool>>(
                     visitedBody,
-                    _signalDataParam,
-                    _workflowInstanceParam,
-                    _stateDataParam);
+                    _jsonSignalParam,
+                    _jsonStateParam,
+                    _jsonInstanceParam);
+            }
+            else
+            {
+                // Explicitly set Result to null if we failed to map the whole expression
+                Result = null;
             }
         }
 
         protected override Expression VisitMember(MemberExpression node)
         {
-            var originalParam = GetRootParameter(node);
+            var rootParam = GetRootParameter(node);
 
-            if (originalParam == null || !CanConvertToString(node.Type))
+            if (rootParam == null || !IsJsonSupportedType(node.Type))
             {
                 _isUnsupportedNodeFound = true;
                 return base.VisitMember(node);
             }
 
-            // Map the original C# parameter to our new JsonElement parameters
-            var targetJsonParam = GetMappedParameter(originalParam);
+            var targetJsonParam = GetMappedParameter(rootParam);
             if (targetJsonParam == null)
             {
                 _isUnsupportedNodeFound = true;
@@ -66,8 +72,6 @@ namespace Workflows.Runner.ExpressionTransformers
             }
 
             var path = GetPath(node);
-
-            // Translates `state.OrderId` -> `JsonElementExtensions.Get<int>(stateData, "OrderId")`
             var getValueMethod = typeof(JsonElementExtensions)
                 .GetMethods()
                 .First(x => x.Name == "Get" && x.IsGenericMethod)
@@ -78,16 +82,13 @@ namespace Workflows.Runner.ExpressionTransformers
 
         protected override Expression VisitMethodCall(MethodCallExpression node)
         {
-            // Safely translate .Equals() into == so Tier 1.5 can still evaluate it in RAM
             if (node.Method.Name == "Equals" && node.Arguments.Count == 1 && node.Object != null)
             {
                 var left = Visit(node.Object);
                 var right = Visit(node.Arguments[0]);
 
                 if (left != null && right != null)
-                {
                     return Expression.Equal(left, right);
-                }
             }
 
             _isUnsupportedNodeFound = true;
@@ -96,24 +97,26 @@ namespace Workflows.Runner.ExpressionTransformers
 
         private ParameterExpression GetRootParameter(Expression node)
         {
-            while (node is MemberExpression me) node = me.Expression;
+            while (true)
+            {
+                if (node is MemberExpression me)
+                    node = me.Expression;
+                // FIX: Step through the UnaryExpression (Expression.Convert) injected by the normalizer!
+                else if (node is UnaryExpression ue && ue.NodeType == ExpressionType.Convert)
+                    node = ue.Operand;
+                else
+                    break;
+            }
             return node as ParameterExpression;
         }
 
-        /// <summary>
-        /// Safely maps the original C# parameter to the JsonElement parameter based on its position,
-        /// avoiding brittle string-name matching.
-        /// </summary>
-        private ParameterExpression GetMappedParameter(ParameterExpression originalParam)
+        private ParameterExpression GetMappedParameter(ParameterExpression normalizedParam)
         {
-            // 0 = Incoming Signal Data
-            if (originalParam == _originalLambda.Parameters[0]) return _signalDataParam;
-
-            // 1 = Workflow Container Instance (Domain State)
-            if (_originalLambda.Parameters.Count > 1 && originalParam == _originalLambda.Parameters[1]) return _workflowInstanceParam;
-
-            // 2 = Explicit State (.WithState) or Captured Closure
-            if (_originalLambda.Parameters.Count > 2 && originalParam == _originalLambda.Parameters[2]) return _stateDataParam;
+            // The normalizer ALWAYS outputs parameters in this exact order:
+            // [0] = signalData, [1] = state, [2] = instance
+            if (normalizedParam == _normalizedLambda.Parameters[0]) return _jsonSignalParam;
+            if (normalizedParam == _normalizedLambda.Parameters[1]) return _jsonStateParam;
+            if (normalizedParam == _normalizedLambda.Parameters[2]) return _jsonInstanceParam;
 
             return null;
         }
@@ -124,13 +127,16 @@ namespace Workflows.Runner.ExpressionTransformers
             while (node is MemberExpression me)
             {
                 parts.Add(me.Member.Name);
-                node = me.Expression;
+                // Step through casts in the path just in case
+                node = me.Expression is UnaryExpression ue && ue.NodeType == ExpressionType.Convert
+                    ? ue.Operand
+                    : me.Expression;
             }
             parts.Reverse();
             return string.Join(".", parts);
         }
 
-        private bool CanConvertToString(Type type) =>
+        private bool IsJsonSupportedType(Type type) =>
             type.IsPrimitive || type == typeof(string) || type == typeof(DateTime) || type == typeof(Guid) || type.IsEnum;
     }
 }
