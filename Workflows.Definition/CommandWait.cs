@@ -140,9 +140,9 @@ namespace Workflows.Definition
     {
         internal bool IsCompensated { get; set; }
         internal TCommand CommandData { get; set; }
-        internal Func<Exception, ValueTask> OnFailureAction { get; set; }
-        internal Action<TResult> OnResultAction { get; set; }
-        internal Func<TResult, ValueTask> CompensationAction { get; set; }
+        internal Delegate OnFailureAction { get; set; }
+        internal Delegate OnResultAction { get; set; }
+        internal Delegate CompensationAction { get; set; }
         internal string[] CompensationTokens { get; set; }
         internal int MaxRetryAttempts { get; set; } = 1;
         internal TimeSpan? RetryBackoff { get; set; }
@@ -192,7 +192,7 @@ namespace Workflows.Definition
 
         public CommandWait<TCommand, TResult> OnFailure<TState>(Func<Exception, TState, ValueTask> failureAction)
         {
-            OnFailureAction = new StatefulOnFailureInvoker<TState>(this, failureAction).Invoke;
+            OnFailureAction = failureAction;
             return this;
         }
 
@@ -247,22 +247,22 @@ namespace Workflows.Definition
             }
         }
 
-        private sealed class StatefulOnFailureInvoker<TState>
-        {
-            private readonly CommandWait<TCommand, TResult> _wait;
-            private readonly Func<Exception, TState, ValueTask> _action;
+        //private sealed class StatefulOnFailureInvoker<TState>
+        //{
+        //    private readonly CommandWait<TCommand, TResult> _wait;
+        //    private readonly Func<Exception, TState, ValueTask> _action;
 
-            public StatefulOnFailureInvoker(CommandWait<TCommand, TResult> wait, Func<Exception, TState, ValueTask> action)
-            {
-                _wait = wait;
-                _action = action;
-            }
+        //    public StatefulOnFailureInvoker(CommandWait<TCommand, TResult> wait, Func<Exception, TState, ValueTask> action)
+        //    {
+        //        _wait = wait;
+        //        _action = action;
+        //    }
 
-            public ValueTask Invoke(Exception exception)
-            {
-                return _action(exception, (TState)_wait.ExplicitState);
-            }
-        }
+        //    public ValueTask Invoke(Exception exception)
+        //    {
+        //        return _action(exception, (TState)_wait.ExplicitState);
+        //    }
+        //}
 
         private sealed class StatefulCompensationInvoker<TState>
         {

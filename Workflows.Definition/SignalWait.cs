@@ -40,7 +40,7 @@ namespace Workflows.Definition
         public SignalBuilder<TSignal> MatchIf(
             Expression<Func<TSignal, bool>> matchExpression,
             [CallerLineNumber] int callerLineNumber = 0,
-            [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
+            [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             _wait.MatchIf(matchExpression, callerLineNumber, expression);
             return this;
@@ -101,7 +101,7 @@ namespace Workflows.Definition
         public StatefulSignalBuilder<TSignal, TState> MatchIf(
             Expression<Func<TSignal, TState, bool>> matchExpression,
             [CallerLineNumber] int callerLineNumber = 0,
-            [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
+            [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             _wait.MatchIf(matchExpression, callerLineNumber, expression);
             return this;
@@ -110,7 +110,7 @@ namespace Workflows.Definition
         public StatefulSignalBuilder<TSignal, TState> MatchIf(
             Expression<Func<TSignal, bool>> matchExpression,
             [CallerLineNumber] int callerLineNumber = 0,
-            [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
+            [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             _wait.MatchIf(matchExpression, callerLineNumber, expression);
             return this;
@@ -126,7 +126,7 @@ namespace Workflows.Definition
     /// </summary>
     public partial class SignalWait<SignalData> : Wait, IPassiveWait, ISignalWait
     {
-        internal Action<SignalData> AfterMatchAction { get; set; }
+        internal Delegate AfterMatchAction { get; set; }
 
         internal SignalWait(
             string signalIdentifier,
@@ -148,7 +148,6 @@ namespace Workflows.Definition
         object ISignalWait.ExplicitState => ExplicitState;
 
         string ISignalWait.SignalIdentifier => SignalIdentifier;
-        object ISignalWait.AfterMatchAction => AfterMatchAction;
 
         public SignalWait<SignalData> WithState<TState>(TState state)
         {
@@ -158,7 +157,7 @@ namespace Workflows.Definition
 
         public SignalWait<SignalData> AfterMatch<TState>(Action<SignalData, TState> afterMatchAction)
         {
-            AfterMatchAction = new StatefulAfterMatchInvoker<TState>(this, afterMatchAction).Invoke;
+            AfterMatchAction = afterMatchAction;
             return this;
         }
 
@@ -177,7 +176,7 @@ namespace Workflows.Definition
         public SignalWait<SignalData> MatchIf<TState>(
             Expression<Func<SignalData, TState, bool>> matchExpression,
             [CallerLineNumber] int callerLineNumber = 0,
-            [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
+            [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             MatchExpression = matchExpression;
             InCodeLine = callerLineNumber;
@@ -188,7 +187,7 @@ namespace Workflows.Definition
         public SignalWait<SignalData> MatchIf(
             Expression<Func<SignalData, bool>> matchExpression,
             [CallerLineNumber] int callerLineNumber = 0,
-            [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
+            [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             MatchExpression = matchExpression;
             InCodeLine = callerLineNumber;

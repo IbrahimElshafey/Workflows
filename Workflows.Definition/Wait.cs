@@ -42,7 +42,7 @@ namespace Workflows.Definition
 
         internal Guid StateKey { get; set; }
         internal object ExplicitState => WorkflowContainer.WaitsStates[StateKey];
-        internal Func<ValueTask> CancelAction { get; set; }
+        internal Delegate CancelAction { get; set; }
 
         public WorkflowContainer WorkflowContainer { get; set; }
 
@@ -60,7 +60,7 @@ namespace Workflows.Definition
 
         public Wait OnCanceled<TState>(Func<TState, ValueTask> cancelAction)
         {
-            CancelAction = new StatefulCancelActionInvoker<TState>(this, cancelAction).Invoke;
+            CancelAction = cancelAction;
             return this;
         }
 

@@ -155,19 +155,32 @@ namespace Workflows.Runner.Pipeline.Processors
         /// </summary>
         public async Task InvokeCancelActionAsync(Wait wait)
         {
-            if (wait.CancelAction != null)
+            if (wait.CancelAction == null) return;
+
+            try
             {
-                try
+                //todo: to fix
+                switch (wait.CancelAction)
                 {
-                    await wait.CancelAction();
+                    case Func<ValueTask> asyncAction:
+                        await asyncAction();
+                        break;
+                    case Func<object, ValueTask> asyncActionWithState:
+                        await asyncActionWithState(wait);
+                        break;
+                    case Action action:
+                        action();
+                        break;
+                    case Action<object> actionWithState:
+                        actionWithState(wait);
+                        break;
                 }
-                catch (Exception ex)
+            }
+            catch (Exception ex)
+            {
+                if (wait.WorkflowContainer != null)
                 {
-                    // Log but don't throw - cancellation callbacks should not block workflow
-                    if (wait.WorkflowContainer != null)
-                    {
-                        await wait.WorkflowContainer.OnError($"Cancel action failed for wait {wait.WaitName}: {ex.Message}", ex);
-                    }
+                    await wait.WorkflowContainer.OnError($"Cancel action failed for wait {wait.WaitName}: {ex.Message}", ex);
                 }
             }
         }

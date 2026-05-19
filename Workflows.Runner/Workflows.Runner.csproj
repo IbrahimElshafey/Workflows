@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
     <PackageReference Include="Newtonsoft.Json.Schema" Version="4.0.2-beta2" />
     <PackageReference Include="Nuqleon.Linq.Expressions.Bonsai.Serialization" Version="1.0.0-beta.24" />
+    <PackageReference Include="System.Text.Json" Version="10.0.8" />
   </ItemGroup>
 
   <ItemGroup>

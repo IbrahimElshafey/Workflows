@@ -1,30 +1,44 @@
 ﻿using System;
-using Workflows.Abstraction.DTOs;
-using Workflows.Definition;
+using System.Collections.Generic;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Text.Json;
 using Workflows.Runner.DataObjects;
 
 namespace Workflows.Runner.ExpressionTransformers
 {
+    // ----------------------------------------------------------------------
+    // 1. The Coordinator
+    // ----------------------------------------------------------------------
+
     internal class MatchExpressionTransformer
     {
-        internal MatchTransformationResult Transform(ISignalWait signalWait)
+        public MatchTransformationResult Transform(LambdaExpression matchExpression)
         {
-            if (signalWait == null)
-                throw new ArgumentNullException(nameof(signalWait));
+            if (matchExpression == null)
+                throw new ArgumentNullException(nameof(matchExpression));
 
-            var matchWriter = new MatchExpressionWriter(
-                signalWait.MatchExpression,
-                signalWait.WorkflowContainer);
+            // Step 1: Analyze for Tier 1 (SQL Exact Match Extraction)
+            var exactMatchAnalyzer = new ExactMatchAnalyzer(matchExpression);
+            exactMatchAnalyzer.Analyze();
 
-            var result = matchWriter.MatchTransformationResult;
-            if (result?.MatchExpression == null)
-                return result;
+            // Step 2: Analyze for Tier 1.5 (JsonElement RAM Filter)
+            var dynamicVisitor = new DynamicMatchVisitor(matchExpression);
 
-            var dynamicMatchVisitor = new DynamicMatchVisitor(result.MatchExpression);
-            result.GenericMatchExpression = dynamicMatchVisitor.Result;
-            result.IsGenericMatchFullMatch = result.GenericMatchExpression != null;
+            // Step 3: Build & Return completely Immutable Result
+            return new MatchTransformationResult
+            {
+                MatchExpression = matchExpression,
 
-            return result;
+                // Tier 1 SQL Indexes
+                SignalExactMatchPaths = exactMatchAnalyzer.SignalExactMatchPaths,
+                InstanceExactMatchExpression = exactMatchAnalyzer.InstanceExactMatchExpression,
+                IsExactMatchFullMatch = exactMatchAnalyzer.IsExactMatchFullMatch,
+
+                // Tier 1.5 RAM Pre-filter
+                GenericMatchExpression = dynamicVisitor.Result,
+                IsGenericMatchFullMatch = dynamicVisitor.IsFullMatch
+            };
         }
     }
 }
