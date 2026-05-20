@@ -1,9 +1,16 @@
 using System;
+using System.Reflection;
+using Workflows.Abstraction.Helpers;
 
 namespace Workflows.Runner.Helpers
 {
     internal sealed class DelegateSerializer : IDelegateSerializer
     {
+        public MethodInfo Deserialize(string methodFullPath)
+        {
+            throw new NotImplementedException();
+        }
+
         public string Serialize(Delegate callback)
         {
             if (callback == null)

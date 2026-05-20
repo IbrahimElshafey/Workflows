@@ -6,7 +6,6 @@ using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition;
 using Workflows.Primitives;
-using Workflows.Runner.Cache;
 
 namespace Workflows.Runner.Tests.Infrastructure
 {

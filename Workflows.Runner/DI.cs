@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition.Registration;
 using Workflows.Runner.Cache;

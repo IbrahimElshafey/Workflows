@@ -4,18 +4,16 @@ namespace Workflows.Runner.DataObjects
 {
     internal class MatchExpressionTemplate
     {
-        // Tier 3 Execution: (signalData, workflowInstance, closure) => bool
-        // Compiled bridge with internal casts for native speed
+        // (TSignalData, TInstance, TState) => bool
         public Func<object, object, object, bool> CompiledMatchDelegate { get; set; }
 
-        // Callback: (workflowInstance, signalData, closure) => void
-        // Bridge compiled once: handles sync/async and type-casting automatically
+        // (workflowInstance, signalData, state) => void
         public Func<object, object, object> AfterMatchAction { get; set; }
 
-        // Callback: (workflowInstance, closure) => ValueTask
+        // (workflowInstance, state) => ValueTask
         public Func<object, object, ValueTask> CancelAction { get; set; }
 
-        // Tier 1 Blueprint: (workflowInstance, closure) => object[]
-        public Func<object, object, object[]> CompiledInstanceExactMatchExpression { get; set; }
+        // (workflowInstance, state) => string[]
+        public Func<object, object, string[]> InstanceExactMatchFunc { get; set; }
     }
 }

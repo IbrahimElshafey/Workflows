@@ -163,7 +163,7 @@ namespace Workflows.Definition
 
         public CommandWait<TCommand, TResult> OnResult<TState>(Action<TResult, TState> onSuccess)
         {
-            OnResultAction = new StatefulOnResultInvoker<TState>(this, onSuccess).Invoke;
+            OnResultAction = onSuccess;
             return this;
         }
 
@@ -209,7 +209,7 @@ namespace Workflows.Definition
 
         public CommandWait<TCommand, TResult> RegisterCompensation<TState>(Func<TResult, TState, ValueTask> compensationAction)
         {
-            CompensationAction = new StatefulCompensationInvoker<TState>(this, compensationAction).Invoke;
+            CompensationAction = compensationAction;
             return this;
         }
 
