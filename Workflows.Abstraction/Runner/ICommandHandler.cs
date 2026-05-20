@@ -9,7 +9,7 @@ namespace Workflows.Abstraction.Runner
     /// Executes fast, in-memory operations synchronously or via quick I/O.
     /// The workflow Runner awaits this and immediately continues execution.
     /// </summary>
-    public interface IImmediateCommandHandler<in TCommand, TResult>
+    public interface IImmediateCommandHandler<in TCommand, TResult> : ICommandHandler
     {
         ValueTask<TResult> HandleAsync(TCommand command, CancellationToken cancellationToken);
     }
@@ -18,7 +18,7 @@ namespace Workflows.Abstraction.Runner
     /// Dispatches a command to an external system. 
     /// Does NOT return a result, as the workflow will suspend and wait for an asynchronous callback.
     /// </summary>
-    public interface IDeferredCommandDispatcher<in TCommand>
+    public interface IDeferredCommandDispatcher<in TCommand> : ICommandHandler
     {
         ValueTask DispatchAsync(TCommand command, Guid commandId, Guid workflowInstanceId, CancellationToken cancellationToken);
     }
