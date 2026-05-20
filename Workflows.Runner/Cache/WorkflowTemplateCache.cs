@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -21,6 +23,18 @@ namespace Workflows.Runner.Cache
         private readonly ConcurrentDictionary<Type, Func<object, object, object, ValueTask>> _compensationInvokers = new();
         private readonly ConcurrentDictionary<Type, Func<object, object, object, ValueTask>> _cancelActionInvokers = new();
         private readonly ConcurrentDictionary<Type, Func<object, object, object, bool>> _groupFilterInvokers = new();
+        private readonly ConcurrentDictionary<Type, Func<object, CommandWaitProperties>> _commandPropertiesExtractors = new();
+        private readonly ConcurrentDictionary<Type, Func<object, IEnumerable<string>>> _cancelTokensExtractors = new();
+
+        public class CommandWaitProperties
+        {
+            public object CommandData { get; set; }
+            public object OnResultAction { get; set; }
+            public object OnFailureAction { get; set; }
+            public object CompensationAction { get; set; }
+            public IEnumerable<string> Tokens { get; set; }
+            public object ExplicitState { get; set; }
+        }
 
         public ObjectFactory GetOrAddWorkflowFactory(Type workflowType)
         {
@@ -29,6 +43,7 @@ namespace Workflows.Runner.Cache
 
         public Func<object, object> GetOrAddWorkflowInvoker(Type containerType, string methodName)
         {
+            if (string.IsNullOrEmpty(methodName)) return null;
             var key = $"{containerType.FullName}:{methodName}";
             return _workflowInvokers.GetOrAdd(key, _ =>
             {
@@ -243,6 +258,60 @@ namespace Workflows.Runner.Cache
         public SignalTemplateCacheRecord GetOrAddSignal(string key, SignalTemplateCacheRecord record)
         {
             return _signalCache.GetOrAdd(key, record);
+        }
+
+        public Func<object, CommandWaitProperties> GetOrAddCommandPropertiesExtractor(Type commandWaitType)
+        {
+            return _commandPropertiesExtractors.GetOrAdd(commandWaitType, type =>
+            {
+                var waitParam = Expression.Parameter(typeof(object), "wait");
+                var typedWait = Expression.Convert(waitParam, type);
+
+                var props = new[] { "CommandData", "OnResultAction", "OnFailureAction", "CompensationAction", "CompensationTokens", "Tokens" };
+                var bindings = new List<MemberBinding>();
+
+                var resultType = typeof(CommandWaitProperties);
+                var explicitStateProp = type.GetProperty("ExplicitState", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                                     ?? type.BaseType?.GetProperty("ExplicitState", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+                foreach (var propName in props)
+                {
+                    var prop = type.GetProperty(propName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    if (prop != null)
+                    {
+                        var targetPropName = (propName == "CompensationTokens" || propName == "Tokens") ? "Tokens" : propName;
+                        bindings.Add(Expression.Bind(resultType.GetProperty(targetPropName), Expression.Convert(Expression.Property(typedWait, prop), typeof(object))));
+                    }
+                }
+
+                if (explicitStateProp != null)
+                {
+                    bindings.Add(Expression.Bind(resultType.GetProperty("ExplicitState"), Expression.Convert(Expression.Property(typedWait, explicitStateProp), typeof(object))));
+                }
+
+                var body = Expression.MemberInit(Expression.New(resultType), bindings);
+                var lambda = Expression.Lambda<Func<object, CommandWaitProperties>>(body, waitParam);
+                return lambda.CompileFast();
+            });
+        }
+
+        public Func<object, IEnumerable<string>> GetOrAddCancelTokensExtractor(Type waitType)
+        {
+            return _cancelTokensExtractors.GetOrAdd(waitType, type =>
+            {
+                var waitParam = Expression.Parameter(typeof(object), "wait");
+                var typedWait = Expression.Convert(waitParam, type);
+
+                var prop = type.GetProperty("CancelTokens", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                var field = type.GetField("CancelTokens", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+                if (prop == null && field == null) return _ => null;
+
+                var member = prop != null ? (Expression)Expression.Property(typedWait, prop) : Expression.Field(typedWait, field);
+                var body = Expression.Convert(member, typeof(IEnumerable<string>));
+                var lambda = Expression.Lambda<Func<object, IEnumerable<string>>>(body, waitParam);
+                return lambda.CompileFast();
+            });
         }
 
         public SignalTemplateCacheRecord GetSignal(string key)

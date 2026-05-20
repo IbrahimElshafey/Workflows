@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Runner;
+using Workflows.Definition;
 
 namespace Workflows.Runner.Tests.Infrastructure
 {

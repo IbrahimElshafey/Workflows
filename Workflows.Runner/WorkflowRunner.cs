@@ -176,6 +176,10 @@ namespace Workflows.Runner
             {
                 // Resume parent workflow
                 var workflowInvoker = _templateCache.GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, triggeringWait.CallerName);
+                if (workflowInvoker == null)
+                {
+                    throw new InvalidOperationException($"Workflow entry point '{triggeringWait.CallerName}' not found in {workflowTypes.WorkflowContainer.FullName}.");
+                }
                 workflowStream = (IAsyncEnumerable<Wait>)workflowInvoker(workflowInstance);
                 activeState = state.StateObject;
             }
@@ -411,21 +415,17 @@ namespace Workflows.Runner
                 return Error("Triggering wait could not be mapped to command wait.");
             }
 
-            // Get command wait properties via reflection
-            var commandWaitType = commandWait.GetType();
-            var commandDataProperty = commandWaitType.GetProperty("CommandData", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            var onResultActionProperty = commandWaitType.GetProperty("OnResultAction", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            var onFailureActionProperty = commandWaitType.GetProperty("OnFailureAction", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            var compensationActionProperty = commandWaitType.GetProperty("CompensationAction", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            var tokensProperty = commandWaitType.GetProperty("Tokens", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            var explicitStateProperty = commandWaitType.BaseType.GetProperty("ExplicitState", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public);
+            // OPTIMIZATION: Replaced expensive reflection with cached compiled property extractors.
+            // This reduces overhead on the command execution hot-path.
+            var extractor = _templateCache.GetOrAddCommandPropertiesExtractor(commandWait.GetType());
+            var props = extractor(commandWait);
 
-            var commandData = commandDataProperty?.GetValue(commandWait);
-            var onResultAction = onResultActionProperty?.GetValue(commandWait);
-            var onFailureAction = onFailureActionProperty?.GetValue(commandWait);
-            var compensationAction = compensationActionProperty?.GetValue(commandWait);
-            var tokens = tokensProperty?.GetValue(commandWait) as List<string>;
-            var explicitState = explicitStateProperty?.GetValue(commandWait);
+            var commandData = props.CommandData;
+            var onResultAction = props.OnResultAction;
+            var onFailureAction = props.OnFailureAction;
+            var compensationAction = props.CompensationAction;
+            var tokens = props.Tokens?.ToList();
+            var explicitState = props.ExplicitState;
 
             try
             {
@@ -772,17 +772,14 @@ namespace Workflows.Runner
                 return false;
             }
 
-            // Check if wait has cancel tokens through reflection
-            var waitType = wait.GetType();
-            var cancelTokensField = waitType.GetField("CancelTokens", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            // OPTIMIZATION: Using cached compiled property extractor instead of reflection
+            // to check for cancellation tokens.
+            var extractor = _templateCache.GetOrAddCancelTokensExtractor(wait.GetType());
+            var tokens = extractor(wait);
 
-            if (cancelTokensField != null)
+            if (tokens != null && tokens.Any(token => cancelledTokens.Contains(token)))
             {
-                var tokens = cancelTokensField.GetValue(wait) as List<string>;
-                if (tokens != null && tokens.Any(token => cancelledTokens.Contains(token)))
-                {
-                    return true;
-                }
+                return true;
             }
 
             return false;
