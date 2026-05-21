@@ -18,6 +18,7 @@ namespace Workflows.Runner
         public static IServiceCollection AddWorkflowsRunner(this IServiceCollection services)
         {
             // Core services - all internal, no interfaces
+            services.AddSingleton<IWorkflowHydrator, WorkflowHydrator>();
             services.AddSingleton<WorkflowStateService>();
             services.AddSingleton<MatcherFactory>();
             services.AddSingleton<ProcessorFactory>();

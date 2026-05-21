@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Runner;
@@ -114,12 +116,62 @@ namespace Workflows.Runner
             }
 
             // 4. Send updated snapshot back to Orchestrator to persist
-            var runResultDto = _stateService.MapToResultDto(context);
+            return await SendResultAsync(context);
+        }
 
-            // Note: IWorkflowRunnerClient.SendWorkflowRunResultAsync requires WorkflowExecutionResponse            // For now, we'll return the result directly. The client integration will be handled separately.
-            // await _resultSender.SendWorkflowRunResultAsync(runResultDto, new WorkflowExecutionResponse { ... });
+        public async Task<AsyncResult> StartWorkflow(string workflowName)
+        {
+            if (string.IsNullOrWhiteSpace(workflowName))
+                throw new ArgumentNullException(nameof(workflowName));
 
-            return runResultDto;
+            // 1. Create a fresh workflow state and execution context for a new instance
+            var context = _stateService.CreateNewWorkflowContext(workflowName);
+
+            context.ContinueExecutionLoop = true;
+
+            // 2. Execution Cycle Loop (same as RunWorkflowAsync, but no matching phase)
+            while (context.ContinueExecutionLoop)
+            {
+                var advancerResult = await _stateMachineAdvancer.RunAsync(
+                    context.WorkflowStream,
+                    context.WorkflowState.StateObject);
+
+                Definition.Wait yieldedWait = advancerResult?.Wait;
+
+                if (yieldedWait == null)
+                {
+                    context.WorkflowState.Status = Abstraction.Enums.WorkflowInstanceStatus.Completed;
+                    break;
+                }
+
+                context.WorkflowState.StateObject = advancerResult.State;
+
+                bool wasCancelled = await _cancelHandler.CheckAndSkipCancelledWaitAsync(yieldedWait, context);
+                if (wasCancelled)
+                {
+                    context.ContinueExecutionLoop = true;
+                    continue;
+                }
+
+                var processor = _processorFactory.GetProcessor(yieldedWait);
+                context.ContinueExecutionLoop = await processor.ProcessAsync(yieldedWait, context);
+
+                await _cancelHandler.ProcessCancellationsWithCallbacksAsync(context);
+            }
+
+            // 3. Send updated snapshot back to Orchestrator to persist
+            return await SendResultAsync(context);
+        }
+
+        private async Task<AsyncResult> SendResultAsync(WorkflowExecutionContext context)
+        {
+            var runResult = _stateService.MapToResultDto(context);
+            var response = new WorkflowExecutionResponse
+            {
+                UpdatedState = context.WorkflowState,
+                ConsumedWaitsIds = context.ConsumedWaitsIds
+            };
+            return await _resultSender.SendWorkflowRunResultAsync(runResult, response);
         }
     }
 }

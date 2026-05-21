@@ -15,10 +15,12 @@ namespace Workflows.Orchestrator
 
         public async Task<AsyncResult> RunWorkflowAsync(WorkflowExecutionRequest request)
         {
-            // Fire and Forget. 
-            // The Dispatcher handles evaluating the type, finding the RabbitMQ transport, 
-            // and routing it to "orders-queue". The Orchestrator thread is immediately freed.
             return await _dispatcher.DispatchAndReceiveAsync<WorkflowExecutionRequest, AsyncResult>(request);
+        }
+
+        public async Task<AsyncResult> StartWorkflow(string workflowName)
+        {
+            return await _dispatcher.DispatchAndReceiveAsync<string, AsyncResult>(workflowName);
         }
     }
 }

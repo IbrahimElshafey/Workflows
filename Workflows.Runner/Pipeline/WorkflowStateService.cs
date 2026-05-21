@@ -1,11 +1,6 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
-using System.Reflection;
-using FastExpressionCompiler;
-using Microsoft.Extensions.DependencyInjection;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Runner;
@@ -13,29 +8,23 @@ using Workflows.Abstraction.Runner;
 namespace Workflows.Runner.Pipeline
 {
     /// <summary>
-    /// Service for managing workflow state and creating execution contexts.
+    /// Manages workflow execution contexts and state mapping.
+    /// Reflection and instance creation are delegated to <see cref="IWorkflowHydrator"/>.
     /// </summary>
     internal class WorkflowStateService
     {
         private readonly IWorkflowRegistry _workflowRegistry;
-        private readonly IServiceProvider _serviceProvider;
-        private readonly WorkflowExecutionContext _currentContext;
+        private readonly IWorkflowHydrator _hydrator;
         private readonly Mapper _mapper;
-
-        // Cache workflow factories and invokers
-        private static readonly ConcurrentDictionary<Type, ObjectFactory> _workflowFactories = new();
-        private static readonly ConcurrentDictionary<string, Func<object, object>> _workflowInvokers = new();
 
         public WorkflowStateService(
             IWorkflowRegistry workflowRegistry,
-            IServiceProvider serviceProvider,
-            Mapper mapper,
-            WorkflowExecutionContext currentContext)
+            IWorkflowHydrator hydrator,
+            Mapper mapper)
         {
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
-            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+            _hydrator = hydrator ?? throw new ArgumentNullException(nameof(hydrator));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
-            _currentContext = currentContext ?? new WorkflowExecutionContext { };
         }
 
         /// <summary>
@@ -68,8 +57,7 @@ namespace Workflows.Runner.Pipeline
             }
 
             // Create workflow instance
-            var workflowFactory = GetOrAddWorkflowFactory(workflowTypes.WorkflowContainer);
-            var workflowInstance = (Definition.WorkflowContainer)workflowFactory(_serviceProvider, null);
+            var workflowInstance = _hydrator.CreateInstance(workflowTypes.WorkflowContainer);
 
             // Restore cancelled tokens from history
             if (state.CancellationHistory != null && state.CancellationHistory.Count > 0)
@@ -93,17 +81,13 @@ namespace Workflows.Runner.Pipeline
                     throw new InvalidOperationException($"Sub-workflow state not found for SubWorkflowWait '{parentSubWorkflowDto.WaitName}'.");
                 }
 
-                // Use sub-workflow stream by invoking the workflow method from the parent DTO's CallerName
-                var workflowInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, parentSubWorkflowDto.CallerName);
-                workflowStream = (IAsyncEnumerable<Definition.Wait>)workflowInvoker(workflowInstance);
-                // Note: We'll use the child state from StateObject.StateMachinesObjects[parentSubWorkflowDto.Id]
+                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, parentSubWorkflowDto.CallerName);
+                workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
             }
             else
             {
-                // Resume parent workflow using CallerName from the triggering wait DTO
-                var workflowInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, triggeringWaitDto.CallerName);
-                workflowStream = (IAsyncEnumerable<Definition.Wait>)workflowInvoker(workflowInstance);
-                // Note: We'll use state.StateObject directly
+                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, triggeringWaitDto.CallerName);
+                workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
             }
 
             var context = new WorkflowExecutionContext
@@ -166,39 +150,22 @@ namespace Workflows.Runner.Pipeline
         {
             if (waits == null) return null;
 
-            foreach (var wait in waits)
+            var stack = new Stack<WaitInfrastructureDto>(waits.Where(w => w != null));
+            while (stack.Count > 0)
             {
-                if (wait == null) continue;
-                if (wait.Id == id) return wait;
+                var current = stack.Pop();
+                if (current.Id == id) return current;
 
-                var child = FindWaitById(wait.ChildWaits, id);
-                if (child != null) return child;
+                if (current.ChildWaits != null)
+                {
+                    foreach (var child in current.ChildWaits)
+                    {
+                        if (child != null) stack.Push(child);
+                    }
+                }
             }
 
             return null;
-        }
-
-        private static ObjectFactory GetOrAddWorkflowFactory(Type workflowType)
-        {
-            return _workflowFactories.GetOrAdd(workflowType, type =>
-                ActivatorUtilities.CreateFactory(type, Array.Empty<Type>()));
-        }
-
-        private static Func<object, object> GetOrAddWorkflowInvoker(Type containerType, string methodName)
-        {
-            var key = $"{containerType.FullName}:{methodName}";
-            return _workflowInvokers.GetOrAdd(key, _ =>
-            {
-                var method = containerType.GetMethod(methodName,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (method == null) return null;
-
-                var instanceParam = Expression.Parameter(typeof(object), "instance");
-                var call = Expression.Call(Expression.Convert(instanceParam, containerType), method);
-                var lambda = Expression.Lambda<Func<object, object>>(
-                    Expression.Convert(call, typeof(object)), instanceParam);
-                return lambda.CompileFast();
-            });
         }
 
         /// <summary>
@@ -210,17 +177,45 @@ namespace Workflows.Runner.Pipeline
             string callerName)
         {
             if (!_workflowRegistry.Workflows.TryGetValue(workflowType, out var workflowTypes))
-            {
-                throw new InvalidOperationException($"Workflow {workflowType} not registered.");
-            }
+                throw new InvalidOperationException($"Workflow '{workflowType}' not registered.");
 
-            var workflowInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, callerName);
-            if (workflowInvoker == null)
-            {
-                throw new InvalidOperationException($"Workflow method {callerName} not found.");
-            }
+            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName);
+            return (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
+        }
 
-            return (IAsyncEnumerable<Definition.Wait>)workflowInvoker(workflowInstance);
+        /// <summary>
+        /// Creates a fresh execution context for a brand-new workflow instance.
+        /// </summary>
+        public WorkflowExecutionContext CreateNewWorkflowContext(string workflowName)
+        {
+            if (!_workflowRegistry.Workflows.TryGetValue(workflowName, out var workflowTypes))
+                throw new InvalidOperationException($"Workflow '{workflowName}' not registered.");
+
+            // Instantiate the workflow container
+            var workflowInstance = _hydrator.CreateInstance(workflowTypes.WorkflowContainer);
+
+            // Get the top-level Run stream
+            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, nameof(Definition.WorkflowContainer.Run));
+            var workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
+
+            var freshState = new WorkflowStateDto
+            {
+                Id = Guid.NewGuid(),
+                Created = DateTime.UtcNow,
+                WorkflowType = workflowName,
+                Status = Abstraction.Enums.WorkflowInstanceStatus.New,
+                StateObject = new WorkflowStateObject(),
+                Waits = new List<WaitInfrastructureDto>(),
+                CancellationHistory = new List<CancellationHistoryEntry>()
+            };
+
+            return new WorkflowExecutionContext
+            {
+                WorkflowState = freshState,
+                WorkflowInstance = workflowInstance,
+                WorkflowStream = workflowStream,
+                ContinueExecutionLoop = false
+            };
         }
     }
 }
