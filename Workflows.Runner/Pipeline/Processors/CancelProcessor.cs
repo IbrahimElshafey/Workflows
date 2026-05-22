@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
-using Workflows.Abstraction.Enums;
 using Workflows.Definition;
 
 namespace Workflows.Runner.Pipeline.Processors
@@ -85,9 +84,9 @@ namespace Workflows.Runner.Pipeline.Processors
             }
 
             // Check if wait has cancel tokens that match
-            if (wait is IPassiveWait passiveWait && passiveWait.CancelTokens != null)
+            if (wait.CancelTokens != null)
             {
-                return passiveWait.CancelTokens.Intersect(cancelledTokens).Any();
+                return wait.CancelTokens.Intersect(cancelledTokens).Any();
             }
 
             return false;

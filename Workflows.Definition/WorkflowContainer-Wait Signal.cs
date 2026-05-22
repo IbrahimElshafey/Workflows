@@ -28,7 +28,7 @@ namespace Workflows.Definition
         }
 
         protected GroupWait WaitGroup(
-            IPassiveWait[] passiveWaits,
+            Wait[] passiveWaits,
             string name = null,
             [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int inCodeLine = 0,

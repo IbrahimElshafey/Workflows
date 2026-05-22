@@ -1,5 +1,4 @@
 using System;
-using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition;
 using Workflows.Runner.ExpressionTransformers;
@@ -60,17 +59,17 @@ namespace Workflows.Runner.Pipeline.Processors
             if (yieldedWait is TimeWait)
                 return _timeWaitProcessor;
 
-            if (yieldedWait is Definition.ICommandWait commandWait)
+            if (yieldedWait.WaitType == Workflows.Primitives.WaitType.Command)
             {
                 // Determine if immediate or deferred based on execution mode
-                var commandWaitType = commandWait.GetType();
+                var commandWaitType = yieldedWait.GetType();
                 var executionModeProperty = commandWaitType.GetProperty("ExecutionMode",
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
 
                 if (executionModeProperty != null)
                 {
-                    var executionMode = executionModeProperty.GetValue(commandWait);
-                    if (executionMode != null && executionMode.ToString() == "ImmediateCommand")
+                    var executionMode = executionModeProperty.GetValue(yieldedWait);
+                    if (executionMode != null && executionMode.ToString() == "Immediate")
                     {
                         return _immediateCommandProcessor;
                     }

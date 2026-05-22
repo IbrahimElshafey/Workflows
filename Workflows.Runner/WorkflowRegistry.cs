@@ -47,7 +47,7 @@ namespace Workflows.Runner
         public IWorkflowBuilder RegisterCommand<TCommand, TResult>(
             string commandIdentifier,
             TimeSpan timeout = default,
-            CommandExecutionMode mode = CommandExecutionMode.ImmediateCommand)
+            CommandExecutionMode mode = CommandExecutionMode.Immediate)
         {
             _commands[commandIdentifier] = (typeof(TCommand), typeof(TResult));
             registrationPackage.Commands.Add(new CommandDefinition

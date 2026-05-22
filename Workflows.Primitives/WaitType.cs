@@ -8,7 +8,6 @@ namespace Workflows.Primitives
         GroupWaitWithExpression,
         SubWorkflowWait,
         Command,
-        CommandsGroup,
         Compensation
     }
 }

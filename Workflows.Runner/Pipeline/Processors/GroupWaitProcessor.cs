@@ -9,8 +9,7 @@ namespace Workflows.Runner.Pipeline.Processors
 {
     /// <summary>
     /// Handles GroupWait objects.
-    /// Unfolds composite layers and asserts that ChildWaitsRuntime contains only IPassiveWait references,
-    /// throwing structural errors if active intents are nested inside a parallel pool.
+    /// Unfolds composite layers.
     /// Returns false to suspend execution.
     /// </summary>
     internal class GroupWaitProcessor : WorkflowWaitProcessor
@@ -29,9 +28,6 @@ namespace Workflows.Runner.Pipeline.Processors
             {
                 throw new InvalidOperationException("GroupWaitProcessor requires a GroupWait.");
             }
-
-            // Validate that all children are passive waits
-            ValidateChildWaitsArePassive(groupWait);
 
             // Save ExplicitState to WorkflowStateObject.WaitStatesObjects
             SaveWaitStatesToMachineState(yieldedWait, context.WorkflowState.StateObject);
@@ -53,29 +49,6 @@ namespace Workflows.Runner.Pipeline.Processors
             return Task.FromResult(false);
         }
 
-        private void ValidateChildWaitsArePassive(GroupWait groupWait)
-        {
-            if (groupWait.ChildWaits == null || !groupWait.ChildWaits.Any())
-            {
-                return;
-            }
-
-            foreach (var child in groupWait.ChildWaits)
-            {
-                if (!(child is IPassiveWait))
-                {
-                    throw new InvalidOperationException(
-                        $"GroupWait '{groupWait.WaitName}' contains non-passive wait '{child.WaitName}' of type {child.GetType().Name}. " +
-                        "Only passive waits (SignalWait, TimeWait, DeferredCommand, SubWorkflowWait, nested GroupWait) are allowed in GroupWait.");
-                }
-
-                // Recursively validate nested groups
-                if (child is GroupWait nestedGroup)
-                {
-                    ValidateChildWaitsArePassive(nestedGroup);
-                }
-            }
-        }
 
         private List<WaitInfrastructureDto> ProcessChildWaits(
             IReadOnlyList<Wait> childWaits, 

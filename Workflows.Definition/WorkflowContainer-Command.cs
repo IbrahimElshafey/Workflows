@@ -7,35 +7,6 @@ namespace Workflows.Definition
 {
     public abstract partial class WorkflowContainer
     {
-        protected Wait ExecuteParallel(
-            ICommandWait[] commands,
-            string name = null,
-            [CallerFilePath] string callerFilePath = "",
-            [CallerLineNumber] int inCodeLine = 0,
-            [CallerMemberName] string callerName = "")
-        {
-            if (commands.Any(x => x == null))
-            {
-                throw new ArgumentNullException(
-                    $"The parallel command group named [{name}] contains a command that is null.");
-            }
-
-            var waits = commands.Cast<Wait>().ToArray();
-
-            var group = new GroupWait(
-                name ?? $"#Parallel Commands `{inCodeLine}` by `{callerName}`",
-                waits,
-                inCodeLine,
-                callerName,
-                callerFilePath)
-            {
-                WorkflowContainer = this,
-                WaitType = WaitType.CommandsGroup
-            };
-
-            return group;
-        }
-
         protected CommandBuilder<TCommand, TResult> ExecuteCommand<TCommand, TResult>(
             string commandName,
             TCommand data,
@@ -43,7 +14,7 @@ namespace Workflows.Definition
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
-            if (string.IsNullOrWhiteSpace(commandName))
+            if(string.IsNullOrWhiteSpace(commandName))
             {
                 throw new ArgumentException("Command name must not be null or empty", nameof(commandName));
             }
@@ -55,7 +26,8 @@ namespace Workflows.Definition
                 callerName,
                 callerFilePath)
             {
-                WorkflowContainer = this
+                WorkflowContainer = this,
+                WaitType = WaitType.Command
             };
 
             return new CommandBuilder<TCommand, TResult>(commandWait);
@@ -74,7 +46,8 @@ namespace Workflows.Definition
                 callerName,
                 callerFilePath)
             {
-                WorkflowContainer = this
+                WorkflowContainer = this,
+                WaitType = WaitType.Compensation
             };
         }
     }

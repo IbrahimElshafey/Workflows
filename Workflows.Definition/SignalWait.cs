@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -124,7 +123,7 @@ namespace Workflows.Definition
     /// Represents a passive wait for an external signal event. Signals do not initiate side effects, so they can be
     /// safely combined with other passive waits in group scenarios.
     /// </summary>
-    public partial class SignalWait<SignalData> : Wait, IPassiveWait, ISignalWait
+    public partial class SignalWait<SignalData> : Wait, ISignalWait
     {
         internal Delegate AfterMatchAction { get; set; }
 
@@ -149,31 +148,31 @@ namespace Workflows.Definition
 
         string ISignalWait.SignalIdentifier => SignalIdentifier;
 
-        public SignalWait<SignalData> WithState<TState>(TState state)
+        internal SignalWait<SignalData> WithState<TState>(TState state)
         {
             SetState(state);
             return this;
         }
 
-        public SignalWait<SignalData> AfterMatch<TState>(Action<SignalData, TState> afterMatchAction)
+        internal SignalWait<SignalData> AfterMatch<TState>(Action<SignalData, TState> afterMatchAction)
         {
             AfterMatchAction = afterMatchAction;
             return this;
         }
 
-        public SignalWait<SignalData> AfterMatch(Action<SignalData> afterMatchAction)
+        internal SignalWait<SignalData> AfterMatch(Action<SignalData> afterMatchAction)
         {
             AfterMatchAction = afterMatchAction;
             return this;
         }
 
-        public SignalWait<SignalData> MatchAny()
+        internal SignalWait<SignalData> MatchAny()
         {
             MatchExpression = null;
             return this;
         }
 
-        public SignalWait<SignalData> MatchIf<TState>(
+        internal SignalWait<SignalData> MatchIf<TState>(
             Expression<Func<SignalData, TState, bool>> matchExpression,
             [CallerLineNumber] int callerLineNumber = 0,
             [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
@@ -184,7 +183,7 @@ namespace Workflows.Definition
             return this;
         }
 
-        public SignalWait<SignalData> MatchIf(
+        internal SignalWait<SignalData> MatchIf(
             Expression<Func<SignalData, bool>> matchExpression,
             [CallerLineNumber] int callerLineNumber = 0,
             [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
@@ -195,18 +194,15 @@ namespace Workflows.Definition
             return this;
         }
 
-        public HashSet<string> CancelTokens { get; set; }
+         
 
-        public SignalWait<SignalData> WithCancelToken(string token)
+        internal SignalWait<SignalData> WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token))
                 return this;
-            CancelTokens ??= new HashSet<string>();
             CancelTokens.Add(token);
             return this;
         }
-
-        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
 
         private sealed class StatefulAfterMatchInvoker<TState>
         {

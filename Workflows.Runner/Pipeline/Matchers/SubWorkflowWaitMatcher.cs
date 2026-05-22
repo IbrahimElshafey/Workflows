@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
@@ -73,7 +72,8 @@ namespace Workflows.Runner.Pipeline.Matchers
             }
 
             // Execute the sub-workflow to completion using the CallerName from the DTO
-            var workflowInvoker = _templateCache.GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, subWorkflowWaitDto.CallerName);
+            var callerName = string.IsNullOrEmpty(subWorkflowWaitDto.CallerName) ? "Run" : subWorkflowWaitDto.CallerName;
+            var workflowInvoker = _templateCache.GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, callerName);
             var subWorkflowStream = (System.Collections.Generic.IAsyncEnumerable<Definition.Wait>)workflowInvoker(_context.WorkflowInstance);
             bool subWorkflowCompleted = false;
 

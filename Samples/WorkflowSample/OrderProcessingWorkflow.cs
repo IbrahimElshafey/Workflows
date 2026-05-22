@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using WorkflowSample.DataObject;
+﻿using WorkflowSample.DataObject;
 using Workflows.Definition;
 
 namespace WorkflowSample

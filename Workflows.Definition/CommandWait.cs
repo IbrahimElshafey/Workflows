@@ -40,7 +40,7 @@ namespace Workflows.Definition
             return this;
         }
 
-        public CommandBuilder<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.ImmediateCommand)
+        public CommandBuilder<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Immediate)
         {
             _wait.WithHandlerKey(key, mode);
             return this;
@@ -118,7 +118,7 @@ namespace Workflows.Definition
             return this;
         }
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.ImmediateCommand)
+        public StatefulCommandBuilder<TCommand, TResult, TState> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Immediate)
         {
             _wait.WithHandlerKey(key, mode);
             return this;
@@ -136,7 +136,7 @@ namespace Workflows.Definition
         public static implicit operator Wait(StatefulCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
     }
 
-    public class CommandWait<TCommand, TResult> : Wait, ICommandWait
+    public class CommandWait<TCommand, TResult> : Wait
     {
         internal bool IsCompensated { get; set; }
         internal TCommand CommandData { get; set; }
@@ -147,7 +147,7 @@ namespace Workflows.Definition
         internal int MaxRetryAttempts { get; set; } = 1;
         internal TimeSpan? RetryBackoff { get; set; }
         internal string HandlerKey { get; set; }
-        internal CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.ImmediateCommand;
+        internal CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.Immediate;
 
         internal CommandWait(string commandName, TCommand data, int inCodeLine, string caller, string callerFilePath)
             : base(WaitType.Command, commandName, inCodeLine, caller, callerFilePath)
@@ -155,26 +155,26 @@ namespace Workflows.Definition
             CommandData = data;
         }
 
-        public CommandWait<TCommand, TResult> WithState<TState>(TState state)
+        internal CommandWait<TCommand, TResult> WithState<TState>(TState state)
         {
             SetState(state);
             return this;
         }
 
-        public CommandWait<TCommand, TResult> OnResult<TState>(Action<TResult, TState> onSuccess)
+        internal CommandWait<TCommand, TResult> OnResult<TState>(Action<TResult, TState> onSuccess)
         {
             OnResultAction = onSuccess;
             return this;
         }
 
-        public CommandWait<TCommand, TResult> OnResult(Action<TResult> onSuccess)
+        internal CommandWait<TCommand, TResult> OnResult(Action<TResult> onSuccess)
         {
             OnResultAction = onSuccess;
             return this;
         }
 
 
-        public CommandWait<TCommand, TResult> WithRetries(int maxAttempts, TimeSpan? backoff = null)
+        internal CommandWait<TCommand, TResult> WithRetries(int maxAttempts, TimeSpan? backoff = null)
         {
             if (maxAttempts < 1)
             {
@@ -184,47 +184,43 @@ namespace Workflows.Definition
             RetryBackoff = backoff;
             return this;
         }
-        public CommandWait<TCommand, TResult> OnFailure(Func<Exception, ValueTask> failureAction)
+        internal CommandWait<TCommand, TResult> OnFailure(Func<Exception, ValueTask> failureAction)
         {
             OnFailureAction = failureAction;
             return this;
         }
 
-        public CommandWait<TCommand, TResult> OnFailure<TState>(Func<Exception, TState, ValueTask> failureAction)
+        internal CommandWait<TCommand, TResult> OnFailure<TState>(Func<Exception, TState, ValueTask> failureAction)
         {
             OnFailureAction = failureAction;
             return this;
         }
 
-        public CommandWait<TCommand, TResult> WithToken(params string[] tokens)
+        internal CommandWait<TCommand, TResult> WithToken(params string[] tokens)
         {
             CompensationTokens = tokens;
             return this;
         }
-        public CommandWait<TCommand, TResult> RegisterCompensation(Func<TResult,ValueTask> compensationAction)
+        internal CommandWait<TCommand, TResult> RegisterCompensation(Func<TResult,ValueTask> compensationAction)
         {
             CompensationAction = compensationAction;
             return this;
         }
 
-        public CommandWait<TCommand, TResult> RegisterCompensation<TState>(Func<TResult, TState, ValueTask> compensationAction)
+        internal CommandWait<TCommand, TResult> RegisterCompensation<TState>(Func<TResult, TState, ValueTask> compensationAction)
         {
             CompensationAction = compensationAction;
             return this;
         }
 
-        string ICommandWait.HandlerKey => HandlerKey;
-
-        CommandExecutionMode ICommandWait.ExecutionMode => ExecutionMode;
-
-        public CommandWait<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.ImmediateCommand)
+        internal CommandWait<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Immediate)
         {
             HandlerKey = key;
             ExecutionMode = mode;
             return this;
         }
 
-        public CommandWait<TCommand, TResult> WithExecutionMode(CommandExecutionMode mode)
+        internal CommandWait<TCommand, TResult> WithExecutionMode(CommandExecutionMode mode)
         {
             ExecutionMode = mode;
             return this;

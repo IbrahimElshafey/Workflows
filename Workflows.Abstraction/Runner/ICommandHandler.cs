@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Abstraction.Runner
 {

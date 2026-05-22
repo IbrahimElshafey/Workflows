@@ -1,11 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition;
 using Workflows.Primitives;
+using Microsoft.Extensions.DependencyInjection;
+using Workflows.Abstraction.Helpers;
 
 namespace Workflows.Runner.Tests.Infrastructure
 {
@@ -52,9 +51,15 @@ namespace Workflows.Runner.Tests.Infrastructure
 
         public IWorkflowRunner Build()
         {
-            // Note: Using RefactoredWorkflowRunner since the old WorkflowRunner has been replaced
-            // The test infrastructure needs to be updated to work with the new architecture
-            throw new NotImplementedException("WorkflowTestBuilder needs to be updated to use RefactoredWorkflowRunner and the new pipeline architecture.");
+            var services = new ServiceCollection();
+            services.AddWorkflowsRunner();
+            services.AddSingleton<IWorkflowRegistry>(_registry);
+            services.AddSingleton<IWorkflowRunnerClient>(_client);
+            services.AddSingleton<ICommandHandlerFactory>(_handlerFactory);
+            services.AddSingleton<IObjectSerializer>(_objectSerializer);
+            services.AddSingleton<IExpressionSerializer>(new TestExpressionSerializer());
+            var provider = services.BuildServiceProvider();
+            return provider.GetRequiredService<IWorkflowRunner>();
         }
 
         public WorkflowExecutionRequest CreateExecutionRequest<TWorkflow>(

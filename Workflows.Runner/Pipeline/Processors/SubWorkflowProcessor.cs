@@ -63,7 +63,7 @@ namespace Workflows.Runner.Pipeline.Processors
                 var subWorkflowDto = _mapper.MapToDto(subWorkflowWait);
 
                 // Check child wait type and handle cascading
-                if (childWait is IPassiveWait)
+                if (childWait is not CompensationWait && childWait is not SubWorkflowWait)
                 {
                     // Passive wait - map to DTO and set parent reference
                     var childDto = _mapper.MapToDto(childWait);

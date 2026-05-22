@@ -36,7 +36,7 @@ namespace Workflows.Runner.Pipeline
 
         /// <summary>
         /// Indicates whether the execution loop should continue immediately after processing a wait.
-        /// Set to true for active waits (ImmediateCommand, Compensation), false for passive waits.
+        /// Set to true for active waits (Immediate, Compensation), false for passive waits.
         /// </summary>
         public bool ContinueExecutionLoop { get; set; }
 

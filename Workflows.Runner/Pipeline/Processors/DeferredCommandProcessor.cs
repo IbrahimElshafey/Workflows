@@ -21,17 +21,16 @@ namespace Workflows.Runner.Pipeline.Processors
 
         public override Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
         {
-            var commandWait = yieldedWait as Definition.ICommandWait;
-            if (commandWait == null)
+            if (yieldedWait.WaitType != Workflows.Primitives.WaitType.Command)
             {
-                throw new InvalidOperationException("DeferredCommandProcessor requires an ICommandWait.");
+                throw new InvalidOperationException("DeferredCommandProcessor requires a CommandWait.");
             }
 
             // Get command data for serialization
-            var commandWaitType = commandWait.GetType();
+            var commandWaitType = yieldedWait.GetType();
             var commandDataProperty = commandWaitType.GetProperty("CommandData", 
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            var commandData = commandDataProperty?.GetValue(commandWait);
+            var commandData = commandDataProperty?.GetValue(yieldedWait);
 
             // Serialize command to out-of-process messaging shape
             // This would typically involve:

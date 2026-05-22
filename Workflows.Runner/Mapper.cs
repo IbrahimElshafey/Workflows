@@ -1,15 +1,10 @@
-﻿using System;
-using System.Collections.Concurrent;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-using System.Threading.Tasks;
-using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
 using Workflows.Definition;
-using Workflows.Primitives;
 
 namespace Workflows.Runner
 {
@@ -143,7 +138,7 @@ namespace Workflows.Runner
                 SubWorkflowWait subWorkflowWait => MapToDto(subWorkflowWait),
                 TimeWait timeWait => MapToDto(timeWait),
                 GroupWait groupWait => MapToDto(groupWait),
-                ICommandWait commandWait => MapToDto((dynamic)commandWait),
+                Wait w when w.WaitType == Workflows.Primitives.WaitType.Command => MapToDto((dynamic)w),
                 ISignalWait signalWait => MapToDto((dynamic)signalWait),
                 _ => throw new NotSupportedException($"Unsupported wait type [{wait.GetType().FullName}].")
             };

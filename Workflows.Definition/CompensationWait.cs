@@ -4,8 +4,8 @@ namespace Workflows.Definition
 {
     public partial class CompensationWait : Wait
     {
-        public string Token { get; }
-        public CompensationWait(
+        internal string Token { get; }
+        internal CompensationWait(
             string token,
             WaitType waitType,
             int inCodeLine,

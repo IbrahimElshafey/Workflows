@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using Workflows.Primitives;
 
@@ -22,8 +21,10 @@ namespace Workflows.Definition
             CallerFilePath = callerFilePath;
         }
 
+
         internal Guid Id { get; set; }
 
+        internal HashSet<string> CancelTokens { get; set; } = new HashSet<string>();
         internal string WaitName { get; set; }
 
         internal WaitType WaitType { get; set; }

@@ -1,7 +1,6 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
 using Workflows.Abstraction.DTOs.Waits;
-using Workflows.Abstraction.Runner;
 using Workflows.Primitives;
 
 namespace Workflows.Runner.Pipeline.Matchers
@@ -31,7 +30,7 @@ namespace Workflows.Runner.Pipeline.Matchers
             {
                 SignalWaitDto _ => _serviceProvider.GetRequiredService<SignalWaitMatcher>(),
                 TimeWaitDto _ => _serviceProvider.GetRequiredService<TimeWaitMatcher>(),
-                CommandWaitDto cmd when cmd.ExecutionMode == CommandExecutionMode.DeferredCommand 
+                CommandWaitDto cmd when cmd.ExecutionMode == CommandExecutionMode.Deferred 
                     => _serviceProvider.GetRequiredService<DeferredCommandMatcher>(),
                 GroupWaitDto _ => _serviceProvider.GetRequiredService<GroupWaitMatcher>(),
                 SubWorkflowWaitDto _ => _serviceProvider.GetRequiredService<SubWorkflowWaitMatcher>(),

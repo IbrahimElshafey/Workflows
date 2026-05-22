@@ -29,26 +29,25 @@ namespace Workflows.Runner.Pipeline.Processors
 
         public override async Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
         {
-            var commandWait = yieldedWait as Definition.ICommandWait;
-            if (commandWait == null)
+            if (yieldedWait.WaitType != Workflows.Primitives.WaitType.Command)
             {
-                throw new InvalidOperationException("ImmediateCommandProcessor requires an ICommandWait.");
+                throw new InvalidOperationException("ImmediateCommandProcessor requires a CommandWait.");
             }
 
             // Get or create compiled accessor for this command wait type
-            var accessor = GetOrCreateAccessor(commandWait.GetType());
+            var accessor = GetOrCreateAccessor(yieldedWait.GetType());
 
-            var commandData = accessor.GetCommandData(commandWait);
-            var onResultAction = accessor.GetOnResultAction(commandWait);
-            var onFailureAction = accessor.GetOnFailureAction(commandWait);
-            var compensationAction = accessor.GetCompensationAction(commandWait);
-            var tokens = accessor.GetTokens(commandWait);
-            var explicitState = accessor.GetExplicitState(commandWait);
+            var commandData = accessor.GetCommandData(yieldedWait);
+            var onResultAction = accessor.GetOnResultAction(yieldedWait);
+            var onFailureAction = accessor.GetOnFailureAction(yieldedWait);
+            var compensationAction = accessor.GetCompensationAction(yieldedWait);
+            var tokens = accessor.GetTokens(yieldedWait);
+            var explicitState = accessor.GetExplicitState(yieldedWait);
 
             try
             {
                 // Execute command through handler factory
-                var handler = _commandHandlerFactory.GetHandler(commandWait.GetType().Name);
+                var handler = _commandHandlerFactory.GetHandler(yieldedWait.GetType().Name);
                 object result = null;
 
                 if (handler != null)

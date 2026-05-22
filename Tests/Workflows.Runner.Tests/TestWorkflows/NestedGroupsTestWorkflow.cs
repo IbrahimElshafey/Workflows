@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Workflows.Definition;
 using Workflows.Runner.Tests.TestData;
 

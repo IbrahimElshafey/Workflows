@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using Workflows.Primitives;
 
@@ -14,7 +13,7 @@ namespace Workflows.Definition.Registration
 
         IWorkflowBuilder RegisterSignal<TSignal>(string signalIdentifier);
 
-        IWorkflowBuilder RegisterCommand<TCommand, TResult>(string commandIdentifier, TimeSpan timeout = default, CommandExecutionMode mode = CommandExecutionMode.ImmediateCommand);
+        IWorkflowBuilder RegisterCommand<TCommand, TResult>(string commandIdentifier, TimeSpan timeout = default, CommandExecutionMode mode = CommandExecutionMode.Immediate);
 
         IWorkflowBuilder RegisterRunner(string runnerName);
         IWorkflowBuilder SettingsSection(string settingsSection);

@@ -81,12 +81,14 @@ namespace Workflows.Runner.Pipeline
                     throw new InvalidOperationException($"Sub-workflow state not found for SubWorkflowWait '{parentSubWorkflowDto.WaitName}'.");
                 }
 
-                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, parentSubWorkflowDto.CallerName);
+                var callerName = string.IsNullOrEmpty(parentSubWorkflowDto.CallerName) ? "Run" : parentSubWorkflowDto.CallerName;
+                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName);
                 workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
             }
             else
             {
-                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, triggeringWaitDto.CallerName);
+                var callerName = string.IsNullOrEmpty(triggeringWaitDto.CallerName) ? "Run" : triggeringWaitDto.CallerName;
+                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName);
                 workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
             }
 
@@ -139,7 +141,7 @@ namespace Workflows.Runner.Pipeline
                 new
                 {
                     NewWaitsIds = state.Waits.Select(w => w.Id).ToList(),
-                    ConsumedWaitsIds = context.ConsumedWaitsIds
+                    context.ConsumedWaitsIds
                 },
                 "Accepted",
                 "Workflow advanced.",
@@ -179,7 +181,7 @@ namespace Workflows.Runner.Pipeline
             if (!_workflowRegistry.Workflows.TryGetValue(workflowType, out var workflowTypes))
                 throw new InvalidOperationException($"Workflow '{workflowType}' not registered.");
 
-            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName);
+            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, string.IsNullOrEmpty(callerName) ? "Run" : callerName);
             return (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
         }
 

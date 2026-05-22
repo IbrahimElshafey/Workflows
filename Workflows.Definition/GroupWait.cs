@@ -10,7 +10,7 @@ namespace Workflows.Definition
     /// Represents a composite group of passive waits that can be combined
     /// using MatchAll(), MatchAny(), or custom MatchIf() logic.
     /// </summary>
-    public class GroupWait : Wait, IPassiveWait
+    public class GroupWait : Wait
     {
 
         internal GroupWait(string waitName, IReadOnlyList<Wait> childWaits, int inCodeLine, string callerName, string callerFilePath)
@@ -18,7 +18,6 @@ namespace Workflows.Definition
         {
             ChildWaits = childWaits?.ToList() ?? new List<Wait>();
             WaitType = WaitType.GroupWaitAll; // Default to MatchAll, can be changed by caller
-            CancelTokens.Add($"GroupCancel_{Id}"); // Add waitName as a default cancel token for the group
         }
 
         internal Func<bool> GroupMatchFilter { get; set; }
@@ -68,17 +67,13 @@ namespace Workflows.Definition
             WaitType = WaitType.GroupWaitFirst;
             return this;
         }
-        public HashSet<string> CancelTokens { get; set; } = new HashSet<string>();
 
         public GroupWait WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token)) return this;
-            CancelTokens ??= new HashSet<string>();
             CancelTokens.Add(token);
             return this;
         }
-
-        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
 
         private sealed class StatefulGroupMatchInvoker<TState>
         {

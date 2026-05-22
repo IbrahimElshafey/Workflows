@@ -1,5 +1,4 @@
 using System;
-using Workflows.Abstraction.DTOs.Waits;
 
 namespace Workflows.Abstraction.DTOs
 {
