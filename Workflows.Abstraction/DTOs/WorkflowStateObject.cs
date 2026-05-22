@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Workflows.Abstraction.DTOs
@@ -26,7 +26,7 @@ namespace Workflows.Abstraction.DTOs
         /// <summary>
         /// The extracted state machine local variables for workflow methods (one or more IAsyncEnumrable<Wait>)
         /// </summary>
-        public Dictionary<Guid, object> StateMachinesObjects { get; set; } = new();
+        public Dictionary<string, object> StateMachinesObjects { get; set; } = new();
 
         /// <summary>
         /// State object passed to .WithState(...) method

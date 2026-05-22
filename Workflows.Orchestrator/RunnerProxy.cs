@@ -1,4 +1,4 @@
-﻿using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Runner;
 using Workflows.Communication.Abstraction;
 
@@ -18,9 +18,10 @@ namespace Workflows.Orchestrator
             return await _dispatcher.DispatchAndReceiveAsync<WorkflowExecutionRequest, AsyncResult>(request);
         }
 
-        public async Task<AsyncResult> StartWorkflow(string workflowName)
+        public async Task<AsyncResult> StartWorkflow(string workflowName, object input = null)
         {
-            return await _dispatcher.DispatchAndReceiveAsync<string, AsyncResult>(workflowName);
+            var request = new StartWorkflowRequest { WorkflowName = workflowName, Input = input };
+            return await _dispatcher.DispatchAndReceiveAsync<StartWorkflowRequest, AsyncResult>(request);
         }
     }
 }

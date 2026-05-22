@@ -19,3 +19,4 @@ using System.Runtime.InteropServices;
 [assembly: InternalsVisibleTo("Workflows.Runner")]
 [assembly: InternalsVisibleTo("Workflows.Orchestrator")]
 [assembly: InternalsVisibleTo("WorkflowSample")]
+[assembly: InternalsVisibleTo("Workflows.Runner.Tests")]

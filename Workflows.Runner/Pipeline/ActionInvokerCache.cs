@@ -80,6 +80,17 @@ namespace Workflows.Runner.Pipeline
                     call = Expression.Call(Expression.Convert(actionParam, type), method,
                         Expression.Convert(resultParam, parameters[0].ParameterType));
                 }
+                else if (parameters.Length == 2)
+                {
+                    var convertStateMethod = typeof(StateConverter).GetMethod(
+                        nameof(StateConverter.ConvertState), 
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    call = Expression.Call(Expression.Convert(actionParam, type), method,
+                        Expression.Convert(resultParam, parameters[0].ParameterType),
+                        Expression.Convert(
+                            Expression.Call(convertStateMethod!, stateParam, Expression.Constant(parameters[1].ParameterType)),
+                            parameters[1].ParameterType));
+                }
                 else
                 {
                     return null;
@@ -116,6 +127,17 @@ namespace Workflows.Runner.Pipeline
                     call = Expression.Call(Expression.Convert(actionParam, type), method,
                         Expression.Convert(exceptionParam, parameters[0].ParameterType));
                 }
+                else if (parameters.Length == 2)
+                {
+                    var convertStateMethod = typeof(StateConverter).GetMethod(
+                        nameof(StateConverter.ConvertState), 
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    call = Expression.Call(Expression.Convert(actionParam, type), method,
+                        Expression.Convert(exceptionParam, parameters[0].ParameterType),
+                        Expression.Convert(
+                            Expression.Call(convertStateMethod!, stateParam, Expression.Constant(parameters[1].ParameterType)),
+                            parameters[1].ParameterType));
+                }
                 else
                 {
                     return null;
@@ -151,6 +173,17 @@ namespace Workflows.Runner.Pipeline
                 {
                     call = Expression.Call(Expression.Convert(actionParam, type), method,
                         Expression.Convert(resultParam, parameters[0].ParameterType));
+                }
+                else if (parameters.Length == 2)
+                {
+                    var convertStateMethod = typeof(StateConverter).GetMethod(
+                        nameof(StateConverter.ConvertState), 
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    call = Expression.Call(Expression.Convert(actionParam, type), method,
+                        Expression.Convert(resultParam, parameters[0].ParameterType),
+                        Expression.Convert(
+                            Expression.Call(convertStateMethod!, stateParam, Expression.Constant(parameters[1].ParameterType)),
+                            parameters[1].ParameterType));
                 }
                 else
                 {

@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\Workflows.Runner\Workflows.Runner.csproj" />
     <ProjectReference Include="..\..\Workflows.Definition\Workflows.Definition.csproj" />
     <ProjectReference Include="..\..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
+    <ProjectReference Include="..\..\Hosting\Workflows.Hosting.InProcess\Workflows.Hosting.InProcess.csproj" />
   </ItemGroup>
 
 </Project>

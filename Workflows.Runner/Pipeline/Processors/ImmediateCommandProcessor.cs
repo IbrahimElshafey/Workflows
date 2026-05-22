@@ -47,7 +47,8 @@ namespace Workflows.Runner.Pipeline.Processors
             try
             {
                 // Execute command through handler factory
-                var handler = _commandHandlerFactory.GetHandler(yieldedWait.GetType().Name);
+                var handlerKey = accessor.GetHandlerKey(yieldedWait) ?? yieldedWait.WaitName;
+                var handler = _commandHandlerFactory.GetHandler(handlerKey);
                 object result = null;
 
                 if (handler != null)
@@ -124,7 +125,7 @@ namespace Workflows.Runner.Pipeline.Processors
 
         private List<CommandHistoryEntry> BuildCommandHistory(WorkflowStateObject stateObject)
         {
-            var commandHistoryKey = new Guid("00000000-0000-0000-0000-000000000001");
+            var commandHistoryKey = "00000000-0000-0000-0000-000000000001";
 
             if (stateObject.StateMachinesObjects?.TryGetValue(commandHistoryKey, out var historyObj) == true)
             {
@@ -136,8 +137,8 @@ namespace Workflows.Runner.Pipeline.Processors
 
         private void UpdateCommandHistoryInState(WorkflowStateObject stateObject, List<CommandHistoryEntry> commandHistory)
         {
-            stateObject.StateMachinesObjects ??= new Dictionary<Guid, object>();
-            var commandHistoryKey = new Guid("00000000-0000-0000-0000-000000000001");
+            stateObject.StateMachinesObjects ??= new Dictionary<string, object>();
+            var commandHistoryKey = "00000000-0000-0000-0000-000000000001";
             stateObject.StateMachinesObjects[commandHistoryKey] = commandHistory;
         }
 
@@ -180,6 +181,7 @@ namespace Workflows.Runner.Pipeline.Processors
             private readonly Func<object, object> _compensationActionGetter;
             private readonly Func<object, List<string>> _tokensGetter;
             private readonly Func<object, object> _explicitStateGetter;
+            private readonly Func<object, string> _handlerKeyGetter;
 
             public CommandWaitAccessor(Type commandWaitType)
             {
@@ -192,7 +194,17 @@ namespace Workflows.Runner.Pipeline.Processors
                     BindingFlags.Instance | BindingFlags.NonPublic);
                 _compensationActionGetter = CompilePropertyGetter<object>(commandWaitType, "CompensationAction", 
                     BindingFlags.Instance | BindingFlags.NonPublic);
-                _tokensGetter = CompilePropertyGetter<List<string>>(commandWaitType, "Tokens", 
+                var compTokensGetter = CompilePropertyGetter<string[]>(commandWaitType, "CompensationTokens", 
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (compTokensGetter != null)
+                {
+                    _tokensGetter = instance =>
+                    {
+                        var arr = compTokensGetter(instance);
+                        return arr != null ? new List<string>(arr) : new List<string>();
+                    };
+                }
+                _handlerKeyGetter = CompilePropertyGetter<string>(commandWaitType, "HandlerKey", 
                     BindingFlags.Instance | BindingFlags.NonPublic);
 
                 // ExplicitState is on the base Wait type
@@ -206,6 +218,7 @@ namespace Workflows.Runner.Pipeline.Processors
             public object GetCompensationAction(object commandWait) => _compensationActionGetter?.Invoke(commandWait);
             public List<string> GetTokens(object commandWait) => _tokensGetter?.Invoke(commandWait);
             public object GetExplicitState(object commandWait) => _explicitStateGetter?.Invoke(commandWait);
+            public string GetHandlerKey(object commandWait) => _handlerKeyGetter?.Invoke(commandWait);
 
             private static Func<object, TResult> CompilePropertyGetter<TResult>(Type type, string propertyName, BindingFlags bindingFlags)
             {

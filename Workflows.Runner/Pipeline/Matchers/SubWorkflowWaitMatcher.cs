@@ -58,11 +58,11 @@ namespace Workflows.Runner.Pipeline.Matchers
             }
 
             // Get or create child state
-            if (!_context.WorkflowState.StateObject.StateMachinesObjects.TryGetValue(subWorkflowWaitDto.Id, out var storedChildState))
+            if (!_context.WorkflowState.StateObject.StateMachinesObjects.TryGetValue(subWorkflowWaitDto.Id.ToString(), out var storedChildState))
             {
                 // First time - create new child state
                 storedChildState = new WorkflowStateObject();
-                _context.WorkflowState.StateObject.StateMachinesObjects[subWorkflowWaitDto.Id] = storedChildState;
+                _context.WorkflowState.StateObject.StateMachinesObjects[subWorkflowWaitDto.Id.ToString()] = storedChildState;
             }
 
             var childState = storedChildState as WorkflowStateObject;
@@ -106,7 +106,7 @@ namespace Workflows.Runner.Pipeline.Matchers
                 {
                     // Sub-workflow suspended on a passive wait
                     // Store child state and exit
-                    _context.WorkflowState.StateObject.StateMachinesObjects[subWorkflowWaitDto.Id] = childState;
+                    _context.WorkflowState.StateObject.StateMachinesObjects[subWorkflowWaitDto.Id.ToString()] = childState;
                     return false; // Don't proceed - sub-workflow is waiting
                 }
             }
@@ -115,7 +115,7 @@ namespace Workflows.Runner.Pipeline.Matchers
             subWorkflowWaitDto.Status = WaitStatus.Completed;
 
             // Remove child state since sub-workflow is done
-            _context.WorkflowState.StateObject.StateMachinesObjects.Remove(subWorkflowWaitDto.Id);
+            _context.WorkflowState.StateObject.StateMachinesObjects.Remove(subWorkflowWaitDto.Id.ToString());
 
             // Propagate matching to parent wait if present (e.g., GroupWait containing this sub-workflow)
             if (subWorkflowWaitDto.ParentWaitId.HasValue)

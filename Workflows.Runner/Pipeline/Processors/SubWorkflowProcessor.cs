@@ -50,8 +50,8 @@ namespace Workflows.Runner.Pipeline.Processors
                 var childWait = advancerResult.Wait;
 
                 // Store the child state in the parent's state machine objects
-                context.WorkflowState.StateObject.StateMachinesObjects ??= new System.Collections.Generic.Dictionary<System.Guid, object>();
-                context.WorkflowState.StateObject.StateMachinesObjects[subWorkflowWait.Id] = advancerResult.State;
+                context.WorkflowState.StateObject.StateMachinesObjects ??= new System.Collections.Generic.Dictionary<string, object>();
+                context.WorkflowState.StateObject.StateMachinesObjects[subWorkflowWait.Id.ToString()] = advancerResult.State;
 
                 // Save parent sub-workflow wait states
                 SaveWaitStatesToMachineState(subWorkflowWait, context.WorkflowState.StateObject);

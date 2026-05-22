@@ -27,7 +27,7 @@ namespace Workflows.Runner.Tests
             {
                 StateIndex = -1,
                 Instance = workflowInstance,
-                StateMachinesObjects = new Dictionary<Guid, object>(),
+                StateMachinesObjects = new Dictionary<string, object>(),
                 WaitStatesObjects = new Dictionary<Guid, object>()
             };
 

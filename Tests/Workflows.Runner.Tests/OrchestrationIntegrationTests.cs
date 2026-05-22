@@ -1,0 +1,273 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using FluentAssertions;
+using Newtonsoft.Json.Schema.Generation;
+using Xunit;
+using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.DTOs.Registration;
+using Workflows.Abstraction.DTOs.Waits;
+using Workflows.Abstraction.Enums;
+using Workflows.Abstraction.Helpers;
+using Workflows.Abstraction.Orchestrator;
+using Workflows.Abstraction.Persistence;
+using Workflows.Abstraction.Runner;
+using Workflows.Definition;
+using Workflows.Definition.Registration;
+using Workflows.Hosting.InProcess;
+using Workflows.Orchestrator;
+using Workflows.Orchestrator.Data.EF;
+using Workflows.Primitives;
+using Workflows.Runner;
+using Workflows.Runner.Tests.TestData;
+using Workflows.Runner.Tests.TestWorkflows;
+using Workflows.Runner.Tests.Infrastructure;
+using Workflows.Shared;
+
+namespace Workflows.Runner.Tests
+{
+    public class MockSchemaGenerator : JSchemaGenerator
+    {
+        public override Newtonsoft.Json.Schema.JSchema Generate(Type type)
+        {
+            return Newtonsoft.Json.Schema.JSchema.Parse("{}");
+        }
+
+        public override Newtonsoft.Json.Schema.JSchema Generate(Type type, bool rootSchemaNullable)
+        {
+            return Newtonsoft.Json.Schema.JSchema.Parse("{}");
+        }
+    }
+
+    public class OrchestrationIntegrationTests
+    {
+        private ServiceProvider CreateServiceProvider(string dbName, out SqliteConnection connection)
+        {
+            var services = new ServiceCollection();
+
+            // 1. Shared / Common / Runner dependencies
+            services.AddWorkflowsShared();
+            services.AddWorkflowsRunner();
+            services.AddSingleton<JSchemaGenerator, MockSchemaGenerator>();
+            services.AddSingleton<ICommandHandlerFactory, InMemoryCommandHandlerFactory>();
+
+            // 2. In-Process Host dependencies
+            var connectionString = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+            connection = new SqliteConnection(connectionString);
+            connection.Open();
+
+            services.AddWorkflowsInProcessHost(connectionString);
+
+            var provider = services.BuildServiceProvider();
+
+            // Ensure DB schema is created
+            using (var scope = provider.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+                context.Database.EnsureCreated();
+            }
+
+            return provider;
+        }
+
+        private async Task SyncDefinitions(ServiceProvider provider)
+        {
+            var registry = provider.GetRequiredService<IWorkflowBuilder>();
+            registry.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", "1.0");
+            registry.RegisterWorkflow<ShortDelayWorkflow>("ShortDelayWorkflow", "1.0");
+            registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
+            registry.RegisterSignal<PaymentConfirmedSignal>("Payment1");
+            registry.RegisterSignal<PaymentConfirmedSignal>("Payment2");
+            registry.RegisterSignal<ShipmentSignal>("FinalShipment");
+            registry.RegisterCommand<ProcessPaymentCommand, ProcessPaymentResult>("ProcessPayment", default, CommandExecutionMode.Deferred);
+
+            // Extract the registration package using reflection
+            var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
+            var package = (BulkRegistrationPackage)packageField!.GetValue(registry)!;
+
+            // Sync definitions to EF DB
+            using (var scope = provider.CreateScope())
+            {
+                var defRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
+                var syncResult = await defRepo.SyncDefinitionsAsync(package);
+                syncResult.Success.Should().BeTrue();
+            }
+        }
+
+        [Fact]
+        public async Task FullWorkflowLifecycle_ShouldPersist_Hydrate_Prune_AndSucceed()
+        {
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            using var provider = CreateServiceProvider(dbName, out var connection);
+            await SyncDefinitions(provider);
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+            var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+
+            // Step 1: Start Workflow with reflection-mapped input
+            var instanceId = await orchestrator.StartWorkflowAsync("FirstWaitTest", "1.0", new { ResumeCount = 7 });
+            instanceId.Should().NotBeEmpty();
+
+            dbContext.ChangeTracker.Clear();
+
+            // Verify state is persisted in DB
+            var dbState = await dbContext.WorkflowStates.FindAsync(instanceId);
+            dbState.Should().NotBeNull();
+            dbState!.Status.Should().Be((int)WorkflowInstanceStatus.Running);
+
+            // Hydrate state and verify the input was mapped correctly via reflection
+            var state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            var instance = state!.StateObject.Instance as FirstWaitAndResumeWorkflow;
+            instance.Should().NotBeNull();
+            instance!.ResumeCount.Should().Be(7);
+            state.Waits.Should().HaveCount(1);
+            state.Waits.First().Should().BeOfType<SignalWaitDto>();
+            state.Waits.First().WaitName.Should().Be("First wait");
+
+            // Step 2: Send Signal to advance past First wait
+            await orchestrator.ProcessSignalAsync("OrderReceived", new OrderReceivedSignal
+            {
+                OrderId = "ORD-999",
+                Amount = 1500
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Verify first wait is deleted and second wait (Command) is created
+            state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            state!.Waits.Should().HaveCount(1);
+            state.Waits.First().Should().BeOfType<CommandWaitDto>();
+            var commandWait = (CommandWaitDto)state.Waits.First();
+            commandWait.WaitName.Should().Be("ProcessPayment");
+
+            // Verify the local state of ResumeCount incremented in the runner
+            var instanceStep2 = state.StateObject.Instance as FirstWaitAndResumeWorkflow;
+            instanceStep2!.ResumeCount.Should().Be(8, because: $"ExecutionLog: {string.Join(" | ", instanceStep2.ExecutionLog)}");
+
+            // Verify DB doesn't have the old wait
+            var oldWaitInDb = await dbContext.WaitRecords.FindAsync(state.Waits.First().Id);
+            // wait we just created IS in DB
+            oldWaitInDb.Should().NotBeNull();
+            // wait we completed is NOT in DB
+            var firstWaitRecord = await dbContext.WaitRecords.FirstOrDefaultAsync(w => w.WaitName == "First wait");
+            firstWaitRecord.Should().BeNull();
+
+            // Step 3: Send Command Result to advance past second wait to Group wait
+            await orchestrator.ProcessCommandResultAsync(commandWait.Id, new ProcessPaymentResult
+            {
+                Success = true,
+                TransactionId = "TX-ABCD"
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Verify we advanced to GroupWaitDto containing two children
+            state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            state!.Waits.Should().HaveCount(1);
+            state.Waits.First().Should().BeOfType<GroupWaitDto>();
+            var groupWait = (GroupWaitDto)state.Waits.First();
+            groupWait.WaitName.Should().Be("PaymentGroup");
+            groupWait.ChildWaits.Should().HaveCount(2);
+            groupWait.ChildWaits[0].ParentWaitId.Should().Be(groupWait.Id);
+            groupWait.ChildWaits[1].ParentWaitId.Should().Be(groupWait.Id);
+
+            var instanceStep3 = state.StateObject.Instance as FirstWaitAndResumeWorkflow;
+            instanceStep3!.ResumeCount.Should().Be(9);
+
+            // Step 4: Fire matching signal for MatchAny group wait and check sibling pruning
+            await orchestrator.ProcessSignalAsync("Payment1", new PaymentConfirmedSignal
+            {
+                TransactionId = "TX-CONFIRMED-1"
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Verify group wait and child waits are removed from the DB, and we advanced to delay wait
+            state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            state!.Waits.Should().HaveCount(1);
+            state.Waits.First().Should().BeOfType<TimeWaitDto>();
+            var timeWait = (TimeWaitDto)state.Waits.First();
+            timeWait.WaitName.Should().Be("DelayWait");
+
+            var instanceStep4 = state.StateObject.Instance as FirstWaitAndResumeWorkflow;
+            instanceStep4!.ResumeCount.Should().Be(10);
+
+            // Verify all group wait records were pruned from the database
+            var hasGroupWaitRecords = await dbContext.WaitRecords.AnyAsync(w =>
+                w.WorkflowInstanceId == instanceId &&
+                (w.WaitName == "PaymentGroup" || w.WaitName == "Payment option 1" || w.WaitName == "Payment option 2"));
+            hasGroupWaitRecords.Should().BeFalse();
+
+            connection.Close();
+        }
+
+        [Fact]
+        public async Task Scheduler_ShouldFireBackgroundTimer_AndResumeWorkflow()
+        {
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            using var provider = CreateServiceProvider(dbName, out var connection);
+            await SyncDefinitions(provider);
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var scheduler = mainScope.ServiceProvider.GetRequiredService<Scheduler>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+
+            ShortDelayWorkflow.Completed = false;
+
+            // Start the background scheduler service
+            await scheduler.StartAsync(default);
+
+            try
+            {
+                // Start the ShortDelayWorkflow
+                var instanceId = await orchestrator.StartWorkflowAsync("ShortDelayWorkflow", "1.0", null);
+                instanceId.Should().NotBeEmpty();
+
+                // Wait for the scheduler loop to process the 50ms timer wait
+                int attempts = 0;
+                while (!ShortDelayWorkflow.Completed && attempts < 20)
+                {
+                    await Task.Delay(100);
+                    attempts++;
+                }
+
+                ShortDelayWorkflow.Completed.Should().BeTrue();
+
+                // Hydrate from database and verify status is Completed
+                var state = await workflowStore.GetInstanceStateAsync(instanceId);
+                state.Should().NotBeNull();
+                state!.Status.Should().Be(WorkflowInstanceStatus.Completed);
+                state.Waits.Should().BeEmpty();
+            }
+            finally
+            {
+                await scheduler.StopAsync(default);
+                connection.Close();
+            }
+        }
+    }
+
+    public sealed class ShortDelayWorkflow : WorkflowContainer
+    {
+        public static bool Completed { get; set; }
+
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitDelay(TimeSpan.FromMilliseconds(50), "ShortDelay", "50ms delay");
+            Completed = true;
+        }
+    }
+}

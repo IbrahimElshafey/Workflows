@@ -2,6 +2,7 @@ using FluentAssertions;
 using Workflows.Abstraction.DTOs;
 using Workflows.Runner.Tests.Infrastructure;
 using Workflows.Runner.Tests.TestWorkflows;
+using Workflows.Definition;
 using Xunit;
 
 namespace Workflows.Runner.Tests
@@ -27,7 +28,7 @@ namespace Workflows.Runner.Tests
             {
                 StateIndex = -1,
                 Instance = workflowInstance,
-                StateMachinesObjects = new Dictionary<Guid, object>(),
+                StateMachinesObjects = new Dictionary<string, object>(),
                 WaitStatesObjects = new Dictionary<Guid, object>()
             };
 
@@ -52,12 +53,7 @@ namespace Workflows.Runner.Tests
             var workflow = new SubWorkflowTestWorkflow();
 
             // Act - Test DSL construction only
-            var enumerator = workflow.Run().GetAsyncEnumerator();
-
-            while (await enumerator.MoveNextAsync())
-            {
-                var wait = enumerator.Current;
-            }
+            await ConsumeWorkflowAsync(workflow.Run());
 
             // Assert - DSL allows parent-child execution flow
             workflow.ExecutionLog.Should().ContainInOrder(
@@ -75,12 +71,7 @@ namespace Workflows.Runner.Tests
             var workflow = new SubWorkflowTestWorkflow();
 
             // Act - Test DSL construction only
-            var enumerator = workflow.Run().GetAsyncEnumerator();
-
-            while (await enumerator.MoveNextAsync())
-            {
-                var wait = enumerator.Current;
-            }
+            await ConsumeWorkflowAsync(workflow.Run());
 
             // Assert
             workflow.ExecutionLog.Should().Contain("SubWorkflow1: Start");
@@ -95,12 +86,7 @@ namespace Workflows.Runner.Tests
             var workflow = new SubWorkflowTestWorkflow();
 
             // Act - Test DSL construction only
-            var enumerator = workflow.Run().GetAsyncEnumerator();
-
-            while (await enumerator.MoveNextAsync())
-            {
-                var wait = enumerator.Current;
-            }
+            await ConsumeWorkflowAsync(workflow.Run());
 
             // Assert
             workflow.ExecutionLog.Should().Contain("SubWorkflow2: Start");
@@ -117,6 +103,19 @@ namespace Workflows.Runner.Tests
             workflow.Should().NotBeNull();
             workflow.ExecutionLog.Should().NotBeNull();
             // NOTE: This validates DSL authoring capability
+        }
+
+        private static async Task ConsumeWorkflowAsync(IAsyncEnumerable<Wait> flow)
+        {
+            var enumerator = flow.GetAsyncEnumerator();
+            while (await enumerator.MoveNextAsync())
+            {
+                var wait = enumerator.Current;
+                if (wait is SubWorkflowWait subWait && subWait.Runner != null)
+                {
+                    await ConsumeWorkflowAsync(subWait.Runner);
+                }
+            }
         }
     }
 }

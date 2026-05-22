@@ -1,12 +1,14 @@
 using Workflows.Definition;
 using Workflows.Runner.Tests.TestData;
+using Workflows.Abstraction.Enums;
+using Workflows.Primitives;
 
 namespace Workflows.Runner.Tests.TestWorkflows
 {
     /// <summary>
     /// Test workflow for first wait and resume scenarios
     /// </summary>
-    public class FirstWaitAndResumeWorkflow : WorkflowContainer
+    public sealed class FirstWaitAndResumeWorkflow : WorkflowContainer
     {
         public List<string> ExecutionLog { get; } = new();
         public int ResumeCount { get; set; }
@@ -31,6 +33,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
             yield return ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPayment",
                 new ProcessPaymentCommand { OrderId = "ORD-001", Amount = 100 })
+                .WithExecutionMode(CommandExecutionMode.Deferred)
                 .WithState("PaymentState")
                 .OnResult((result, state) =>
                 {

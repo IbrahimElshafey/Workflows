@@ -17,7 +17,6 @@ namespace Workflows.Runner.Pipeline.Processors
     {
         private readonly Mapper _mapper;
         private readonly MatchExpressionTransformer _matchExpressionTransformer;
-        private static readonly ConcurrentDictionary<string, SignalTemplateCacheRecord> _signalTemplateCache = new();
 
         public SignalWaitProcessor(Mapper mapper, MatchExpressionTransformer matchExpressionTransformer)
         {
@@ -46,7 +45,7 @@ namespace Workflows.Runner.Pipeline.Processors
                 var hashKey = signalWaitDto.TemplateHashKey.ToString();
 
                 // Check if we already have this template cached
-                if (!string.IsNullOrEmpty(hashKey) && !_signalTemplateCache.ContainsKey(hashKey))
+                if (!string.IsNullOrEmpty(hashKey) && !Matchers.SignalWaitMatcher.SignalCache.ContainsKey(hashKey))
                 {
                     // Cache record for template-based matching
                     // The actual match compilation happens in SignalWaitMatcher during evaluation
@@ -55,7 +54,7 @@ namespace Workflows.Runner.Pipeline.Processors
                         // CompiledMatchDelegate will be set during matcher evaluation
                     };
 
-                    _signalTemplateCache.TryAdd(hashKey, cacheRecord);
+                    Matchers.SignalWaitMatcher.SignalCache.TryAdd(hashKey, cacheRecord);
                 }
             }
 

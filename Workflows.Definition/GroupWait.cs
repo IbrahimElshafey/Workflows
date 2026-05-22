@@ -20,6 +20,10 @@ namespace Workflows.Definition
             WaitType = WaitType.GroupWaitAll; // Default to MatchAll, can be changed by caller
         }
 
+        internal GroupWait()
+        {
+        }
+
         internal Func<bool> GroupMatchFilter { get; set; }
 
 

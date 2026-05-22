@@ -1,4 +1,4 @@
-﻿using Nuqleon.Json.Serialization;
+using Nuqleon.Json.Serialization;
 using System;
 using System.Linq.Expressions;
 using System.Linq.Expressions.Bonsai.Serialization;
@@ -31,12 +31,20 @@ namespace Workflows.Shared.Serialization
 
         public object Serialize(LambdaExpression expression)
         {
-            throw new NotImplementedException();
+            if (expression == null) return null;
+            var slim = Lift(expression);
+            return base.Serialize(slim);
         }
 
         public LambdaExpression Deserialize(object serializedExpression)
         {
-            throw new NotImplementedException();
+            if (serializedExpression == null) return null;
+            if (serializedExpression is string json)
+            {
+                var slim = base.Deserialize(json);
+                return (LambdaExpression)Reduce(slim);
+            }
+            throw new ArgumentException("Serialized expression must be a string", nameof(serializedExpression));
         }
     }
 }

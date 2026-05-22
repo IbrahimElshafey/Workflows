@@ -20,6 +20,7 @@ namespace Workflows.Runner
         private readonly CancelProcessor _cancelHandler;
         private readonly StateMachineAdvancer _stateMachineAdvancer;
         private readonly IWorkflowRunnerClient _resultSender;
+        private readonly WorkflowExecutionContext _context;
 
         public RefactoredWorkflowRunner(
             WorkflowStateService stateService,
@@ -27,7 +28,8 @@ namespace Workflows.Runner
             ProcessorFactory processorFactory,
             CancelProcessor cancelHandler,
             StateMachineAdvancer stateMachineAdvancer,
-            IWorkflowRunnerClient resultSender)
+            IWorkflowRunnerClient resultSender,
+            WorkflowExecutionContext context)
         {
             _stateService = stateService ?? throw new ArgumentNullException(nameof(stateService));
             _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
@@ -35,33 +37,39 @@ namespace Workflows.Runner
             _cancelHandler = cancelHandler ?? throw new ArgumentNullException(nameof(cancelHandler));
             _stateMachineAdvancer = stateMachineAdvancer ?? throw new ArgumentNullException(nameof(stateMachineAdvancer));
             _resultSender = resultSender ?? throw new ArgumentNullException(nameof(resultSender));
+            _context = context ?? throw new ArgumentNullException(nameof(context));
         }
 
         public async Task<AsyncResult> RunWorkflowAsync(WorkflowExecutionRequest incomingContext)
         {
             // 1. Isolate and deserialize state into a clean context
-            var context = _stateService.CreateExecutionContext(incomingContext);
+            _stateService.PopulateExecutionContext(_context, incomingContext);
 
-            // Get the triggering wait DTO
-            var triggeringWaitDto = _stateService.FindWaitById(
-                context.WorkflowState.Waits, 
-                context.TriggeringWaitId);
-
-            if (triggeringWaitDto == null)
+            bool shouldProceed = true;
+            if (_context.TriggeringWaitId != Guid.Empty)
             {
-                return new AsyncResult(
-                    Guid.NewGuid(),
-                    null,
-                    "Error",
-                    $"Triggering wait with ID {context.TriggeringWaitId} not found.",
-                    DateTime.UtcNow);
+                // Get the triggering wait DTO
+                var triggeringWaitDto = _stateService.FindWaitById(
+                    _context.WorkflowState.Waits, 
+                    _context.TriggeringWaitId);
+
+                if (triggeringWaitDto == null)
+                {
+                    return new AsyncResult(
+                        Guid.NewGuid(),
+                        null,
+                        "Error",
+                        $"Triggering wait with ID {_context.TriggeringWaitId} not found.",
+                        DateTime.UtcNow);
+                }
+
+                // 2. Incoming Matching Phase
+                var matcher = _matcherFactory.GetMatcher(triggeringWaitDto);
+
+                // If matching fails or forms a partial match, exit immediately
+                shouldProceed = await matcher.MatchAsync(triggeringWaitDto);
             }
 
-            // 2. Incoming Matching Phase
-            var matcher = _matcherFactory.GetMatcher(triggeringWaitDto);
-
-            // If matching fails or forms a partial match, exit immediately
-            bool shouldProceed = await matcher.MatchAsync(triggeringWaitDto);
             if (!shouldProceed)
             {
                 // Return error result
@@ -73,92 +81,93 @@ namespace Workflows.Runner
                     DateTime.UtcNow);
             }
 
-            context.ContinueExecutionLoop = true;
+            _context.ContinueExecutionLoop = true;
 
             // 3. Execution Cycle Loop
-            while (context.ContinueExecutionLoop)
+            while (_context.ContinueExecutionLoop)
             {
                 // Get current state object (could be main or child sub-workflow state)
-                var currentState = context.WorkflowState.StateObject;
+                var currentState = _context.WorkflowState.StateObject;
 
                 // Advance the underlying C# state machine
-                var advancerResult = await _stateMachineAdvancer.RunAsync(context.WorkflowStream, currentState);
+                var advancerResult = await _stateMachineAdvancer.RunAsync(_context.WorkflowStream, currentState);
 
                 Definition.Wait yieldedWait = advancerResult?.Wait;
 
                 if (yieldedWait == null) // End of stream/workflow completion
                 {
                     // Workflow completed - set status
-                    context.WorkflowState.Status = Abstraction.Enums.WorkflowInstanceStatus.Completed;
+                    _context.WorkflowState.Status = Abstraction.Enums.WorkflowInstanceStatus.Completed;
                     break;
                 }
 
                 // Update state object
-                context.WorkflowState.StateObject = advancerResult?.State;
+                _context.WorkflowState.StateObject = advancerResult?.State;
 
                 // Check if this wait should be cancelled and skipped
-                bool wasCancelled = await _cancelHandler.CheckAndSkipCancelledWaitAsync(yieldedWait, context);
+                bool wasCancelled = await _cancelHandler.CheckAndSkipCancelledWaitAsync(yieldedWait, _context);
                 if (wasCancelled)
                 {
                     // Skip this wait and continue to next iteration
-                    context.ContinueExecutionLoop = true;
+                    _context.ContinueExecutionLoop = true;
                     continue;
                 }
 
                 // Route to specific outgoing wait processor
                 var processor = _processorFactory.GetProcessor(yieldedWait);
-                context.ContinueExecutionLoop = await processor.ProcessAsync(yieldedWait, context);
+                _context.ContinueExecutionLoop = await processor.ProcessAsync(yieldedWait, _context);
 
                 // Execute interruption logic and trigger attached OnCancel callbacks
-                await _cancelHandler.ProcessCancellationsWithCallbacksAsync(context);
+                await _cancelHandler.ProcessCancellationsWithCallbacksAsync(_context);
             }
 
             // 4. Send updated snapshot back to Orchestrator to persist
-            return await SendResultAsync(context);
+            return await SendResultAsync(_context);
         }
 
-        public async Task<AsyncResult> StartWorkflow(string workflowName)
+        public async Task<AsyncResult> StartWorkflow(string workflowName, object input = null)
         {
             if (string.IsNullOrWhiteSpace(workflowName))
                 throw new ArgumentNullException(nameof(workflowName));
 
             // 1. Create a fresh workflow state and execution context for a new instance
-            var context = _stateService.CreateNewWorkflowContext(workflowName);
+            _stateService.PopulateNewWorkflowContext(_context, workflowName, input);
+            _context.WorkflowState.Status = Abstraction.Enums.WorkflowInstanceStatus.Running;
 
-            context.ContinueExecutionLoop = true;
+            _context.ContinueExecutionLoop = true;
 
             // 2. Execution Cycle Loop (same as RunWorkflowAsync, but no matching phase)
-            while (context.ContinueExecutionLoop)
+            while (_context.ContinueExecutionLoop)
             {
                 var advancerResult = await _stateMachineAdvancer.RunAsync(
-                    context.WorkflowStream,
-                    context.WorkflowState.StateObject);
+                    _context.WorkflowStream,
+                    _context.WorkflowState.StateObject);
 
                 Definition.Wait yieldedWait = advancerResult?.Wait;
 
                 if (yieldedWait == null)
                 {
-                    context.WorkflowState.Status = Abstraction.Enums.WorkflowInstanceStatus.Completed;
+                    _context.WorkflowState.Status = Abstraction.Enums.WorkflowInstanceStatus.Completed;
                     break;
                 }
 
-                context.WorkflowState.StateObject = advancerResult.State;
+                _context.WorkflowState.StateObject = advancerResult.State;
 
-                bool wasCancelled = await _cancelHandler.CheckAndSkipCancelledWaitAsync(yieldedWait, context);
+                bool wasCancelled = await _cancelHandler.CheckAndSkipCancelledWaitAsync(yieldedWait, _context);
                 if (wasCancelled)
                 {
-                    context.ContinueExecutionLoop = true;
+                    _context.ContinueExecutionLoop = true;
                     continue;
                 }
 
                 var processor = _processorFactory.GetProcessor(yieldedWait);
-                context.ContinueExecutionLoop = await processor.ProcessAsync(yieldedWait, context);
+                _context.ContinueExecutionLoop = await processor.ProcessAsync(yieldedWait, _context);
 
-                await _cancelHandler.ProcessCancellationsWithCallbacksAsync(context);
+                await _cancelHandler.ProcessCancellationsWithCallbacksAsync(_context);
             }
 
             // 3. Send updated snapshot back to Orchestrator to persist
-            return await SendResultAsync(context);
+            return await SendResultAsync(_context);
         }
 
         private async Task<AsyncResult> SendResultAsync(WorkflowExecutionContext context)

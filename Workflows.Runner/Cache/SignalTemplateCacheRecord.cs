@@ -25,6 +25,6 @@ namespace Workflows.Runner.Cache
         public Func<object, object, ValueTask> CancelAction { get; set; }
 
         // Tier 1 Blueprint: (workflowInstance, state) => object[]
-        public Func<object, object, string> CompiledInstanceExactMatchExpression { get; set; }
+        public Func<object, object, string[]> CompiledInstanceExactMatchExpression { get; set; }
     }
 }

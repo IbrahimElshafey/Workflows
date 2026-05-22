@@ -19,6 +19,8 @@ namespace Workflows.Runner.Tests.Infrastructure
         private readonly TestServiceProvider _serviceProvider;
         private readonly TestObjectSerializer _objectSerializer;
 
+        public InMemoryWorkflowRunnerClient Client => _client;
+
         public WorkflowTestBuilder()
         {
             _registry = new InMemoryWorkflowRegistry();
@@ -81,7 +83,7 @@ namespace Workflows.Runner.Tests.Infrastructure
                     {
                         StateIndex = -1,
                         Instance = Activator.CreateInstance<TWorkflow>(),
-                        StateMachinesObjects = new Dictionary<Guid, object>(),
+                        StateMachinesObjects = new Dictionary<string, object>(),
                         WaitStatesObjects = new Dictionary<Guid, object>()
                     },
                     Waits = waits ?? new List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto>(),

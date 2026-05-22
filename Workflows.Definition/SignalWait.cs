@@ -137,6 +137,10 @@ namespace Workflows.Definition
             SignalIdentifier = signalIdentifier;
         }
 
+        internal SignalWait()
+        {
+        }
+
         internal LambdaExpression MatchExpression { get; set; }
 
         internal string MatchExpressionAsText { get; set; }
@@ -156,7 +160,8 @@ namespace Workflows.Definition
 
         internal SignalWait<SignalData> AfterMatch<TState>(Action<SignalData, TState> afterMatchAction)
         {
-            AfterMatchAction = afterMatchAction;
+            var invoker = new StatefulAfterMatchInvoker<TState>(this, afterMatchAction);
+            AfterMatchAction = (Action<SignalData>)invoker.Invoke;
             return this;
         }
 

@@ -73,7 +73,7 @@ namespace Workflows.Runner.Pipeline.Processors
 
         private List<CommandHistoryEntry> BuildCommandHistory(Workflows.Abstraction.DTOs.WorkflowStateObject stateObject)
         {
-            var commandHistoryKey = new Guid("00000000-0000-0000-0000-000000000001");
+            var commandHistoryKey = "00000000-0000-0000-0000-000000000001";
 
             if (stateObject.StateMachinesObjects?.TryGetValue(commandHistoryKey, out var historyObj) == true)
             {
@@ -87,8 +87,8 @@ namespace Workflows.Runner.Pipeline.Processors
             Workflows.Abstraction.DTOs.WorkflowStateObject stateObject,
             List<CommandHistoryEntry> commandHistory)
         {
-            stateObject.StateMachinesObjects ??= new Dictionary<Guid, object>();
-            var commandHistoryKey = new Guid("00000000-0000-0000-0000-000000000001");
+            stateObject.StateMachinesObjects ??= new Dictionary<string, object>();
+            var commandHistoryKey = "00000000-0000-0000-0000-000000000001";
             stateObject.StateMachinesObjects[commandHistoryKey] = commandHistory;
         }
 

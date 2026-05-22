@@ -13,6 +13,10 @@ namespace Workflows.Definition
         {
         }
 
+        internal SubWorkflowWait()
+        {
+        }
+
         public SubWorkflowWait WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token)) return this;

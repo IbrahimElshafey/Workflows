@@ -40,7 +40,13 @@ namespace Workflows.Runner.ExpressionTransformers
             if (matchExpression.Parameters.Count >= 2)
             {
                 var originalState = matchExpression.Parameters[1];
-                parameterMap[originalState] = Expression.Convert(stateArg, originalState.Type);
+                var convertStateMethod = typeof(Workflows.Runner.Pipeline.StateConverter).GetMethod(
+                    nameof(Workflows.Runner.Pipeline.StateConverter.ConvertState), 
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                parameterMap[originalState] = Expression.Convert(
+                    Expression.Call(convertStateMethod!, stateArg, Expression.Constant(originalState.Type)),
+                    originalState.Type
+                );
             }
             var instanceType = currentInstance.GetType();
             // Convert the object instance back to the exact workflow class type

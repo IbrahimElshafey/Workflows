@@ -6,7 +6,7 @@ namespace Workflows.Runner.Tests.Infrastructure
     /// <summary>
     /// In-memory workflow runner client for testing (no-op)
     /// </summary>
-    internal class InMemoryWorkflowRunnerClient : IWorkflowRunnerClient
+    public class InMemoryWorkflowRunnerClient : IWorkflowRunnerClient
     {
         public List<(AsyncResult RunId, WorkflowExecutionResponse Result)> SentResults { get; } = new();
 

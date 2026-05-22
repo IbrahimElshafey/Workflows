@@ -155,6 +155,10 @@ namespace Workflows.Definition
             CommandData = data;
         }
 
+        internal CommandWait()
+        {
+        }
+
         internal CommandWait<TCommand, TResult> WithState<TState>(TState state)
         {
             SetState(state);

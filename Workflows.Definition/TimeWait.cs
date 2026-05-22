@@ -13,6 +13,10 @@ namespace Workflows.Definition
             UniqueMatchId = uniqueMatchId;
         }
 
+        internal TimeWait()
+        {
+        }
+
         internal Delegate AfterMatchAction { get; set; }
         internal TimeSpan TimeToWait { get; set; }
         internal string UniqueMatchId { get; set; }

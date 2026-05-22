@@ -21,6 +21,9 @@ namespace Workflows.Definition
             CallerFilePath = callerFilePath;
         }
 
+        internal Wait()
+        {
+        }
 
         internal Guid Id { get; set; }
 
@@ -42,7 +45,10 @@ namespace Workflows.Definition
         internal List<Wait> ChildWaits { get; set; } = new();
 
         internal Guid StateKey { get; set; }
-        internal object ExplicitState => WorkflowContainer.WaitsStates[StateKey];
+        internal object ExplicitState => 
+            StateKey != Guid.Empty && WorkflowContainer?.WaitsStates != null && WorkflowContainer.WaitsStates.TryGetValue(StateKey, out var val) 
+                ? val 
+                : null;
         internal Delegate CancelAction { get; set; }
 
         public WorkflowContainer WorkflowContainer { get; set; }
@@ -61,22 +67,24 @@ namespace Workflows.Definition
 
         public Wait OnCanceled<TState>(Func<TState, ValueTask> cancelAction)
         {
-            CancelAction = cancelAction;
+            var invoker = new StatefulCancelActionInvoker<TState>(this, cancelAction);
+            CancelAction = (Func<ValueTask>)invoker.Invoke;
             return this;
         }
 
         internal void SetState(object state)
         {
             if (state == null) return;
-            if (WorkflowContainer.WaitsStates.TryGetValue(state, out var existingKey))
+            foreach (var kvp in WorkflowContainer.WaitsStates)
             {
-                StateKey = existingKey;
+                if (Equals(kvp.Value, state))
+                {
+                    StateKey = kvp.Key;
+                    return;
+                }
             }
-            else
-            {
-                StateKey = Guid.NewGuid();
-                WorkflowContainer.WaitsStates[state] = StateKey;
-            }
+            StateKey = Guid.NewGuid();
+            WorkflowContainer.WaitsStates[StateKey] = state;
         }
 
         private sealed class StatefulCancelActionInvoker<TState>
