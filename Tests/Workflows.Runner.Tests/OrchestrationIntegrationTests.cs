@@ -236,10 +236,20 @@ namespace Workflows.Runner.Tests
                 var instanceId = await orchestrator.StartWorkflowAsync("ShortDelayWorkflow", "1.0", null);
                 instanceId.Should().NotBeEmpty();
 
-                // Wait for the scheduler loop to process the 50ms timer wait
+                // Wait for the scheduler loop to process the 50ms timer wait and persist to DB
                 int attempts = 0;
-                while (!ShortDelayWorkflow.Completed && attempts < 20)
+                WorkflowStateDto? state = null;
+                while (attempts < 30)
                 {
+                    using (var scope = provider.CreateScope())
+                    {
+                        var freshStore = scope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+                        state = await freshStore.GetInstanceStateAsync(instanceId);
+                    }
+                    if (state != null && state.Status == WorkflowInstanceStatus.Completed)
+                    {
+                        break;
+                    }
                     await Task.Delay(100);
                     attempts++;
                 }
@@ -247,7 +257,6 @@ namespace Workflows.Runner.Tests
                 ShortDelayWorkflow.Completed.Should().BeTrue();
 
                 // Hydrate from database and verify status is Completed
-                var state = await workflowStore.GetInstanceStateAsync(instanceId);
                 state.Should().NotBeNull();
                 state!.Status.Should().Be(WorkflowInstanceStatus.Completed);
                 state.Waits.Should().BeEmpty();

@@ -5,7 +5,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
 {
     public class CancellationTestWorkflow : WorkflowContainer
     {
-        public List<string> ExecutionLog { get; } = new();
+        public List<string> ExecutionLog { get; set; } = new();
 
         public override async IAsyncEnumerable<Wait> Run()
         {

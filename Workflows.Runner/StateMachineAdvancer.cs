@@ -88,7 +88,10 @@ namespace Workflows.Runner
             if (thisField != null)
             {
                 var typedInstance = Expression.Convert(instanceProp, thisField.FieldType);
-                assignments.Add(Expression.Assign(Expression.Field(typedEnumerator, thisField), typedInstance));
+                assignments.Add(Expression.IfThen(
+                    Expression.NotEqual(instanceProp, Expression.Constant(null, typeof(object))),
+                    Expression.Assign(Expression.Field(typedEnumerator, thisField), typedInstance)
+                ));
             }
 
             // 3. Hydrate StateMachinesObjects (Locals + Closures combined)

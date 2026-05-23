@@ -10,7 +10,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     /// </summary>
     public sealed class FirstWaitAndResumeWorkflow : WorkflowContainer
     {
-        public List<string> ExecutionLog { get; } = new();
+        public List<string> ExecutionLog { get; set; } = new();
         public int ResumeCount { get; set; }
 
         public override async IAsyncEnumerable<Wait> Run()

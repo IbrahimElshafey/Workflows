@@ -20,12 +20,17 @@ namespace Workflows.Runner.ExpressionTransformers
         private readonly ParameterExpression _jsonSignalParam;
         private readonly ParameterExpression _jsonInstanceParam;
         private readonly ParameterExpression _jsonStateParam;
+
         private bool _isUnsupportedNodeFound;
+
+        private static readonly ConstantExpression UnknownNode = Expression.Constant("__UNKNOWN__");
+
+        // 1. Taint Tracking: Keeps track of nodes that have been partially evaluated
+        private readonly HashSet<Expression> _partialNodes = new HashSet<Expression>();
 
         public Expression<Func<JsonElement, JsonElement, JsonElement, bool>> Result { get; private set; }
         public bool IsFullMatch => !_isUnsupportedNodeFound;
 
-        // Notice we now expect the NORMALIZED lambda: Func<object, object, object, bool>
         public DynamicMatchVisitor(LambdaExpression normalizedLambda)
         {
             _normalizedLambda = normalizedLambda;
@@ -34,24 +39,80 @@ namespace Workflows.Runner.ExpressionTransformers
             _jsonInstanceParam = Expression.Parameter(typeof(JsonElement), "workflowInstance");
         }
 
+        private void MarkPartial(Expression node)
+        {
+            if (node != null) _partialNodes.Add(node);
+        }
+
+        private bool IsPartial(Expression node) => node != null && _partialNodes.Contains(node);
+
         public void Build()
         {
             var visitedBody = Visit(_normalizedLambda.Body);
 
-            if (!_isUnsupportedNodeFound && visitedBody != null)
+            if (visitedBody == UnknownNode || visitedBody == null)
             {
-                // We align with the orchestrator's JsonElement parameter layout
-                Result = Expression.Lambda<Func<JsonElement, JsonElement, JsonElement, bool>>(
-                    visitedBody,
-                    _jsonSignalParam,
-                    _jsonStateParam,
-                    _jsonInstanceParam);
+                visitedBody = Expression.Constant(true); // Let runner handle it
             }
-            else
+
+            Result = Expression.Lambda<Func<JsonElement, JsonElement, JsonElement, bool>>(
+                visitedBody,
+                _jsonSignalParam,
+                _jsonStateParam,
+                _jsonInstanceParam);
+        }
+
+        protected override Expression VisitBinary(BinaryExpression node)
+        {
+            var left = Visit(node.Left);
+            var right = Visit(node.Right);
+
+            bool leftIsUnknown = left == UnknownNode;
+            bool rightIsUnknown = right == UnknownNode;
+
+            if (leftIsUnknown && rightIsUnknown) return UnknownNode;
+
+            if (leftIsUnknown || rightIsUnknown)
             {
-                // Explicitly set Result to null if we failed to map the whole expression
-                Result = null;
+                if (node.NodeType == ExpressionType.AndAlso)
+                {
+                    // 2. Partial Evaluation for &&
+                    var kept = leftIsUnknown ? right : left;
+
+                    // We dropped a condition, meaning this is an OVER-approximation.
+                    // We MUST flag this so parent nodes know it's not exact.
+                    MarkPartial(kept);
+                    return kept;
+                }
+
+                // If it's OR (||), ==, !=, >, etc., an unknown side breaks the whole comparison
+                return UnknownNode;
             }
+
+            var updatedNode = node.Update(left, node.Conversion, right);
+
+            // 3. Bubble up the Taint: If a child is partial, the parent is partial
+            if (IsPartial(left) || IsPartial(right)) MarkPartial(updatedNode);
+
+            return updatedNode;
+        }
+
+        protected override Expression VisitUnary(UnaryExpression node)
+        {
+            var operand = Visit(node.Operand);
+            if (operand == UnknownNode) return UnknownNode;
+
+            // 4. THE CRITICAL FIX: The Negation Trap
+            // Negating a partial over-approximation creates a dangerous under-approximation (False Negative).
+            if (node.NodeType == ExpressionType.Not && IsPartial(operand))
+            {
+                return UnknownNode;
+            }
+
+            var updatedNode = node.Update(operand);
+            if (IsPartial(operand)) MarkPartial(updatedNode);
+
+            return updatedNode;
         }
 
         protected override Expression VisitMember(MemberExpression node)
@@ -61,14 +122,14 @@ namespace Workflows.Runner.ExpressionTransformers
             if (rootParam == null || !IsJsonSupportedType(node.Type))
             {
                 _isUnsupportedNodeFound = true;
-                return base.VisitMember(node);
+                return UnknownNode;
             }
 
             var targetJsonParam = GetMappedParameter(rootParam);
             if (targetJsonParam == null)
             {
                 _isUnsupportedNodeFound = true;
-                return base.VisitMember(node);
+                return UnknownNode;
             }
 
             var path = GetPath(node);
@@ -87,12 +148,22 @@ namespace Workflows.Runner.ExpressionTransformers
                 var left = Visit(node.Object);
                 var right = Visit(node.Arguments[0]);
 
+                if (left == UnknownNode || right == UnknownNode)
+                {
+                    _isUnsupportedNodeFound = true;
+                    return UnknownNode;
+                }
+
                 if (left != null && right != null)
-                    return Expression.Equal(left, right);
+                {
+                    var eqNode = Expression.Equal(left, right);
+                    if (IsPartial(left) || IsPartial(right)) MarkPartial(eqNode);
+                    return eqNode;
+                }
             }
 
             _isUnsupportedNodeFound = true;
-            return base.VisitMethodCall(node);
+            return UnknownNode;
         }
 
         private ParameterExpression GetRootParameter(Expression node)

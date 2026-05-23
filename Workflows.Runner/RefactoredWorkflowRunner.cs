@@ -72,6 +72,20 @@ namespace Workflows.Runner
 
             if (!shouldProceed)
             {
+                // If it is a partial match (the triggering wait succeeded but overall match failed),
+                // we still need to persist the updated wait statuses.
+                if (_context.TriggeringWaitId != Guid.Empty)
+                {
+                    var triggeringWaitDto = _stateService.FindWaitById(
+                        _context.WorkflowState.Waits,
+                        _context.TriggeringWaitId);
+
+                    if (triggeringWaitDto != null && triggeringWaitDto.Status == Abstraction.Enums.WaitStatus.Completed)
+                    {
+                        return await SendResultAsync(_context);
+                    }
+                }
+
                 // Return error result
                 return new AsyncResult(
                     Guid.NewGuid(),
