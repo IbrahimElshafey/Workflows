@@ -6,95 +6,72 @@ using System.Text.Json;
 
 namespace Workflows.Runner.ExpressionTransformers
 {
-    // ----------------------------------------------------------------------
-    // 3. The Tier 1.5 JsonElement Visitor
-    // ----------------------------------------------------------------------
-
-    /// <summary>
-    /// Translates match expression expressions into JsonElement lookups
-    /// so the Orchestrator can evaluate complex POCO logic in RAM without spinning up the Runner.
-    /// </summary>
     internal class DynamicMatchVisitor : ExpressionVisitor
     {
-        private readonly LambdaExpression _normalizedLambda;
-        private readonly ParameterExpression _jsonSignalParam;
-        private readonly ParameterExpression _jsonInstanceParam;
-        private readonly ParameterExpression _jsonStateParam;
-
+        private readonly LambdaExpression _originalLambda;
         private bool _isUnsupportedNodeFound;
-
+        private readonly HashSet<Expression> _partialNodes = new();
         private static readonly ConstantExpression UnknownNode = Expression.Constant("__UNKNOWN__");
 
-        // 1. Taint Tracking: Keeps track of nodes that have been partially evaluated
-        private readonly HashSet<Expression> _partialNodes = new HashSet<Expression>();
-
+        public LambdaExpression TypedResult { get; private set; }
         public Expression<Func<JsonElement, JsonElement, JsonElement, bool>> Result { get; private set; }
-        public bool IsFullMatch => !_isUnsupportedNodeFound;
+        public bool IsFullMatch => !_isUnsupportedNodeFound && Result != null;
 
-        public DynamicMatchVisitor(LambdaExpression normalizedLambda)
+        public DynamicMatchVisitor(LambdaExpression originalLambda)
         {
-            _normalizedLambda = normalizedLambda;
-            _jsonSignalParam = Expression.Parameter(typeof(JsonElement), "signalData");
-            _jsonStateParam = Expression.Parameter(typeof(JsonElement), "stateData");
-            _jsonInstanceParam = Expression.Parameter(typeof(JsonElement), "workflowInstance");
+            _originalLambda = originalLambda ?? throw new ArgumentNullException(nameof(originalLambda));
         }
 
-        private void MarkPartial(Expression node)
-        {
-            if (node != null) _partialNodes.Add(node);
-        }
-
+        private void MarkPartial(Expression node) { if (node != null) _partialNodes.Add(node); }
         private bool IsPartial(Expression node) => node != null && _partialNodes.Contains(node);
 
         public void Build()
         {
-            var visitedBody = Visit(_normalizedLambda.Body);
+            // PASS 1: Walk the original typed tree and safely prune unsupported logic
+            var safeTypedBody = Visit(_originalLambda.Body);
 
-            if (visitedBody == UnknownNode || visitedBody == null)
+            // CRITICAL: Return null if the tree couldn't be saved or collapsed safely
+            if (safeTypedBody == UnknownNode || safeTypedBody == null || _isUnsupportedNodeFound)
             {
-                visitedBody = Expression.Constant(true); // Let runner handle it
+                Result = null;
+                TypedResult = null;
+                return;
             }
 
+            TypedResult = Expression.Lambda(safeTypedBody, _originalLambda.Parameters);
+
+            // PASS 2: Translate the perfectly safe POCO tree into a JsonElement execution tree
+            var jsonTranslator = new JsonTranslationVisitor(_originalLambda.Parameters);
+            var jsonBody = jsonTranslator.Visit(safeTypedBody);
+
             Result = Expression.Lambda<Func<JsonElement, JsonElement, JsonElement, bool>>(
-                visitedBody,
-                _jsonSignalParam,
-                _jsonStateParam,
-                _jsonInstanceParam);
+                jsonBody, jsonTranslator.JsonSignal, jsonTranslator.JsonState, jsonTranslator.JsonInstance);
         }
+
+        // --- Pass 1: Pruning Logic (Operates on strongly-typed POCO tree) ---
 
         protected override Expression VisitBinary(BinaryExpression node)
         {
             var left = Visit(node.Left);
             var right = Visit(node.Right);
 
-            bool leftIsUnknown = left == UnknownNode;
-            bool rightIsUnknown = right == UnknownNode;
+            if (left == UnknownNode && right == UnknownNode) return UnknownNode;
 
-            if (leftIsUnknown && rightIsUnknown) return UnknownNode;
-
-            if (leftIsUnknown || rightIsUnknown)
+            if (left == UnknownNode || right == UnknownNode)
             {
                 if (node.NodeType == ExpressionType.AndAlso)
                 {
-                    // 2. Partial Evaluation for &&
-                    var kept = leftIsUnknown ? right : left;
-
-                    // We dropped a condition, meaning this is an OVER-approximation.
-                    // We MUST flag this so parent nodes know it's not exact.
+                    var kept = left == UnknownNode ? right : left;
                     MarkPartial(kept);
                     return kept;
                 }
-
-                // If it's OR (||), ==, !=, >, etc., an unknown side breaks the whole comparison
+                _isUnsupportedNodeFound = true;
                 return UnknownNode;
             }
 
-            var updatedNode = node.Update(left, node.Conversion, right);
-
-            // 3. Bubble up the Taint: If a child is partial, the parent is partial
-            if (IsPartial(left) || IsPartial(right)) MarkPartial(updatedNode);
-
-            return updatedNode;
+            var updated = node.Update(left, node.Conversion, right);
+            if (IsPartial(left) || IsPartial(right)) MarkPartial(updated);
+            return updated;
         }
 
         protected override Expression VisitUnary(UnaryExpression node)
@@ -102,112 +79,103 @@ namespace Workflows.Runner.ExpressionTransformers
             var operand = Visit(node.Operand);
             if (operand == UnknownNode) return UnknownNode;
 
-            // 4. THE CRITICAL FIX: The Negation Trap
-            // Negating a partial over-approximation creates a dangerous under-approximation (False Negative).
+            // Negation on a tainted partial node risks False Negatives. Abort.
             if (node.NodeType == ExpressionType.Not && IsPartial(operand))
             {
-                return UnknownNode;
-            }
-
-            var updatedNode = node.Update(operand);
-            if (IsPartial(operand)) MarkPartial(updatedNode);
-
-            return updatedNode;
-        }
-
-        protected override Expression VisitMember(MemberExpression node)
-        {
-            var rootParam = GetRootParameter(node);
-
-            if (rootParam == null || !IsJsonSupportedType(node.Type))
-            {
                 _isUnsupportedNodeFound = true;
                 return UnknownNode;
             }
 
-            var targetJsonParam = GetMappedParameter(rootParam);
-            if (targetJsonParam == null)
-            {
-                _isUnsupportedNodeFound = true;
-                return UnknownNode;
-            }
-
-            var path = GetPath(node);
-            var getValueMethod = typeof(JsonElementExtensions)
-                .GetMethods()
-                .First(x => x.Name == "Get" && x.IsGenericMethod)
-                .MakeGenericMethod(node.Type);
-
-            return Expression.Call(getValueMethod, targetJsonParam, Expression.Constant(path));
+            var updated = node.Update(operand);
+            if (IsPartial(operand)) MarkPartial(updated);
+            return updated;
         }
 
         protected override Expression VisitMethodCall(MethodCallExpression node)
         {
+            // Only .Equals() is native. Everything else (like DbCheck()) triggers Unknown.
             if (node.Method.Name == "Equals" && node.Arguments.Count == 1 && node.Object != null)
             {
-                var left = Visit(node.Object);
-                var right = Visit(node.Arguments[0]);
+                var obj = Visit(node.Object);
+                var arg = Visit(node.Arguments[0]);
 
-                if (left == UnknownNode || right == UnknownNode)
-                {
-                    _isUnsupportedNodeFound = true;
-                    return UnknownNode;
-                }
+                if (obj == UnknownNode || arg == UnknownNode) return UnknownNode;
 
-                if (left != null && right != null)
-                {
-                    var eqNode = Expression.Equal(left, right);
-                    if (IsPartial(left) || IsPartial(right)) MarkPartial(eqNode);
-                    return eqNode;
-                }
+                var updated = node.Update(obj, new[] { arg });
+                if (IsPartial(obj) || IsPartial(arg)) MarkPartial(updated);
+                return updated;
             }
 
             _isUnsupportedNodeFound = true;
             return UnknownNode;
         }
 
-        private ParameterExpression GetRootParameter(Expression node)
+        // --- Pass 2: The Internal JSON Mapper ---
+        private class JsonTranslationVisitor : ExpressionVisitor
         {
-            while (true)
+            public ParameterExpression JsonSignal { get; } = Expression.Parameter(typeof(JsonElement), "signalData");
+            public ParameterExpression JsonState { get; } = Expression.Parameter(typeof(JsonElement), "stateData");
+            public ParameterExpression JsonInstance { get; } = Expression.Parameter(typeof(JsonElement), "workflowInstance");
+
+            private readonly IReadOnlyList<ParameterExpression> _originalParams;
+
+            public JsonTranslationVisitor(IReadOnlyList<ParameterExpression> originalParams)
             {
-                if (node is MemberExpression me)
-                    node = me.Expression;
-                // FIX: Step through the UnaryExpression (Expression.Convert) injected by the normalizer!
-                else if (node is UnaryExpression ue && ue.NodeType == ExpressionType.Convert)
-                    node = ue.Operand;
-                else
-                    break;
+                _originalParams = originalParams;
             }
-            return node as ParameterExpression;
-        }
 
-        private ParameterExpression GetMappedParameter(ParameterExpression normalizedParam)
-        {
-            // The normalizer ALWAYS outputs parameters in this exact order:
-            // [0] = signalData, [1] = state, [2] = instance
-            if (normalizedParam == _normalizedLambda.Parameters[0]) return _jsonSignalParam;
-            if (normalizedParam == _normalizedLambda.Parameters[1]) return _jsonStateParam;
-            if (normalizedParam == _normalizedLambda.Parameters[2]) return _jsonInstanceParam;
-
-            return null;
-        }
-
-        private string GetPath(Expression node)
-        {
-            var parts = new List<string>();
-            while (node is MemberExpression me)
+            protected override Expression VisitMember(MemberExpression node)
             {
-                parts.Add(me.Member.Name);
-                // Step through casts in the path just in case
-                node = me.Expression is UnaryExpression ue && ue.NodeType == ExpressionType.Convert
-                    ? ue.Operand
-                    : me.Expression;
-            }
-            parts.Reverse();
-            return string.Join(".", parts);
-        }
+                var root = GetRoot(node);
+                if (root is ParameterExpression p)
+                {
+                    ParameterExpression target = null;
+                    if (_originalParams.Count > 0 && p == _originalParams[0]) target = JsonSignal;
+                    else if (_originalParams.Count > 1 && p == _originalParams[1]) target = JsonState;
+                    else if (_originalParams.Count > 2 && p == _originalParams[2]) target = JsonInstance;
 
-        private bool IsJsonSupportedType(Type type) =>
-            type.IsPrimitive || type == typeof(string) || type == typeof(DateTime) || type == typeof(Guid) || type.IsEnum;
+                    if (target != null)
+                    {
+                        var path = GetPath(node);
+                        var method = typeof(JsonElementExtensions).GetMethods()
+                            .First(x => x.Name == "Get" && x.IsGenericMethod)
+                            .MakeGenericMethod(node.Type);
+
+                        return Expression.Call(method, target, Expression.Constant(path));
+                    }
+                }
+                return base.VisitMember(node);
+            }
+
+            protected override Expression VisitMethodCall(MethodCallExpression node)
+            {
+                // JsonElement doesn't have .Equals(), so map it mathematically to ==
+                if (node.Method.Name == "Equals" && node.Arguments.Count == 1 && node.Object != null)
+                {
+                    var left = Visit(node.Object);
+                    var right = Visit(node.Arguments[0]);
+                    return Expression.Equal(left, right);
+                }
+                return base.VisitMethodCall(node);
+            }
+
+            private static Expression GetRoot(Expression node)
+            {
+                while (node is MemberExpression me) node = me.Expression;
+                return node;
+            }
+
+            private static string GetPath(MemberExpression node)
+            {
+                var path = new List<string>();
+                while (node != null)
+                {
+                    path.Add(node.Member.Name);
+                    node = node.Expression as MemberExpression;
+                }
+                path.Reverse();
+                return string.Join(".", path);
+            }
+        }
     }
 }
