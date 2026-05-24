@@ -151,7 +151,10 @@ namespace Workflows.Runner.Tests
             // Arrange
             using var shell = new WorkflowTestShell();
             shell.RegisterWorkflow<SubWorkflowTestWorkflow>("SubWorkflowTest", "1.0")
-                 .RegisterSignal<OrderReceivedSignal>("OrderReceived");
+                 .RegisterSignal<OrderReceivedSignal>("OrderReceived")
+                 .RegisterCommand<ReserveInventoryCommand, ReserveInventoryResult>("ReserveInventory")
+                 .SetupCommandHandler<ReserveInventoryCommand, ReserveInventoryResult>("ReserveInventory",
+                     cmd => Task.FromResult(new ReserveInventoryResult { ReservationId = "RES-001", Success = true }));
 
             // Act: Start
             var state = await shell.StartWorkflowAsync("SubWorkflowTest");

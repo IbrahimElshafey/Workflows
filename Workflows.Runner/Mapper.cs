@@ -35,6 +35,12 @@ namespace Workflows.Runner
 
             CopyBase(waitsGroup, dto);
 
+            // Set CallerName to the actual sub-workflow method name
+            dto.CallerName = GetSubWorkflowMethodName(waitsGroup.Runner) ?? waitsGroup.CallerName;
+
+            // Stable key for storing/retrieving this sub-workflow's state in StateMachinesObjects
+            dto.StateMachineObjectId = dto.Id;
+
             if(waitsGroup.FirstWait != null)
             {
                 dto.ChildWaits = new List<WaitInfrastructureDto> { MapToDto(waitsGroup.FirstWait) };
@@ -44,6 +50,21 @@ namespace Workflows.Runner
             }
 
             return dto;
+        }
+
+        private static string GetSubWorkflowMethodName(object runner)
+        {
+            if (runner == null) return null;
+            var typeName = runner.GetType().Name;
+            if (typeName.StartsWith("<") && typeName.Contains(">"))
+            {
+                int end = typeName.IndexOf('>');
+                if (end > 1)
+                {
+                    return typeName.Substring(1, end - 1);
+                }
+            }
+            return null;
         }
 
         public TimeWaitDto MapToDto(TimeWait waitsGroup)

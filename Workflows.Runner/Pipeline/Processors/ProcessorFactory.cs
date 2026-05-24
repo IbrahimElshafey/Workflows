@@ -41,7 +41,8 @@ namespace Workflows.Runner.Pipeline.Processors
             _timeWaitProcessor = new TimeWaitProcessor(_mapper);
             _immediateCommandProcessor = new ImmediateCommandProcessor(_commandHandlerFactory);
             _deferredCommandProcessor = new DeferredCommandProcessor(_mapper);
-            _groupWaitProcessor = new GroupWaitProcessor(_mapper);
+            _groupWaitProcessor = new GroupWaitProcessor(_mapper, _stateMachineAdvancer);
+            _groupWaitProcessor.ProcessorFactory = this;
             _compensationProcessor = new CompensationProcessor();
         }
 

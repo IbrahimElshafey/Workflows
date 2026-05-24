@@ -24,7 +24,10 @@ namespace Workflows.Abstraction.DTOs
         public object Instance { get; set; }
 
         /// <summary>
-        /// The extracted state machine local variables for workflow methods (one or more IAsyncEnumrable<Wait>)
+        /// Unified state bag for this workflow's execution scope.
+        /// Values are either:
+        ///   - StateMachineObject  keyed "root"  → local variables of the root IAsyncEnumerable method
+        ///   - WorkflowStateObject keyed by StateMachineObjectId → full snapshot of a suspended sub-workflow
         /// </summary>
         public Dictionary<string, object> StateMachinesObjects { get; set; } = new();
 

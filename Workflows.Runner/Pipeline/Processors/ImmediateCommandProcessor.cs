@@ -126,8 +126,15 @@ namespace Workflows.Runner.Pipeline.Processors
         private List<CommandHistoryEntry> BuildCommandHistory(WorkflowStateObject stateObject)
         {
             var commandHistoryKey = "00000000-0000-0000-0000-000000000001";
+            stateObject.StateMachinesObjects ??= new Dictionary<string, object>();
+            if (!stateObject.StateMachinesObjects.TryGetValue("root", out var rootRaw))
+            {
+                rootRaw = new StateMachineObject();
+                stateObject.StateMachinesObjects["root"] = rootRaw;
+            }
+            var root = rootRaw as StateMachineObject ?? new StateMachineObject();
 
-            if (stateObject.StateMachinesObjects?.TryGetValue(commandHistoryKey, out var historyObj) == true)
+            if (root.TryGetValue(commandHistoryKey, out var historyObj))
             {
                 return historyObj as List<CommandHistoryEntry> ?? new List<CommandHistoryEntry>();
             }
@@ -137,9 +144,16 @@ namespace Workflows.Runner.Pipeline.Processors
 
         private void UpdateCommandHistoryInState(WorkflowStateObject stateObject, List<CommandHistoryEntry> commandHistory)
         {
-            stateObject.StateMachinesObjects ??= new Dictionary<string, object>();
             var commandHistoryKey = "00000000-0000-0000-0000-000000000001";
-            stateObject.StateMachinesObjects[commandHistoryKey] = commandHistory;
+            stateObject.StateMachinesObjects ??= new Dictionary<string, object>();
+            if (!stateObject.StateMachinesObjects.TryGetValue("root", out var rootRaw))
+            {
+                rootRaw = new StateMachineObject();
+                stateObject.StateMachinesObjects["root"] = rootRaw;
+            }
+            var root = rootRaw as StateMachineObject ?? new StateMachineObject();
+            root[commandHistoryKey] = commandHistory;
+            stateObject.StateMachinesObjects["root"] = root;
         }
 
         private void InvokeOnResultAction(object action, object result, object explicitState)

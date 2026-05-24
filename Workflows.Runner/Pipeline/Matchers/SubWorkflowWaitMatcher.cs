@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
@@ -57,18 +58,14 @@ namespace Workflows.Runner.Pipeline.Matchers
                 throw new InvalidOperationException($"Workflow {_context.WorkflowState.WorkflowType} not registered.");
             }
 
-            // Get or create child state
-            if (!_context.WorkflowState.StateObject.StateMachinesObjects.TryGetValue(subWorkflowWaitDto.Id.ToString(), out var storedChildState))
-            {
-                // First time - create new child state
-                storedChildState = new WorkflowStateObject();
-                _context.WorkflowState.StateObject.StateMachinesObjects[subWorkflowWaitDto.Id.ToString()] = storedChildState;
-            }
+            // Use the stable StateMachineObjectId from the DTO as the key
+            var childKey = subWorkflowWaitDto.StateMachineObjectId.ToString();
 
-            var childState = storedChildState as WorkflowStateObject;
-            if (childState == null)
+            // Restore or create child WorkflowStateObject from the unified StateMachinesObjects bag
+            if (!_context.WorkflowState.StateObject.StateMachinesObjects.TryGetValue(childKey, out var childRaw)
+                || childRaw is not WorkflowStateObject childState)
             {
-                throw new InvalidOperationException("Child state is not a WorkflowStateObject.");
+                childState = new WorkflowStateObject();
             }
 
             // Execute the sub-workflow to completion using the CallerName from the DTO
@@ -84,12 +81,11 @@ namespace Workflows.Runner.Pipeline.Matchers
 
                 if (yieldedWait == null)
                 {
-                    // Sub-workflow completed
                     subWorkflowCompleted = true;
                     break;
                 }
 
-                childState = advancerResult?.State;
+                childState = advancerResult.State;
 
                 // Check cancellation
                 bool wasCancelled = await _cancelProcessor.CheckAndSkipCancelledWaitAsync(yieldedWait, _context);
@@ -104,10 +100,9 @@ namespace Workflows.Runner.Pipeline.Matchers
 
                 if (!continueLoop)
                 {
-                    // Sub-workflow suspended on a passive wait
-                    // Store child state and exit
-                    _context.WorkflowState.StateObject.StateMachinesObjects[subWorkflowWaitDto.Id.ToString()] = childState;
-                    return false; // Don't proceed - sub-workflow is waiting
+                    // Sub-workflow suspended — store full WorkflowStateObject under its stable key
+                    _context.WorkflowState.StateObject.StateMachinesObjects[childKey] = childState;
+                    return false;
                 }
             }
 
@@ -115,7 +110,17 @@ namespace Workflows.Runner.Pipeline.Matchers
             subWorkflowWaitDto.Status = WaitStatus.Completed;
 
             // Remove child state since sub-workflow is done
-            _context.WorkflowState.StateObject.StateMachinesObjects.Remove(subWorkflowWaitDto.Id.ToString());
+            _context.WorkflowState.StateObject.StateMachinesObjects.Remove(childKey);
+
+            // Restore parent stream on context
+            var parentCallerName = "Run";
+            var parentSub = FindParentSubWorkflow(subWorkflowWaitDto, _context.WorkflowState.Waits);
+            if (parentSub != null)
+            {
+                parentCallerName = string.IsNullOrEmpty(parentSub.CallerName) ? "Run" : parentSub.CallerName;
+            }
+            var parentInvoker = _templateCache.GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, parentCallerName);
+            _context.WorkflowStream = (System.Collections.Generic.IAsyncEnumerable<Definition.Wait>)parentInvoker(_context.WorkflowInstance);
 
             // Propagate matching to parent wait if present (e.g., GroupWait containing this sub-workflow)
             if (subWorkflowWaitDto.ParentWaitId.HasValue)
@@ -124,6 +129,34 @@ namespace Workflows.Runner.Pipeline.Matchers
             }
 
             return true;
+        }
+
+        private SubWorkflowWaitDto FindParentSubWorkflow(WaitInfrastructureDto wait, System.Collections.Generic.List<WaitInfrastructureDto> waits)
+        {
+            if (wait.ParentWaitId == null) return null;
+            var parent = FindWaitById(waits, wait.ParentWaitId.Value);
+            if (parent == null) return null;
+            if (parent is SubWorkflowWaitDto parentSub) return parentSub;
+            return FindParentSubWorkflow(parent, waits);
+        }
+
+        private WaitInfrastructureDto FindWaitById(System.Collections.Generic.IEnumerable<WaitInfrastructureDto> waits, Guid id)
+        {
+            if (waits == null) return null;
+            var stack = new System.Collections.Generic.Stack<WaitInfrastructureDto>(waits.Where(w => w != null));
+            while (stack.Count > 0)
+            {
+                var current = stack.Pop();
+                if (current.Id == id) return current;
+                if (current.ChildWaits != null)
+                {
+                    foreach (var child in current.ChildWaits)
+                    {
+                        if (child != null) stack.Push(child);
+                    }
+                }
+            }
+            return null;
         }
     }
 }

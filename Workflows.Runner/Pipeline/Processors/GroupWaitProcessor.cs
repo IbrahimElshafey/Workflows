@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
 
@@ -9,19 +10,23 @@ namespace Workflows.Runner.Pipeline.Processors
 {
     /// <summary>
     /// Handles GroupWait objects.
-    /// Unfolds composite layers.
+    /// Unfolds composite layers and supports executing nested sub-workflows.
     /// Returns false to suspend execution.
     /// </summary>
     internal class GroupWaitProcessor : WorkflowWaitProcessor
     {
         private readonly Mapper _mapper;
+        private readonly StateMachineAdvancer _stateMachineAdvancer;
 
-        public GroupWaitProcessor(Mapper mapper)
+        public ProcessorFactory ProcessorFactory { get; set; }
+
+        public GroupWaitProcessor(Mapper mapper, StateMachineAdvancer stateMachineAdvancer)
         {
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _stateMachineAdvancer = stateMachineAdvancer ?? throw new ArgumentNullException(nameof(stateMachineAdvancer));
         }
 
-        public override Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
+        public override async Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
         {
             var groupWait = yieldedWait as GroupWait;
             if (groupWait == null)
@@ -40,17 +45,16 @@ namespace Workflows.Runner.Pipeline.Processors
             }
 
             // Recursively process and map all child waits
-            groupWaitDto.ChildWaits = ProcessChildWaits(groupWait.ChildWaits, groupWait.Id, context);
+            groupWaitDto.ChildWaits = await ProcessChildWaits(groupWait.ChildWaits, groupWait.Id, context).ConfigureAwait(false);
 
             // Add parent group to waits collection
             context.WorkflowState.Waits.Add(groupWaitDto);
 
             // Return false - passive wait, suspend execution
-            return Task.FromResult(false);
+            return false;
         }
 
-
-        private List<WaitInfrastructureDto> ProcessChildWaits(
+        private async Task<List<WaitInfrastructureDto>> ProcessChildWaits(
             IReadOnlyList<Wait> childWaits, 
             Guid parentWaitId, 
             WorkflowExecutionContext context)
@@ -77,21 +81,88 @@ namespace Workflows.Runner.Pipeline.Processors
                     var nestedGroupDto = childDto as GroupWaitDto;
                     if (nestedGroupDto != null)
                     {
-                        nestedGroupDto.ChildWaits = ProcessChildWaits(nestedGroup.ChildWaits, nestedGroup.Id, context);
+                        nestedGroupDto.ChildWaits = await ProcessChildWaits(nestedGroup.ChildWaits, nestedGroup.Id, context).ConfigureAwait(false);
                     }
                 }
-                // If child is a SubWorkflowWait with children, handle them
-                else if (child is SubWorkflowWait subWorkflow && subWorkflow.ChildWaits != null && subWorkflow.ChildWaits.Any())
+                // If child is a SubWorkflowWait, process/advance it
+                else if (child is SubWorkflowWait subWorkflow)
                 {
                     var subWorkflowDto = childDto as SubWorkflowWaitDto;
                     if (subWorkflowDto != null)
                     {
                         subWorkflowDto.ChildWaits = new List<WaitInfrastructureDto>();
-                        foreach (var subChild in subWorkflow.ChildWaits)
+                        
+                        var childKey = subWorkflowDto.StateMachineObjectId.ToString();
+                        var childState = new WorkflowStateObject();
+                        
+                        bool subWorkflowCompleted = false;
+                        var subWorkflowStream = subWorkflow.Runner;
+
+                        while (!subWorkflowCompleted)
+                        {
+                            var advancerResult = await _stateMachineAdvancer.RunAsync(subWorkflowStream, childState).ConfigureAwait(false);
+                            
+                            if (advancerResult == null)
+                            {
+                                subWorkflowCompleted = true;
+                                break;
+                            }
+
+                            var childWait = advancerResult.Wait;
+                            childState = advancerResult.State;
+
+                            if (childWait == null)
+                            {
+                                subWorkflowCompleted = true;
+                                break;
+                            }
+
+                            // Save child wait states
+                            SaveWaitStatesToMachineState(childWait, childState);
+
+                            if (IsActiveWait(childWait))
+                            {
+                                var childProcessor = ProcessorFactory.GetProcessor(childWait);
+                                bool childContinues = await childProcessor.ProcessAsync(childWait, context).ConfigureAwait(false);
+                                
+                                if (!childContinues)
+                                {
+                                    context.WorkflowState.StateObject.StateMachinesObjects[childKey] = childState;
+                                    break;
+                                }
+                            }
+                            else
+                            {
+                                // Passive wait
+                                var subChildDto = _mapper.MapToDto(childWait);
+                                subChildDto.ParentWaitId = subWorkflow.Id;
+                                subWorkflowDto.ChildWaits.Add(subChildDto);
+                                
+                                // Store child state
+                                context.WorkflowState.StateObject.StateMachinesObjects[childKey] = childState;
+                                break;
+                            }
+                        }
+
+                        if (subWorkflowCompleted)
+                        {
+                            context.WorkflowState.StateObject.StateMachinesObjects.Remove(childKey);
+                            subWorkflowDto.Status = Abstraction.Enums.WaitStatus.Completed;
+                        }
+                    }
+                }
+                // If child is a SubWorkflowWait DTO with children already mapped
+                else if (child is SubWorkflowWait subWorkflowLegacy && subWorkflowLegacy.ChildWaits != null && subWorkflowLegacy.ChildWaits.Any())
+                {
+                    var subWorkflowDto = childDto as SubWorkflowWaitDto;
+                    if (subWorkflowDto != null)
+                    {
+                        subWorkflowDto.ChildWaits = new List<WaitInfrastructureDto>();
+                        foreach (var subChild in subWorkflowLegacy.ChildWaits)
                         {
                             SaveWaitStatesToMachineState(subChild, context.WorkflowState.StateObject);
                             var subChildDto = _mapper.MapToDto(subChild);
-                            subChildDto.ParentWaitId = subWorkflow.Id;
+                            subChildDto.ParentWaitId = subWorkflowLegacy.Id;
                             subWorkflowDto.ChildWaits.Add(subChildDto);
                         }
                     }
@@ -102,6 +173,31 @@ namespace Workflows.Runner.Pipeline.Processors
 
             return childDtos;
         }
+
+        private bool IsActiveWait(Wait wait)
+        {
+            if (wait is CompensationWait || wait is SubWorkflowWait)
+            {
+                return true;
+            }
+
+            if (wait.WaitType == Workflows.Primitives.WaitType.Command)
+            {
+                var commandWaitType = wait.GetType();
+                var executionModeProperty = commandWaitType.GetProperty("ExecutionMode",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+
+                if (executionModeProperty != null)
+                {
+                    var executionMode = executionModeProperty.GetValue(wait);
+                    if (executionMode != null && executionMode.ToString() == "Immediate")
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
     }
 }
-

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Runner;
@@ -100,29 +101,25 @@ namespace Workflows.Runner
             // 3. Execution Cycle Loop
             while (_context.ContinueExecutionLoop)
             {
-                // Get current state object (could be main or child sub-workflow state)
-                var currentState = _context.WorkflowState.StateObject;
-
                 // Advance the underlying C# state machine
-                var advancerResult = await _stateMachineAdvancer.RunAsync(_context.WorkflowStream, currentState);
+                var advancerResult = await _stateMachineAdvancer.RunAsync(
+                    _context.WorkflowStream,
+                    _context.WorkflowState.StateObject);
 
                 Definition.Wait yieldedWait = advancerResult?.Wait;
 
-                if (yieldedWait == null) // End of stream/workflow completion
+                if (yieldedWait == null)
                 {
-                    // Workflow completed - set status
                     _context.WorkflowState.Status = Abstraction.Enums.WorkflowInstanceStatus.Completed;
                     break;
                 }
 
-                // Update state object
-                _context.WorkflowState.StateObject = advancerResult?.State;
+                _context.WorkflowState.StateObject = advancerResult.State;
 
                 // Check if this wait should be cancelled and skipped
                 bool wasCancelled = await _cancelHandler.CheckAndSkipCancelledWaitAsync(yieldedWait, _context);
                 if (wasCancelled)
                 {
-                    // Skip this wait and continue to next iteration
                     _context.ContinueExecutionLoop = true;
                     continue;
                 }
