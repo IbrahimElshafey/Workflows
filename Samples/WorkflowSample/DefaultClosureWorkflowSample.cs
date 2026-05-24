@@ -6,12 +6,11 @@
 //    public sealed class DefaultClosureWorkflowSample : WorkflowContainer
 //    {
 //        public int CurrentOrderId { get; set; }
-
+        
 //        public override async IAsyncEnumerable<Wait> Run()
 //        {
 //            var minOrderId = 1;
 //            var status = "Received by closure";
-
 //            yield return WaitSignal<OrderReceivedEvent>("OrderReceived", "Receive order with closure")
 //                .MatchIf(signal => signal.OrderId >= minOrderId)
 //                .AfterMatch(signal =>
