@@ -1,3 +1,5 @@
+https://gemini.google.com/app/b277b8b553fc735f
+
 ### Phase 1: Developer API & Attribute Routing (Workflows.Base)
 
 **Goal:** Allow developers to define versions cleanly without cluttering their class names, and allow safe side-by-side execution in the same DLL.
