@@ -69,7 +69,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
 
             // Final wait - ensure state is preserved across all resumes
             yield return WaitSignal<ShipmentSignal>("FinalShipment", "Final wait")
-                .WithState(new { ResumeCount, FinalCheck = true })
+                .WithState((ResumeCount, FinalCheck: true))
                 .AfterMatch((signal, state) =>
                 {
                     ExecutionLog.Add($"Execution5: Final wait - Tracking: {signal.TrackingNumber}, Resumes: {ResumeCount}");

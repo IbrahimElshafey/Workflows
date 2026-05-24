@@ -1,24 +1,4 @@
-﻿## 2. State Machine Serialization (Duck-Typing Bridge)
-
-We treat the state machine not as a black-box object, but as a **Property Bag**. This ensures that if you add a line of code, the workflow doesn't break.
-
-* **Dehydration:** The engine scans the state machine fields for "lifted locals" (e.g., `<count>5__1`). It strips the compiler junk and stores `{"count": 10}` in a `Dictionary<string, object>`.
-* **Hydration:** When resuming, the engine looks at the *current* state machine. It doesn't care if the field is now named `<count>5__2`. It finds the field semantically matching "count" and injects the value `10`.
-* **Snapshotting:** We save the entire `Instance` (WorkflowContainer) and the `Variables` (Locals) as a JSON snapshot, allowing for instant resumption without replaying history.
-
----
-
-## 3. The Roslyn Analyzer (The Ironclad Guard)
-
-The analyzer is packaged in the `analyzers/dotnet/cs` folder of your NuGet to enforce rules at compile-time.
-
-| Error Code | Rule | Reason |
-| --- | --- | --- |
-| **WF003** | **No Anonymous Types** | Forces `ValueTuple` or `record` for state to ensure serialization stability. |
-| **WF004** | **No Unserializable Locals** | Blocks `IDisposable`, `Stream`, or `SqlConnection` from being declared as local variables. |
-
----
-
+﻿
 ## 4. Newtonsoft Settings for Performance
 
 To prevent serialization from becoming the bottleneck, we move away from standard reflection and minimize GC pressure.
@@ -39,11 +19,6 @@ We incorporate the best ideas from Temporal and Durable Functions while keeping 
 * **The Problem:** Storing 10,000 wait-results in a single JSON snapshot causes "State Bloat."
 * **The Fix:** Introduce a `WaitMany` or `WaitAny` that doesn't hold data in the snapshot. Instead, it points to a "Wait Correlation ID." The signals are counted in a high-performance SQL table. The workflow only hydrates when the "Count Reached" event triggers, keeping the workflow JSON tiny.
 
-### Visual Observability (The Hybrid Audit Log)
-
-* **The Problem:** Code-only workflows are "black boxes" for business users.
-* **The Fix:** Implement a **Command & Signal History**. Even though we resume from a Snapshot (fast), we record every signal received and command sent in a separate audit table. This allows the UI to render a "Step-by-Step" timeline for any instance.
-
 ---
 
 ## 6. Checklist: The "Final 1%"
@@ -53,5 +28,3 @@ Before moving to production, these items must be confirmed in the `WorkflowRunne
 * [ ] **Optimistic Concurrency:** Does the `StateMachineObject` have an `ETag` or `RowVersion` to prevent two servers from advancing the same workflow simultaneously?
 * [ ] **Payload Monitoring:** Is there a guardrail/log if the `Variables` dictionary exceeds a specific size (e.g., 1MB)?
 * [ ] **Zombie Recovery:** Is there a "Suspended" status for workflows that fail `X` times, preventing infinite crash loops?
-
-**This architecture is now a "Masterpiece" of .NET engineering.** It is fast, version-immune, and developer-friendly.

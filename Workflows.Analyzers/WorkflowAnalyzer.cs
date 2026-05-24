@@ -14,11 +14,11 @@ namespace Workflows.Analyzers
     {
         public const string DiagnosticIdWF000 = "WF000";
         public const string DiagnosticIdWF001 = "WF001";
-        public const string DiagnosticIdWF002 = "WF002";
         public const string DiagnosticIdWF003 = "WF003";
         public const string DiagnosticIdWF004 = "WF004";
         public const string DiagnosticIdWF005 = "WF005";
         public const string DiagnosticIdWF006 = "WF006";
+        public const string DiagnosticIdWF007 = "WF007";
         public const string DiagnosticIdWF103 = "WF103";
         public const string DiagnosticIdWF201 = "WF201";
         public const string DiagnosticIdWF202 = "WF202";
@@ -41,26 +41,18 @@ namespace Workflows.Analyzers
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
 
-        private static readonly DiagnosticDescriptor WF002 = new DiagnosticDescriptor(
-            DiagnosticIdWF002,
-            "Unserializable Workflow State",
-            "Local variable '{0}' of type '{1}' implements IDisposable/IAsyncDisposable, which cannot be held across yield boundaries",
-            "Workflow.Serialization",
-            DiagnosticSeverity.Error,
-            isEnabledByDefault: true);
-
         private static readonly DiagnosticDescriptor WF003 = new DiagnosticDescriptor(
             DiagnosticIdWF003,
-            "Yield Inside Using Block",
-            "Yield return statement is not allowed inside a using block or while a using declaration is active",
+            "No Anonymous Types",
+            "Passing anonymous type to '.WithState()' is disallowed. Use ValueTuple or record for state to ensure serialization stability.",
             "Workflow.Serialization",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
 
         private static readonly DiagnosticDescriptor WF004 = new DiagnosticDescriptor(
             DiagnosticIdWF004,
-            "Invalid AsyncLocal Capture",
-            "Access to AsyncLocal/HttpContext is invalid within a workflow. Ambient thread contexts do not survive workflow dehydration/rehydration.",
+            "No Unserializable Locals",
+            "Local variable '{0}' of type '{1}' is unserializable (IDisposable, Stream, or SqlConnection cannot be declared as local variables).",
             "Workflow.Serialization",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -75,8 +67,16 @@ namespace Workflows.Analyzers
 
         private static readonly DiagnosticDescriptor WF006 = new DiagnosticDescriptor(
             DiagnosticIdWF006,
-            "Anonymous Types Disallowed for State",
-            "Passing anonymous type to '.WithState()' is disallowed as anonymous types cannot be reliably deserialized across runs.",
+            "Yield Inside Using Block",
+            "Yield return statement is not allowed inside a using block or while a using declaration is active",
+            "Workflow.Serialization",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor WF007 = new DiagnosticDescriptor(
+            DiagnosticIdWF007,
+            "Invalid AsyncLocal Capture",
+            "Access to AsyncLocal/HttpContext is invalid within a workflow. Ambient thread contexts do not survive workflow dehydration/rehydration.",
             "Workflow.Serialization",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -114,7 +114,7 @@ namespace Workflows.Analyzers
             isEnabledByDefault: true);
 
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(
-            WF000, WF001, WF002, WF003, WF004, WF005, WF006, WF103, WF201, WF202, WF203);
+            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203);
 
         public override void Initialize(AnalysisContext context)
         {
@@ -143,22 +143,22 @@ namespace Workflows.Analyzers
 
         private static void AnalyzeVariableDeclaration(SyntaxNodeAnalysisContext context)
         {
-            Rules.SerializationRules.AnalyzeVariableDeclaration(context, WF002);
+            Rules.SerializationRules.AnalyzeVariableDeclaration(context, WF004);
         }
 
         private static void AnalyzeYieldStatement(SyntaxNodeAnalysisContext context)
         {
-            Rules.SerializationRules.AnalyzeYieldStatement(context, WF003);
+            Rules.SerializationRules.AnalyzeYieldStatement(context, WF006);
         }
 
         private static void AnalyzeMemberAccessExpression(SyntaxNodeAnalysisContext context)
         {
-            Rules.SerializationRules.AnalyzeMemberAccessExpression(context, WF004);
+            Rules.SerializationRules.AnalyzeMemberAccessExpression(context, WF007);
         }
 
         private static void AnalyzeIdentifierName(SyntaxNodeAnalysisContext context)
         {
-            Rules.SerializationRules.AnalyzeIdentifierName(context, WF004);
+            Rules.SerializationRules.AnalyzeIdentifierName(context, WF007);
         }
 
         private static void AnalyzeAssignmentExpression(SyntaxNodeAnalysisContext context)
@@ -170,7 +170,7 @@ namespace Workflows.Analyzers
         {
             var invocation = (InvocationExpressionSyntax)context.Node;
             Rules.SerializationRules.AnalyzeWithStateInvocation(context, invocation, WF005);
-            Rules.SerializationRules.AnalyzeWithStateAnonymousType(context, invocation, WF006);
+            Rules.SerializationRules.AnalyzeWithStateAnonymousType(context, invocation, WF003);
 
             var methodSymbol = context.SemanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
             if (methodSymbol == null) return;
