@@ -127,58 +127,44 @@ namespace Workflows.Analyzers.Rules
 
             public override void VisitIdentifierName(IdentifierNameSyntax node)
             {
-                if (node.Parent is MemberAccessExpressionSyntax memberAccess && memberAccess.Name == node)
-                {
-                    base.VisitIdentifierName(node);
-                    return;
-                }
-
-                var symbolInfo = _semanticModel.GetSymbolInfo(node);
-                var symbol = symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
+                var symbol = _semanticModel.GetSymbolInfo(node).Symbol;
                 if (symbol != null)
                 {
-                    if (symbol is INamespaceSymbol || symbol is ITypeSymbol)
+                    // 1. Ignore static members
+                    if (symbol.IsStatic)
                     {
                         base.VisitIdentifierName(node);
                         return;
                     }
 
-                    if (symbol is ILocalSymbol || symbol is IParameterSymbol || symbol is IFieldSymbol || symbol is IPropertySymbol || symbol is IMethodSymbol)
+                    // 2. Ignore the method itself (recursive/method group calls)
+                    if (symbol.ContainingSymbol != null && SymbolEqualityComparer.Default.Equals(symbol.ContainingSymbol, _lambdaSymbol))
                     {
-                        if (_declaredInside.Contains(symbol))
-                        {
-                            base.VisitIdentifierName(node);
-                            return;
-                        }
+                        base.VisitIdentifierName(node);
+                        return;
+                    }
 
-                        if (symbol.IsStatic)
-                        {
-                            base.VisitIdentifierName(node);
-                            return;
-                        }
+                    // 3. FIX: Safely ignore class-level Fields and Properties (Domain State)
+                    if (symbol is IFieldSymbol || symbol is IPropertySymbol || symbol is IMethodSymbol)
+                    {
+                        base.VisitIdentifierName(node);
+                        return;
+                    }
 
-                        if (symbol.ContainingSymbol != null && SymbolEqualityComparer.Default.Equals(symbol.ContainingSymbol, _lambdaSymbol))
-                        {
-                            base.VisitIdentifierName(node);
-                            return;
-                        }
-
-                        if (symbol.ContainingType != null)
-                        {
-                            _closureCaptures.Add(node);
-                        }
-                        else if (symbol is ILocalSymbol || symbol is IParameterSymbol)
-                        {
-                            _closureCaptures.Add(node);
-                        }
+                    // 4. Capture ONLY true local variables and parameters
+                    if (symbol is ILocalSymbol || symbol is IParameterSymbol)
+                    {
+                        _closureCaptures.Add(node);
                     }
                 }
+
                 base.VisitIdentifierName(node);
             }
 
+            // NOTE: Also ensure VisitThisExpression doesn't erroneously flag the 'this' keyword!
             public override void VisitThisExpression(ThisExpressionSyntax node)
             {
-                _closureCaptures.Add(node);
+                // Remove _closureCaptures.Add(node); 
                 base.VisitThisExpression(node);
             }
 

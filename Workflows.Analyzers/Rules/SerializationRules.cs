@@ -154,38 +154,25 @@ namespace Workflows.Analyzers.Rules
             }
         }
 
-        public static void AnalyzeWithStateInvocation(SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation, DiagnosticDescriptor descriptor)
+        public static void AnalyzeWithStateInvocation(SyntaxNodeAnalysisContext context, InvocationExpressionSyntax invocation, DiagnosticDescriptor wf005)
         {
             var methodSymbol = context.SemanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
             if (methodSymbol == null || methodSymbol.Name != "WithState") return;
 
-            var containingMethodNode = invocation.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-            if (containingMethodNode == null) return;
+            var argument = invocation.ArgumentList.Arguments.FirstOrDefault();
+            if (argument == null) return;
 
-            var containingMethodSymbol = context.SemanticModel.GetDeclaredSymbol(containingMethodNode);
-            if (containingMethodSymbol == null) return;
+            var typeInfo = context.SemanticModel.GetTypeInfo(argument.Expression);
+            var type = typeInfo.Type;
 
-            var containingType = containingMethodSymbol.ContainingType;
-            if (!WorkflowAnalyzer.InheritsFromWorkflowContainer(containingType)) return;
-
-            bool isSyncHelper = !WorkflowAnalyzer.IsWorkflowMethod(containingMethodSymbol) &&
-                                 containingMethodSymbol.ReturnType.ToDisplayString() != "System.Threading.Tasks.Task" &&
-                                 !containingMethodSymbol.ReturnType.ToDisplayString().StartsWith("System.Threading.Tasks.Task<") &&
-                                 containingMethodSymbol.ReturnType.ToDisplayString() != "System.Threading.Tasks.ValueTask" &&
-                                 !containingMethodSymbol.ReturnType.ToDisplayString().StartsWith("System.Threading.Tasks.ValueTask<");
-
-            if (!isSyncHelper) return;
-
-            foreach (var arg in invocation.ArgumentList.Arguments)
+            // FIX: Ignore whether the variable came from a sync or async method.
+            // Only flag it if it's clearly an unserializable type (like a Delegate or IDisposable)
+            if (type != null)
             {
-                var symbol = context.SemanticModel.GetSymbolInfo(arg.Expression).Symbol;
-                if (symbol != null && (symbol is ILocalSymbol || symbol is IParameterSymbol))
+                if (type.TypeKind == TypeKind.Delegate || WorkflowAnalyzer.ImplementsDisposable(type))
                 {
-                    if (SymbolEqualityComparer.Default.Equals(symbol.ContainingSymbol, containingMethodSymbol))
-                    {
-                        var diagnostic = Diagnostic.Create(descriptor, arg.GetLocation(), symbol.Name, containingMethodSymbol.Name);
-                        context.ReportDiagnostic(diagnostic);
-                    }
+                    var diagnostic = Diagnostic.Create(wf005, argument.GetLocation(), argument.Expression.ToString(), type.Name);
+                    context.ReportDiagnostic(diagnostic);
                 }
             }
         }

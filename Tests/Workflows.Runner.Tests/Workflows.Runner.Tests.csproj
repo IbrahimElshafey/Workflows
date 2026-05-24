@@ -17,6 +17,7 @@
     </PackageReference>
     <PackageReference Include="FluentAssertions" Version="7.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -25,6 +26,9 @@
     <ProjectReference Include="..\..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
     <ProjectReference Include="..\..\Hosting\Workflows.Hosting.InProcess\Workflows.Hosting.InProcess.csproj" />
     <ProjectReference Include="..\..\Workflows.Runner.TestShell\Workflows.Runner.TestShell.csproj" />
+    <ProjectReference Include="..\..\Workflows.Client\Workflows.Client\Workflows.Client.csproj" />
+    <ProjectReference Include="..\..\Workflows.Client\Workflows.Client.WebApi\Workflows.Client.WebApi.csproj" />
+    <ProjectReference Include="..\..\Workflows.Client\Workflows.Client.gRPC\Workflows.Client.gRPC.csproj" />
   </ItemGroup>
 
 </Project>

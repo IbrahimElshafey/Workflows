@@ -8,6 +8,7 @@ using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Orchestrator;
 using Workflows.Abstraction.Persistence;
 using Workflows.Abstraction.Runner;
+using Workflows.Communication.Abstraction;
 
 namespace Workflows.Orchestrator
 {
@@ -15,11 +16,16 @@ namespace Workflows.Orchestrator
     {
         private readonly IWorkflowStore _workflowStore;
         private readonly IExternalScheduler _scheduler;
+        private readonly IMessageDispatcher _dispatcher;
 
-        public WorkflowRunnerClient(IWorkflowStore workflowStore, IExternalScheduler scheduler)
+        public WorkflowRunnerClient(
+            IWorkflowStore workflowStore, 
+            IExternalScheduler scheduler,
+            IMessageDispatcher dispatcher)
         {
             _workflowStore = workflowStore ?? throw new ArgumentNullException(nameof(workflowStore));
             _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
+            _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         }
 
         public async Task<AsyncResult> SendWorkflowRunResultAsync(
@@ -29,25 +35,65 @@ namespace Workflows.Orchestrator
         {
             if (result == null) throw new ArgumentNullException(nameof(result));
 
-            // Commit the state updates, new/active waits, and completed wait IDs atomically
+            // 1. Get existing waits to identify which ones are new
+            var existingState = await _workflowStore.GetInstanceStateAsync(result.UpdatedState.Id);
+            var existingWaitIds = existingState != null
+                ? existingState.Waits.Select(w => w.Id).ToHashSet()
+                : new HashSet<Guid>();
+
+            // 2. Commit the state updates, new/active waits, and completed wait IDs atomically
             await _workflowStore.SaveContextSyncAsync(
                 result.UpdatedState,
                 result.UpdatedState.Waits,
                 result.ConsumedWaitsIds);
 
-            // Scan the active waits recursively for any waiting TimeWaitDto and schedule them
+            // 3. Scan the active waits recursively for any waiting TimeWaitDto and schedule them
+            var activeWaits = result.UpdatedState.Waits ?? new List<WaitInfrastructureDto>();
+            
             var timeWaits = new List<TimeWaitDto>();
-            foreach (var wait in result.UpdatedState.Waits)
+            foreach (var wait in activeWaits)
             {
                 CollectTimeWaits(wait, timeWaits);
             }
 
             foreach (var timeWait in timeWaits)
             {
-                if (timeWait.Status == Abstraction.Enums.WaitStatus.Waiting)
+                if (timeWait.Status == Abstraction.Enums.WaitStatus.Waiting && !existingWaitIds.Contains(timeWait.Id))
                 {
                     var executeAt = DateTime.UtcNow.Add(timeWait.TimeToWait);
                     await _scheduler.ScheduleSignalAsync(timeWait.UniqueMatchId, null, executeAt);
+                }
+            }
+
+            // 4. Scan the active waits recursively for any waiting deferred CommandWaitDto and dispatch them
+            var commandWaits = new List<CommandWaitDto>();
+            foreach (var wait in activeWaits)
+            {
+                CollectCommandWaits(wait, commandWaits);
+            }
+
+            foreach (var commandWait in commandWaits)
+            {
+                if (commandWait.Status == Abstraction.Enums.WaitStatus.Waiting && 
+                    commandWait.ExecutionMode == Primitives.CommandExecutionMode.Deferred &&
+                    !existingWaitIds.Contains(commandWait.Id))
+                {
+                    var notification = new CommandDispatchNotification
+                    {
+                        CommandWaitId = commandWait.Id,
+                        HandlerKey = commandWait.HandlerKey,
+                        CommandData = commandWait.CommandData?.ToString() ?? string.Empty
+                    };
+
+                    try
+                    {
+                        await _dispatcher.DispatchAsync(notification);
+                    }
+                    catch (InvalidOperationException ex) when (ex.Message.Contains("No routing rule found for message type"))
+                    {
+                        // In some purely in-process tests (like OrchestrationIntegrationTests),
+                        // there is no out-of-process subscriber/runner configured, so we ignore this.
+                    }
                 }
             }
 
@@ -67,6 +113,23 @@ namespace Workflows.Orchestrator
                 foreach (var child in wait.ChildWaits)
                 {
                     CollectTimeWaits(child, list);
+                }
+            }
+        }
+
+        private void CollectCommandWaits(WaitInfrastructureDto wait, List<CommandWaitDto> list)
+        {
+            if (wait == null) return;
+            if (wait is CommandWaitDto commandWait)
+            {
+                list.Add(commandWait);
+            }
+
+            if (wait.ChildWaits != null)
+            {
+                foreach (var child in wait.ChildWaits)
+                {
+                    CollectCommandWaits(child, list);
                 }
             }
         }

@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package workflows;
+
+option csharp_namespace = "Workflows.Client.Grpc";
+
+service WorkflowOrchestrator {
+  rpc ProcessSignal(SignalRequest) returns (SignalResponse);
+  rpc ProcessCommandResult(CommandResultRequest) returns (CommandResultResponse);
+  rpc StartWorkflow(StartWorkflowRequest) returns (StartWorkflowResponse);
+}
+
+service WorkflowExecutor {
+  rpc DispatchCommand(CommandDispatchRequest) returns (CommandDispatchResponse);
+}
+
+message SignalRequest {
+  string id = 1;
+  string signal_identifier = 2;
+  string json_data = 3;
+  string client_sent_time = 4;
+}
+
+message SignalResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message CommandResultRequest {
+  string command_wait_id = 1;
+  string json_result = 2;
+  string client_sent_time = 3;
+}
+
+message CommandResultResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+message StartWorkflowRequest {
+  string workflow_name = 1;
+  string version = 2;
+  string json_input = 3;
+}
+
+message StartWorkflowResponse {
+  string workflow_id = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+message CommandDispatchRequest {
+  string command_wait_id = 1;
+  string handler_key = 2;
+  string json_data = 3;
+  string dispatched_at = 4;
+}
+
+message CommandDispatchResponse {
+  bool success = 1;
+  string error_message = 2;
+}
