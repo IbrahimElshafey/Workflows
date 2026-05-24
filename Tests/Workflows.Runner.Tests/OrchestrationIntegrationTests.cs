@@ -22,7 +22,7 @@ using Workflows.Definition;
 using Workflows.Definition.Registration;
 using Workflows.Hosting.InProcess;
 using Workflows.Orchestrator;
-using Workflows.Orchestrator.Data.EF;
+using Workflows.Storage.EntityFrameworkCore;
 using Workflows.Primitives;
 using Workflows.Runner;
 using Workflows.Runner.Tests.TestData;
@@ -120,7 +120,7 @@ namespace Workflows.Runner.Tests
             dbContext.ChangeTracker.Clear();
 
             // Verify state is persisted in DB
-            var dbState = await dbContext.WorkflowStates.FindAsync(instanceId);
+            var dbState = await dbContext.WorkflowInstances.FindAsync(instanceId);
             dbState.Should().NotBeNull();
             dbState!.Status.Should().Be((int)WorkflowInstanceStatus.Running);
 
@@ -156,11 +156,11 @@ namespace Workflows.Runner.Tests
             instanceStep2!.ResumeCount.Should().Be(8, because: $"ExecutionLog: {string.Join(" | ", instanceStep2.ExecutionLog)}");
 
             // Verify DB doesn't have the old wait
-            var oldWaitInDb = await dbContext.WaitRecords.FindAsync(state.Waits.First().Id);
+            var oldWaitInDb = await dbContext.WorkflowWaits.FindAsync(state.Waits.First().Id);
             // wait we just created IS in DB
             oldWaitInDb.Should().NotBeNull();
             // wait we completed is NOT in DB
-            var firstWaitRecord = await dbContext.WaitRecords.FirstOrDefaultAsync(w => w.WaitName == "First wait");
+            var firstWaitRecord = await dbContext.WorkflowWaits.FirstOrDefaultAsync(w => w.WaitName == "First wait");
             firstWaitRecord.Should().BeNull();
 
             // Step 3: Send Command Result to advance past second wait to Group wait
@@ -207,7 +207,7 @@ namespace Workflows.Runner.Tests
             instanceStep4!.ResumeCount.Should().Be(10);
 
             // Verify all group wait records were pruned from the database
-            var hasGroupWaitRecords = await dbContext.WaitRecords.AnyAsync(w =>
+            var hasGroupWaitRecords = await dbContext.WorkflowWaits.AnyAsync(w =>
                 w.WorkflowInstanceId == instanceId &&
                 (w.WaitName == "PaymentGroup" || w.WaitName == "Payment option 1" || w.WaitName == "Payment option 2"));
             hasGroupWaitRecords.Should().BeFalse();

@@ -21,5 +21,6 @@ using System.Runtime.InteropServices;
 [assembly: InternalsVisibleTo("Workflows.Runner.Tests")]
 [assembly: InternalsVisibleTo("Workflows.Orchestrator")]
 [assembly: InternalsVisibleTo("Workflows.Orchestrator.Data.EF")]
+[assembly: InternalsVisibleTo("Workflows.Storage.EntityFrameworkCore")]
 [assembly: InternalsVisibleTo("Workflows.TestShell")]
 

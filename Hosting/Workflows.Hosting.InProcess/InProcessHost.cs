@@ -7,7 +7,7 @@ using Workflows.Abstraction.Orchestrator;
 using Workflows.Abstraction.Persistence;
 using Workflows.Abstraction.Runner;
 using Workflows.Communication.Abstraction;
-using Workflows.Orchestrator.Data.EF;
+using Workflows.Storage.EntityFrameworkCore;
 using Workflows.Orchestrator;
 using Workflows.Runner;
 
@@ -20,13 +20,8 @@ namespace Workflows.Hosting.InProcess
             if (services == null) throw new ArgumentNullException(nameof(services));
             if (string.IsNullOrEmpty(connectionString)) throw new ArgumentNullException(nameof(connectionString));
 
-            // 1. EF Core Database Context
-            services.AddDbContext<WorkflowsDbContext>(options =>
-                options.UseSqlite(connectionString));
-
-            // 2. Persistence Store Registrations
-            services.AddScoped<IWorkflowStore, EfWorkflowStore>();
-            services.AddScoped<IDefinitionRepository, EfDefinitionRepository>();
+            // 1. EF Core Database Context & Persistence Store Registrations (using new Sqlite adapter)
+            services.AddWorkflowsSqlite(connectionString);
 
             // 3. Orchestrator & Background Scheduler
             services.AddSingleton<Scheduler>();

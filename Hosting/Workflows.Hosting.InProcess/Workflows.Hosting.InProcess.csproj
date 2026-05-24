@@ -9,7 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Workflows.Orchestrator\Workflows.Orchestrator.csproj" />
     <ProjectReference Include="..\..\Workflows.Runner\Workflows.Runner.csproj" />
-    <ProjectReference Include="..\..\DataStore\Workflows.Orchestrator.Data.EF\Workflows.Orchestrator.Data.EF.csproj" />
+    <ProjectReference Include="..\..\DataStore\Workflows.Storage.Sqlite\Workflows.Storage.Sqlite.csproj" />
   </ItemGroup>
 
 </Project>

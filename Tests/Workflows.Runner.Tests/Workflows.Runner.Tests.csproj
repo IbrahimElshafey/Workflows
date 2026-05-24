@@ -29,6 +29,8 @@
     <ProjectReference Include="..\..\Workflows.Client\Workflows.Client\Workflows.Client.csproj" />
     <ProjectReference Include="..\..\Workflows.Client\Workflows.Client.WebApi\Workflows.Client.WebApi.csproj" />
     <ProjectReference Include="..\..\Workflows.Client\Workflows.Client.gRPC\Workflows.Client.gRPC.csproj" />
+    <ProjectReference Include="..\..\DataStore\Workflows.Storage.EntityFrameworkCore\Workflows.Storage.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\DataStore\Workflows.Storage.Sqlite\Workflows.Storage.Sqlite.csproj" />
   </ItemGroup>
 
 </Project>
