@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Linq.Expressions;
 using Workflows.Definition;
@@ -23,7 +23,10 @@ namespace Workflows.Runner.ExpressionTransformers
             dynamicVisitor.Build();
 
             // Step 2: Analyze for Tier 1 (SQL Exact Match Extraction) using the Clean TypedResult
-            var exactMatchAnalyzer = ExactMatchAnalyzer.Analyze(dynamicVisitor.TypedResult, dynamicVisitor.IsFullMatch);
+            var exactMatchAnalyzer = ExactMatchAnalyzer.Create(
+                dynamicVisitor.TypedResult,
+                dynamicVisitor.IsFullMatch && dynamicVisitor.IsExactMatchFullMatch,
+                dynamicVisitor.PotentialExactMatchPairs);
 
             // Step 3: Normalize the original expression ONLY for the Runner (Tier 3 execution)
             var matchExpressionNormalizer = new MatchExpressionNormalizer();

@@ -86,7 +86,11 @@ namespace Workflows.Orchestrator
                                     using (var scope = _serviceProvider.CreateScope())
                                     {
                                         var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
-                                        await orchestrator.ProcessSignalAsync(timer.SignalIdentifier, timer.Payload);
+                                        await orchestrator.ProcessSignalAsync(new Workflows.Abstraction.DTOs.SignalDto
+                                        {
+                                            SignalIdentifier = timer.SignalIdentifier,
+                                            Data = timer.Payload
+                                        });
                                     }
                                 }
                                 catch (Exception)

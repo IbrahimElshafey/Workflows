@@ -1,13 +1,20 @@
-﻿using System.Text.Json;
+using System;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
-namespace Workflows.Runner.ExpressionTransformers
+namespace Workflows.Shared
 {
     /// <summary>
     /// Helper to cleanly extract values from a System.Text.Json.JsonElement
-    /// You will implement the actual parsing (e.g. dot-notation path traversal) inside this method.
     /// </summary>
     public static class JsonElementExtensions
     {
+        private static readonly JsonSerializerOptions SerializerOptions = new JsonSerializerOptions
+        {
+            Converters = { new JsonStringEnumConverter() }
+        };
+
         /// <summary>
         /// Traverses a dot-notation path (e.g. "Order.Id") through a JsonElement
         /// and deserializes the final value to <typeparamref name="T"/>.
@@ -22,7 +29,7 @@ namespace Workflows.Runner.ExpressionTransformers
                     !current.TryGetProperty(segment, out current))
                     return default;
             }
-            return JsonSerializer.Deserialize<T>(current.GetRawText());
+            return JsonSerializer.Deserialize<T>(current.GetRawText(), SerializerOptions);
         }
     }
 }

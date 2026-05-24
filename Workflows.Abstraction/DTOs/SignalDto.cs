@@ -1,13 +1,13 @@
-﻿using System;
+using System;
 
 namespace Workflows.Abstraction.DTOs
 {
     public class SignalDto
     {
-        public Guid Id { get; internal set; }
-        public object Data { get; internal set; }
-        public DateTime ClientSentTime { get; internal set; }
-        public DateTime OrchestratorReceiveTime { get; internal set; }
-        public string SignalIdentifier { get; internal set; }
+        public Guid Id { get; set; }
+        public object Data { get; set; }
+        public DateTime ClientSentTime { get; set; }
+        public DateTime OrchestratorReceiveTime { get; set; }
+        public string SignalIdentifier { get; set; }
     }
 }

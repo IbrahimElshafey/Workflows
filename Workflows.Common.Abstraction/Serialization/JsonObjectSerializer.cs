@@ -12,7 +12,8 @@ namespace Workflows.Shared.Serialization
             TypeNameHandling = TypeNameHandling.None,
             NullValueHandling = NullValueHandling.Ignore,
             Formatting = Formatting.None,
-            ContractResolver = new PrivateSetterContractResolver()
+            ContractResolver = new PrivateSetterContractResolver(),
+            Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
         };
 
         private static readonly JsonSerializerSettings StateSettings = new JsonSerializerSettings
@@ -23,7 +24,8 @@ namespace Workflows.Shared.Serialization
             ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor,
             ObjectCreationHandling = ObjectCreationHandling.Replace,
             ContractResolver = new PrivateSetterContractResolver(),
-            PreserveReferencesHandling = PreserveReferencesHandling.Objects
+            PreserveReferencesHandling = PreserveReferencesHandling.Objects,
+            Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
         };
 
         public class PrivateSetterContractResolver : Newtonsoft.Json.Serialization.DefaultContractResolver

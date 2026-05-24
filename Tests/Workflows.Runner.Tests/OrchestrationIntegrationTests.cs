@@ -81,6 +81,7 @@ namespace Workflows.Runner.Tests
             var registry = provider.GetRequiredService<IWorkflowBuilder>();
             registry.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", "1.0");
             registry.RegisterWorkflow<ShortDelayWorkflow>("ShortDelayWorkflow", "1.0");
+            registry.RegisterWorkflow<EnumMatchingWorkflow>("EnumMatchingWorkflow", "1.0");
             registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
             registry.RegisterSignal<PaymentConfirmedSignal>("Payment1");
             registry.RegisterSignal<PaymentConfirmedSignal>("Payment2");
@@ -134,10 +135,10 @@ namespace Workflows.Runner.Tests
             state.Waits.First().WaitName.Should().Be("First wait");
 
             // Step 2: Send Signal to advance past First wait
-            await orchestrator.ProcessSignalAsync("OrderReceived", new OrderReceivedSignal
+            await orchestrator.ProcessSignalAsync(new SignalDto
             {
-                OrderId = "ORD-999",
-                Amount = 1500
+                SignalIdentifier = "OrderReceived",
+                Data = new OrderReceivedSignal { OrderId = "ORD-999", Amount = 1500 }
             });
 
             dbContext.ChangeTracker.Clear();
@@ -163,10 +164,10 @@ namespace Workflows.Runner.Tests
             firstWaitRecord.Should().BeNull();
 
             // Step 3: Send Command Result to advance past second wait to Group wait
-            await orchestrator.ProcessCommandResultAsync(commandWait.Id, new ProcessPaymentResult
+            await orchestrator.ProcessCommandResultAsync(new CommandResultDto
             {
-                Success = true,
-                TransactionId = "TX-ABCD"
+                CommandWaitId = commandWait.Id,
+                Result = new ProcessPaymentResult { Success = true, TransactionId = "TX-ABCD" }
             });
 
             dbContext.ChangeTracker.Clear();
@@ -186,9 +187,10 @@ namespace Workflows.Runner.Tests
             instanceStep3!.ResumeCount.Should().Be(9);
 
             // Step 4: Fire matching signal for MatchAny group wait and check sibling pruning
-            await orchestrator.ProcessSignalAsync("Payment1", new PaymentConfirmedSignal
+            await orchestrator.ProcessSignalAsync(new SignalDto
             {
-                TransactionId = "TX-CONFIRMED-1"
+                SignalIdentifier = "Payment1",
+                Data = new PaymentConfirmedSignal { TransactionId = "TX-CONFIRMED-1" }
             });
 
             dbContext.ChangeTracker.Clear();
@@ -267,6 +269,52 @@ namespace Workflows.Runner.Tests
                 connection.Close();
             }
         }
+
+        [Fact]
+        public async Task ProcessSignal_WithJsonEnumPayload_ShouldConvertIntegerEnumAndSucceed()
+        {
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            using var provider = CreateServiceProvider(dbName, out var connection);
+            await SyncDefinitions(provider);
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+            var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+
+            // Start the EnumMatchingWorkflow
+            var instanceId = await orchestrator.StartWorkflowAsync("EnumMatchingWorkflow", "1.0", null);
+            instanceId.Should().NotBeEmpty();
+
+            // Verify a wait is registered
+            var state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            state!.Waits.Should().HaveCount(1);
+            state.Waits.First().Should().BeOfType<SignalWaitDto>();
+
+            // Send signal with "Status" as an integer (3 for TaskStatus.Running)
+            string jsonPayload = "{\"OrderId\":\"ORD-ENUM-TEST\",\"Amount\":500,\"Status\":3}";
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "OrderReceived",
+                Data = jsonPayload
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Verify the workflow completed successfully
+            state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            state!.Status.Should().Be(WorkflowInstanceStatus.Completed);
+            state.Waits.Should().BeEmpty();
+
+            var instance = state.StateObject.Instance as EnumMatchingWorkflow;
+            instance.Should().NotBeNull();
+            instance!.Completed.Should().BeTrue();
+            instance.ReceivedStatus.Should().Be(System.Threading.Tasks.TaskStatus.Running);
+
+            connection.Close();
+        }
     }
 
     public sealed class ShortDelayWorkflow : WorkflowContainer
@@ -277,6 +325,23 @@ namespace Workflows.Runner.Tests
         {
             yield return WaitDelay(TimeSpan.FromMilliseconds(50), "ShortDelay", "50ms delay");
             Completed = true;
+        }
+    }
+
+    public sealed class EnumMatchingWorkflow : WorkflowContainer
+    {
+        public bool Completed { get; set; }
+        public System.Threading.Tasks.TaskStatus ReceivedStatus { get; set; }
+
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "EnumWait")
+                .MatchIf(signal => signal.Status == System.Threading.Tasks.TaskStatus.Running)
+                .AfterMatch(signal =>
+                {
+                    this.ReceivedStatus = signal.Status;
+                    this.Completed = true;
+                });
         }
     }
 }
