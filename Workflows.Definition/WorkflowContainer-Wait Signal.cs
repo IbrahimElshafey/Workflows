@@ -22,13 +22,13 @@ namespace Workflows.Definition
                 callerFilePath)
             {
                 WorkflowContainer = this,
-                ExplicitState = null
             };
+            //newSignalWait.SetState(null);
             return new SignalBuilder<SignalData>(newSignalWait);
         }
 
         protected GroupWait WaitGroup(
-            IPassiveWait[] passiveWaits,
+            Wait[] passiveWaits,
             string name = null,
             [CallerFilePath] string callerFilePath = "",
             [CallerLineNumber] int inCodeLine = 0,

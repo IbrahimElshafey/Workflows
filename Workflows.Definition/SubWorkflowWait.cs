@@ -3,7 +3,7 @@ using Workflows.Primitives;
 
 namespace Workflows.Definition
 {
-    public class SubWorkflowWait : Wait, IPassiveWait
+    public class SubWorkflowWait : Wait
     {
         internal Wait FirstWait { get; set; }
         internal IAsyncEnumerable<Wait> Runner { get; set; }
@@ -13,17 +13,16 @@ namespace Workflows.Definition
         {
         }
 
-        public HashSet<string> CancelTokens { get; set; }
+        internal SubWorkflowWait()
+        {
+        }
 
         public SubWorkflowWait WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token)) return this;
-            CancelTokens ??= new HashSet<string>();
             CancelTokens.Add(token);
             return this;
         }
-
-        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
     }
 }
 

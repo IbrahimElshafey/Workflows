@@ -1,15 +1,16 @@
-using System.Collections.Generic;
 using Workflows.Definition;
 using Workflows.Runner.Tests.TestData;
+using Workflows.Abstraction.Enums;
+using Workflows.Primitives;
 
 namespace Workflows.Runner.Tests.TestWorkflows
 {
     /// <summary>
     /// Test workflow for first wait and resume scenarios
     /// </summary>
-    public class FirstWaitAndResumeWorkflow : WorkflowContainer
+    public sealed class FirstWaitAndResumeWorkflow : WorkflowContainer
     {
-        public List<string> ExecutionLog { get; } = new();
+        public List<string> ExecutionLog { get; set; } = new();
         public int ResumeCount { get; set; }
 
         public override async IAsyncEnumerable<Wait> Run()
@@ -32,6 +33,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
             yield return ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPayment",
                 new ProcessPaymentCommand { OrderId = "ORD-001", Amount = 100 })
+                .WithExecutionMode(CommandExecutionMode.Deferred)
                 .WithState("PaymentState")
                 .OnResult((result, state) =>
                 {
@@ -67,7 +69,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
 
             // Final wait - ensure state is preserved across all resumes
             yield return WaitSignal<ShipmentSignal>("FinalShipment", "Final wait")
-                .WithState(new { ResumeCount, FinalCheck = true })
+                .WithState((ResumeCount, FinalCheck: true))
                 .AfterMatch((signal, state) =>
                 {
                     ExecutionLog.Add($"Execution5: Final wait - Tracking: {signal.TrackingNumber}, Resumes: {ResumeCount}");

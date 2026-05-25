@@ -8,6 +8,7 @@ namespace Workflows.Abstraction.DTOs.Waits
     /// </summary>
     public sealed class SubWorkflowWaitDto : WaitInfrastructureDto
     {
+        public string MethodFullPath { get; set; }
         public int StateIndex { get; set; }
         public Guid StateMachineObjectId { get; set; }
         internal SubWorkflowWaitDto()

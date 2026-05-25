@@ -8,6 +8,5 @@ namespace Workflows.Definition
         object ExplicitState { get; }
         WorkflowContainer WorkflowContainer { get; set; }
         string SignalIdentifier { get; }
-        object AfterMatchAction { get; }
     }
 }

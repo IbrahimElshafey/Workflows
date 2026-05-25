@@ -1,4 +1,4 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 
 namespace Workflows.Abstraction.Runner
@@ -9,6 +9,7 @@ namespace Workflows.Abstraction.Runner
     /// </summary>
     public interface IWorkflowRunner
     {
+        Task<AsyncResult> StartWorkflow(string workflowName, object input = null);
         /// <summary>
         /// Executes the next step of a workflow based on the provided context, 
         /// which includes the current state and the incoming signal.

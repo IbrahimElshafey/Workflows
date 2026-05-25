@@ -10,21 +10,21 @@ namespace Workflows.Runner.Cache
     internal class SignalTemplateCacheRecord
     {
         /// <summary>
-        /// Wait.MatchExpression: (workflowInstance, signalData, closure) => bool
+        /// Wait.MatchExpression: (workflowInstance, signalData, state) => bool
         /// </summary>
         public Func<object, object, object, bool> CompiledMatchDelegate { get; set; }
 
         /// <summary>
-        /// Wait.AfterMatchAction (workflowInstance, signalData, closure) => void
+        /// Wait.AfterMatchAction (workflowInstance, signalData, state) => void
         /// </summary>
         public Action<object, object, object> AfterMatchAction { get; set; }
 
         /// <summary>
-        /// Wait.CancelAction (workflowInstance, closure) => ValueTask
+        /// Wait.CancelAction (workflowInstance, state) => ValueTask
         /// </summary>
         public Func<object, object, ValueTask> CancelAction { get; set; }
 
-        // Tier 1 Blueprint: (workflowInstance, closure) => object[]
-        public Func<object, object, string> CompiledInstanceExactMatchExpression { get; set; }
+        // Tier 1 Blueprint: (workflowInstance, state) => object[]
+        public Func<object, object, string[]> CompiledInstanceExactMatchExpression { get; set; }
     }
 }

@@ -1,6 +1,5 @@
-using System;
-using System.Threading.Tasks;
-using Workflows.Runner.Helpers;
+using System.Reflection;
+using Workflows.Abstraction.Helpers;
 
 namespace Workflows.Runner.Tests.Infrastructure
 {
@@ -15,7 +14,7 @@ namespace Workflows.Runner.Tests.Infrastructure
             return @delegate?.Method?.Name ?? string.Empty;
         }
 
-        public Delegate Deserialize(string serialized, Type delegateType)
+        public MethodInfo Deserialize(string serialized)
         {
             // In-memory tests don't deserialize delegates
             throw new NotImplementedException("Delegate deserialization not needed for in-memory tests");

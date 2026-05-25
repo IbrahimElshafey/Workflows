@@ -1,10 +1,10 @@
 using System;
-using System.Collections.Generic;
+using System.Threading.Tasks;
 using Workflows.Primitives;
 
 namespace Workflows.Definition
 {
-    public class TimeWait : Wait, IPassiveWait
+    public class TimeWait : Wait
     {
         internal TimeWait(string waitName, TimeSpan timeToWait, string uniqueMatchId, int inCodeLine, string callerName, string callerFilePath)
             : base(WaitType.SignalWait, waitName, inCodeLine, callerName, callerFilePath)
@@ -13,19 +13,31 @@ namespace Workflows.Definition
             UniqueMatchId = uniqueMatchId;
         }
 
+        internal TimeWait()
+        {
+        }
+
+        internal Delegate AfterMatchAction { get; set; }
         internal TimeSpan TimeToWait { get; set; }
         internal string UniqueMatchId { get; set; }
-
-        public HashSet<string> CancelTokens { get; set; }
 
         public TimeWait WithCancelToken(string token)
         {
             if (string.IsNullOrWhiteSpace(token)) return this;
-            CancelTokens ??= new HashSet<string>();
             CancelTokens.Add(token);
             return this;
         }
 
-        IPassiveWait IPassiveWait.WithCancelToken(string token) => WithCancelToken(token);
+        public TimeWait AfterMatch(Action action)
+        {
+            AfterMatchAction = action;
+            return this;
+        }
+
+        public TimeWait AfterMatch(Func<ValueTask> action)
+        {
+            AfterMatchAction = action;
+            return this;
+        }
     }
 }

@@ -21,8 +21,13 @@ namespace Workflows.Definition
             CallerFilePath = callerFilePath;
         }
 
+        internal Wait()
+        {
+        }
+
         internal Guid Id { get; set; }
 
+        internal HashSet<string> CancelTokens { get; set; } = new HashSet<string>();
         internal string WaitName { get; set; }
 
         internal WaitType WaitType { get; set; }
@@ -39,15 +44,18 @@ namespace Workflows.Definition
 
         internal List<Wait> ChildWaits { get; set; } = new();
 
-        public string ClosureKey { get; set; }
-        public object ExplicitState { get; internal set; }
-        internal Func<ValueTask> CancelAction { get; set; }
+        internal Guid StateKey { get; set; }
+        internal object ExplicitState => 
+            StateKey != Guid.Empty && WorkflowContainer?.WaitsStates != null && WorkflowContainer.WaitsStates.TryGetValue(StateKey, out var val) 
+                ? val 
+                : null;
+        internal Delegate CancelAction { get; set; }
 
         public WorkflowContainer WorkflowContainer { get; set; }
 
         public Wait WithState<TState>(TState state)
         {
-            ExplicitState = state;
+            SetState(state);
             return this;
         }
 
@@ -59,8 +67,24 @@ namespace Workflows.Definition
 
         public Wait OnCanceled<TState>(Func<TState, ValueTask> cancelAction)
         {
-            CancelAction = new StatefulCancelActionInvoker<TState>(this, cancelAction).Invoke;
+            var invoker = new StatefulCancelActionInvoker<TState>(this, cancelAction);
+            CancelAction = (Func<ValueTask>)invoker.Invoke;
             return this;
+        }
+
+        internal void SetState(object state)
+        {
+            if (state == null) return;
+            foreach (var kvp in WorkflowContainer.WaitsStates)
+            {
+                if (Equals(kvp.Value, state))
+                {
+                    StateKey = kvp.Key;
+                    return;
+                }
+            }
+            StateKey = Guid.NewGuid();
+            WorkflowContainer.WaitsStates[StateKey] = state;
         }
 
         private sealed class StatefulCancelActionInvoker<TState>

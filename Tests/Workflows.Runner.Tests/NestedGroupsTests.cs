@@ -1,10 +1,5 @@
 using FluentAssertions;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
-using Workflows.Abstraction.DTOs.Waits;
-using Workflows.Abstraction.Enums;
 using Workflows.Runner.Tests.Infrastructure;
 using Workflows.Runner.Tests.TestWorkflows;
 using Xunit;
@@ -32,7 +27,7 @@ namespace Workflows.Runner.Tests
             {
                 StateIndex = -1,
                 Instance = workflowInstance,
-                StateMachinesObjects = new Dictionary<Guid, object>(),
+                StateMachinesObjects = new Dictionary<string, object>(),
                 WaitStatesObjects = new Dictionary<Guid, object>()
             };
 

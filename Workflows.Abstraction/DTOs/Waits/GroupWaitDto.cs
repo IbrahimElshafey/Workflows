@@ -11,6 +11,5 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// Name of the match function for custom group matching.
         /// </summary>
         public string MatchFuncName { get; internal set; }
-        public string MatchFuncClosureKey { get; internal set; }
     }
 }

@@ -1,6 +1,4 @@
 using FluentAssertions;
-using System;
-using System.Threading.Tasks;
 using Workflows.Runner.Tests.TestWorkflows;
 using Xunit;
 
@@ -47,10 +45,21 @@ namespace Workflows.Runner.Tests
 
             // Act
             var enumerator = workflow.Run().GetAsyncEnumerator();
+            var yieldedWaits = new List<Workflows.Definition.Wait>();
 
             while (await enumerator.MoveNextAsync())
             {
                 var wait = enumerator.Current;
+                yieldedWaits.Add(wait);
+            }
+
+            var cancelProcessor = new Workflows.Runner.Pipeline.Processors.CancelProcessor();
+            foreach (var wait in yieldedWaits)
+            {
+                if (wait.CancelTokens != null && wait.CancelTokens.Intersect(workflow.TokensToCancel).Any())
+                {
+                    await cancelProcessor.InvokeCancelActionAsync(wait);
+                }
             }
 
             // Assert

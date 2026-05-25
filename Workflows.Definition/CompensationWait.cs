@@ -4,8 +4,8 @@ namespace Workflows.Definition
 {
     public partial class CompensationWait : Wait
     {
-        public string Token { get; }
-        public CompensationWait(
+        internal string Token { get; set; }
+        internal CompensationWait(
             string token,
             WaitType waitType,
             int inCodeLine,
@@ -13,6 +13,10 @@ namespace Workflows.Definition
             string callerFilePath) : base(waitType, null, inCodeLine, callerName, callerFilePath)
         {
             Token = token;
+        }
+
+        internal CompensationWait()
+        {
         }
     }
 }

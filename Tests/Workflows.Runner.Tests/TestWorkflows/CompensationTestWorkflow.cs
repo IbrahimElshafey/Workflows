@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Workflows.Definition;
 using Workflows.Runner.Tests.TestData;
 
@@ -6,7 +5,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
 {
     public class CompensationTestWorkflow : WorkflowContainer
     {
-        public List<string> ExecutionLog { get; } = new();
+        public List<string> ExecutionLog { get; set; } = new();
 
         public override async IAsyncEnumerable<Wait> Run()
         {

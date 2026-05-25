@@ -1,4 +1,3 @@
-using System;
 using System.Text.Json;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
@@ -13,7 +12,8 @@ namespace Workflows.Runner.Tests.Infrastructure
         private readonly JsonSerializerOptions _options = new()
         {
             PropertyNameCaseInsensitive = true,
-            WriteIndented = false
+            WriteIndented = false,
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
         };
 
         public object Serialize(object obj, SerializationScope scope = SerializationScope.Standard)

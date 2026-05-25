@@ -1,10 +1,5 @@
 using FluentAssertions;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
-using Workflows.Abstraction.Enums;
 using Workflows.Runner.Tests.Infrastructure;
 using Workflows.Runner.Tests.TestData;
 using Workflows.Runner.Tests.TestWorkflows;
@@ -27,28 +22,14 @@ namespace Workflows.Runner.Tests
 
             var runner = builder.Build();
 
-            var workflow = new FirstWaitAndResumeWorkflow();
-            var waitId = Guid.NewGuid();
-            var signalWait = builder.CreateSignalWaitDto("OrderReceived", "First wait", waitId);
-
-            var request = builder.CreateExecutionRequest<FirstWaitAndResumeWorkflow>(
-                waitId,
-                "FirstWaitTest",
-                waits: new List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto> { signalWait });
-
-            // Add signal
-            request.Signal = builder.CreateSignal("OrderReceived", new OrderReceivedSignal
-            {
-                OrderId = "ORD-001",
-                Amount = 1500 // Greater than 1000
-            });
-
             // Act
-            var result = await runner.RunWorkflowAsync(request);
+            var result = await runner.StartWorkflow("FirstWaitTest");
 
             // Assert
             result.Should().NotBeNull();
             result.Status.Should().Be("Accepted");
+            var response = builder.Client.SentResults.Last().Result;
+            var workflow = (FirstWaitAndResumeWorkflow)response.UpdatedState.StateObject.Instance;
             workflow.ExecutionLog.Should().ContainInOrder("Execution1: Start");
         }
 
@@ -59,35 +40,28 @@ namespace Workflows.Runner.Tests
             var builder = new WorkflowTestBuilder();
             builder.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest");
             builder.RegisterSignal<OrderReceivedSignal>("OrderReceived");
+            builder.SetupCommandHandler<ProcessPaymentCommand, ProcessPaymentResult>(
+                "ProcessPayment",
+                cmd => Task.FromResult(new ProcessPaymentResult { Success = true, TransactionId = "TX-001" }));
 
             var runner = builder.Build();
 
-            // Simulate workflow that already hit first wait
-            var workflow = new FirstWaitAndResumeWorkflow();
-            workflow.ExecutionLog.Add("Execution1: Start"); // Simulate previous execution
+            await runner.StartWorkflow("FirstWaitTest");
 
-            var stateObject = new WorkflowStateObject
+            var response = builder.Client.SentResults.Last().Result;
+            var state = response.UpdatedState;
+            var wait = response.UpdatedState.Waits.First();
+
+            var request = new WorkflowExecutionRequest
             {
-                StateIndex = 0, // State after first wait
-                Instance = workflow,
-                StateMachinesObjects = new Dictionary<Guid, object>(),
-                WaitStatesObjects = new Dictionary<Guid, object>()
+                TriggeringWaitId = wait.Id,
+                Signal = builder.CreateSignal("OrderReceived", new OrderReceivedSignal
+                {
+                    OrderId = "ORD-001",
+                    Amount = 1500
+                }),
+                WorkflowState = state
             };
-
-            var waitId = Guid.NewGuid();
-            var signalWait = builder.CreateSignalWaitDto("OrderReceived", "First wait", waitId);
-
-            var request = builder.CreateExecutionRequest<FirstWaitAndResumeWorkflow>(
-                waitId,
-                "FirstWaitTest",
-                stateObject: stateObject,
-                waits: new List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto> { signalWait });
-
-            request.Signal = builder.CreateSignal("OrderReceived", new OrderReceivedSignal
-            {
-                OrderId = "ORD-001",
-                Amount = 1500
-            });
 
             // Act
             var result = await runner.RunWorkflowAsync(request);
@@ -95,6 +69,7 @@ namespace Workflows.Runner.Tests
             // Assert
             result.Should().NotBeNull();
             result.Status.Should().Be("Accepted");
+            var workflow = (FirstWaitAndResumeWorkflow)state.StateObject.Instance;
             workflow.ResumeCount.Should().BeGreaterThan(0);
         }
 
@@ -126,36 +101,29 @@ namespace Workflows.Runner.Tests
             var builder = new WorkflowTestBuilder();
             builder.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest");
             builder.RegisterSignal<OrderReceivedSignal>("OrderReceived");
+            builder.SetupCommandHandler<ProcessPaymentCommand, ProcessPaymentResult>(
+                "ProcessPayment",
+                cmd => Task.FromResult(new ProcessPaymentResult { Success = true, TransactionId = "TX-001" }));
 
             var runner = builder.Build();
 
-            var workflow = new FirstWaitAndResumeWorkflow();
-            var waitId = Guid.NewGuid();
-            var signalWait = builder.CreateSignalWaitDto("OrderReceived", "First wait", waitId);
+            await runner.StartWorkflow("FirstWaitTest");
 
-            var stateObject = new WorkflowStateObject
-            {
-                StateIndex = -1,
-                Instance = workflow,
-                StateMachinesObjects = new Dictionary<Guid, object>(),
-                WaitStatesObjects = new Dictionary<Guid, object>
-                {
-                    { waitId, 1000 } // State for MatchIf
-                }
-            };
-
-            var request = builder.CreateExecutionRequest<FirstWaitAndResumeWorkflow>(
-                waitId,
-                "FirstWaitTest",
-                stateObject: stateObject,
-                waits: new List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto> { signalWait });
+            var response = builder.Client.SentResults.Last().Result;
+            var state = response.UpdatedState;
+            var wait = response.UpdatedState.Waits.First();
 
             // Signal that should match (Amount > 1000)
-            request.Signal = builder.CreateSignal("OrderReceived", new OrderReceivedSignal
+            var request = new WorkflowExecutionRequest
             {
-                OrderId = "ORD-MATCH",
-                Amount = 2000
-            });
+                TriggeringWaitId = wait.Id,
+                Signal = builder.CreateSignal("OrderReceived", new OrderReceivedSignal
+                {
+                    OrderId = "ORD-MATCH",
+                    Amount = 2000
+                }),
+                WorkflowState = state
+            };
 
             // Act
             var result = await runner.RunWorkflowAsync(request);
@@ -175,41 +143,31 @@ namespace Workflows.Runner.Tests
 
             var runner = builder.Build();
 
-            var workflow = new FirstWaitAndResumeWorkflow();
-            var waitId = Guid.NewGuid();
-            var signalWait = builder.CreateSignalWaitDto("OrderReceived", "First wait", waitId);
+            await runner.StartWorkflow("FirstWaitTest");
 
-            var stateObject = new WorkflowStateObject
-            {
-                StateIndex = -1,
-                Instance = workflow,
-                StateMachinesObjects = new Dictionary<Guid, object>(),
-                WaitStatesObjects = new Dictionary<Guid, object>
-                {
-                    { waitId, 1000 } // State for MatchIf
-                }
-            };
-
-            var request = builder.CreateExecutionRequest<FirstWaitAndResumeWorkflow>(
-                waitId,
-                "FirstWaitTest",
-                stateObject: stateObject,
-                waits: new List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto> { signalWait });
+            var response = builder.Client.SentResults.Last().Result;
+            var state = response.UpdatedState;
+            var wait = response.UpdatedState.Waits.First();
 
             // Signal that should NOT match (Amount <= 1000)
-            request.Signal = builder.CreateSignal("OrderReceived", new OrderReceivedSignal
+            var request = new WorkflowExecutionRequest
             {
-                OrderId = "ORD-NO-MATCH",
-                Amount = 500
-            });
+                TriggeringWaitId = wait.Id,
+                Signal = builder.CreateSignal("OrderReceived", new OrderReceivedSignal
+                {
+                    OrderId = "ORD-NO-MATCH",
+                    Amount = 500
+                }),
+                WorkflowState = state
+            };
 
             // Act
             var result = await runner.RunWorkflowAsync(request);
 
             // Assert
             result.Should().NotBeNull();
-            result.Status.Should().Be("Error");
-            result.Message.Should().Contain("match expression failed");
+            result.Status.Should().Be("Rejected");
+            result.Message.Should().Contain("Matching failed or partial match.");
         }
     }
 }

@@ -241,7 +241,7 @@ catch (Exception ex)
 Console.WriteLine("\n=== All DSL Tests Completed Successfully! ===");
 
 // Helper workflow for testing
-public class TestWorkflow : WorkflowContainer
+public sealed class TestWorkflow : WorkflowContainer
 {
     public override async IAsyncEnumerable<Wait> Run()
     {

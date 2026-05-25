@@ -47,7 +47,7 @@ namespace Workflows.Runner
         public IWorkflowBuilder RegisterCommand<TCommand, TResult>(
             string commandIdentifier,
             TimeSpan timeout = default,
-            CommandExecutionMode mode = CommandExecutionMode.ImmediateCommand)
+            CommandExecutionMode mode = CommandExecutionMode.Immediate)
         {
             _commands[commandIdentifier] = (typeof(TCommand), typeof(TResult));
             registrationPackage.Commands.Add(new CommandDefinition
@@ -103,8 +103,20 @@ namespace Workflows.Runner
             }
 
             // 3. Extract the generated state machine type
+            Type? stateMachineType = null;
             var stateMachineAttribute = methodInfo.GetCustomAttribute<AsyncStateMachineAttribute>();
-            Type stateMachineType = stateMachineAttribute?.StateMachineType;
+            if (stateMachineAttribute != null)
+            {
+                stateMachineType = stateMachineAttribute.StateMachineType;
+            }
+            else
+            {
+                var asyncIteratorAttribute = methodInfo.GetCustomAttribute<System.Runtime.CompilerServices.AsyncIteratorStateMachineAttribute>();
+                if (asyncIteratorAttribute != null)
+                {
+                    stateMachineType = asyncIteratorAttribute.StateMachineType;
+                }
+            }
 
             if (stateMachineType == null)
             {

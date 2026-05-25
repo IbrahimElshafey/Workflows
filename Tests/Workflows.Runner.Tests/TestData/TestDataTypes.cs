@@ -30,8 +30,19 @@ namespace Workflows.Runner.Tests.TestData
     {
         public string OrderId { get; init; } = "";
         public decimal Amount { get; init; }
+        public TaskStatus Status { get; init; }= TaskStatus.Created;
+        public Customer Customer { get; init; } = new Customer();
     }
 
+    public record Customer
+    {
+        public CustomerProfile Profile { get; set; }
+    }
+    public record CustomerProfile
+    {
+        public string Id { get; init; } = "";
+
+    }
     public record PaymentConfirmedSignal
     {
         public string TransactionId { get; init; } = "";

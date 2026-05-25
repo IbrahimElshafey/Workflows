@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Workflows.Abstraction.DTOs
@@ -24,9 +24,12 @@ namespace Workflows.Abstraction.DTOs
         public object Instance { get; set; }
 
         /// <summary>
-        /// The extracted state machine local variables for workflow methods (one or more IAsyncEnumrable<Wait>)
+        /// Unified state bag for this workflow's execution scope.
+        /// Values are either:
+        ///   - StateMachineObject  keyed "root"  → local variables of the root IAsyncEnumerable method
+        ///   - WorkflowStateObject keyed by StateMachineObjectId → full snapshot of a suspended sub-workflow
         /// </summary>
-        public Dictionary<Guid, object> StateMachinesObjects { get; set; } = new();
+        public Dictionary<string, object> StateMachinesObjects { get; set; } = new();
 
         /// <summary>
         /// State object passed to .WithState(...) method

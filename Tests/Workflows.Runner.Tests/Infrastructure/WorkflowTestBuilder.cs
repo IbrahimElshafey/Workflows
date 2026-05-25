@@ -1,12 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition;
 using Workflows.Primitives;
-using Workflows.Runner.Cache;
+using Microsoft.Extensions.DependencyInjection;
+using Workflows.Abstraction.Helpers;
 
 namespace Workflows.Runner.Tests.Infrastructure
 {
@@ -20,6 +18,8 @@ namespace Workflows.Runner.Tests.Infrastructure
         private readonly InMemoryCommandHandlerFactory _handlerFactory;
         private readonly TestServiceProvider _serviceProvider;
         private readonly TestObjectSerializer _objectSerializer;
+
+        public InMemoryWorkflowRunnerClient Client => _client;
 
         public WorkflowTestBuilder()
         {
@@ -53,28 +53,15 @@ namespace Workflows.Runner.Tests.Infrastructure
 
         public IWorkflowRunner Build()
         {
-            var expressionSerializer = new TestExpressionSerializer();
-            var delegateSerializer = new TestDelegateSerializer();
-            var closureResolver = new TestClosureContextResolver();
-
-            var mapper = new Mapper(
-                expressionSerializer,
-                _objectSerializer,
-                delegateSerializer,
-                closureResolver);
-
-            var advancer = new StateMachineAdvancer();
-            var templateCache = new WorkflowTemplateCache();
-
-            return new WorkflowRunner(
-                mapper,
-                _registry,
-                advancer,
-                _client,
-                _handlerFactory,
-                _serviceProvider,
-                templateCache,
-                _objectSerializer);
+            var services = new ServiceCollection();
+            services.AddWorkflowsRunner();
+            services.AddSingleton<IWorkflowRegistry>(_registry);
+            services.AddSingleton<IWorkflowRunnerClient>(_client);
+            services.AddSingleton<ICommandHandlerFactory>(_handlerFactory);
+            services.AddSingleton<IObjectSerializer>(_objectSerializer);
+            services.AddSingleton<IExpressionSerializer>(new TestExpressionSerializer());
+            var provider = services.BuildServiceProvider();
+            return provider.GetRequiredService<IWorkflowRunner>();
         }
 
         public WorkflowExecutionRequest CreateExecutionRequest<TWorkflow>(
@@ -96,7 +83,7 @@ namespace Workflows.Runner.Tests.Infrastructure
                     {
                         StateIndex = -1,
                         Instance = Activator.CreateInstance<TWorkflow>(),
-                        StateMachinesObjects = new Dictionary<Guid, object>(),
+                        StateMachinesObjects = new Dictionary<string, object>(),
                         WaitStatesObjects = new Dictionary<Guid, object>()
                     },
                     Waits = waits ?? new List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto>(),

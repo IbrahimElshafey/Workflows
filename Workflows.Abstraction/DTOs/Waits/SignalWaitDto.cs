@@ -13,8 +13,6 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// </summary>
         public object MatchExpression { get; set; }
         public object MatchExpressionAsText { get; set; }
-        public string MatchClosureKey { get; set; }
-        public string AfterMatchClosureKey { get; set; }
 
         /// <summary>
         /// Hash of the match expression for optimization and deduplication.

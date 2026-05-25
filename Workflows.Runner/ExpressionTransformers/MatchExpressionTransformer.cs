@@ -1,30 +1,51 @@
-﻿using System;
-using Workflows.Abstraction.DTOs;
+using System;
+using System.Linq;
+using System.Linq.Expressions;
 using Workflows.Definition;
 using Workflows.Runner.DataObjects;
 
 namespace Workflows.Runner.ExpressionTransformers
 {
+    // ----------------------------------------------------------------------
+    // 1. The Coordinator
+    // ----------------------------------------------------------------------
+
     internal class MatchExpressionTransformer
     {
-        internal MatchTransformationResult Transform(ISignalWait signalWait)
+        /// <param name="matchExpression">The original match lambda from the wait definition.</param>
+        public MatchTransformationResult Transform(LambdaExpression matchExpression, WorkflowContainer workflowInstance)
         {
-            if (signalWait == null)
-                throw new ArgumentNullException(nameof(signalWait));
+            if (matchExpression == null)
+                throw new ArgumentNullException(nameof(matchExpression));
 
-            var matchWriter = new MatchExpressionWriter(
-                signalWait.MatchExpression,
-                signalWait.WorkflowContainer);
+            // Step 1: Analyze for Tier 1.5 (RAM Filter) directly using the ORIGINAL unnormalized expression
+            var dynamicVisitor = new DynamicMatchVisitor(matchExpression);
+            dynamicVisitor.Build();
 
-            var result = matchWriter.MatchTransformationResult;
-            if (result?.MatchExpression == null)
-                return result;
+            // Step 2: Analyze for Tier 1 (SQL Exact Match Extraction) using the Clean TypedResult
+            var exactMatchAnalyzer = ExactMatchAnalyzer.Create(
+                dynamicVisitor.TypedResult,
+                dynamicVisitor.IsFullMatch && dynamicVisitor.IsExactMatchFullMatch,
+                dynamicVisitor.PotentialExactMatchPairs);
 
-            var dynamicMatchVisitor = new DynamicMatchVisitor(result.MatchExpression);
-            result.GenericMatchExpression = dynamicMatchVisitor.Result;
-            result.IsGenericMatchFullMatch = result.GenericMatchExpression != null;
+            // Step 3: Normalize the original expression ONLY for the Runner (Tier 3 execution)
+            var matchExpressionNormalizer = new MatchExpressionNormalizer();
+            var normalizedExpression = matchExpressionNormalizer.Normalize(matchExpression, workflowInstance);
 
-            return result;
+            // Step 4: Build & Return Result
+            return new MatchTransformationResult
+            {
+                MatchExpression = normalizedExpression,
+
+                // Tier 1 SQL Indexes
+                SignalExactMatchPaths = exactMatchAnalyzer.SignalPaths.ToList(),
+                InstanceExactMatchExpression = exactMatchAnalyzer.InstanceMatchExpression,
+                IsExactMatchFullMatch = exactMatchAnalyzer.IsFullMatch,
+
+                // Tier 1.5 RAM Pre-filter
+                GenericMatchExpression = dynamicVisitor.Result,
+                IsGenericMatchFullMatch = dynamicVisitor.IsFullMatch
+            };
         }
     }
 }

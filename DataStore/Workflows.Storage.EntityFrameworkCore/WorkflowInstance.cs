@@ -1,0 +1,23 @@
+using System;
+using System.Collections.Generic;
+using Workflows.Abstraction.DTOs;
+
+namespace Workflows.Storage.EntityFrameworkCore
+{
+    public class WorkflowInstance : IEntity<Guid>, IEntityWithUpdate
+    {
+        public Guid Id { get; set; }
+        public DateTime Created { get; set; }
+        public DateTime? Modified { get; set; }
+        public string ConcurrencyToken { get; set; } = Guid.NewGuid().ToString();
+
+        public int Status { get; set; } // Map from WorkflowInstanceStatus
+        public string WorkflowType { get; set; } = string.Empty;
+
+        // JSON Owned property
+        public WorkflowStateObject StateObject { get; set; } = new();
+
+        // Stored using value converter to serialize/deserialize List<CancellationHistoryEntry> to JSON string
+        public List<CancellationHistoryEntry> CancellationHistory { get; set; } = new();
+    }
+}
