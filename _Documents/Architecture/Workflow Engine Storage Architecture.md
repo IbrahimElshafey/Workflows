@@ -1,4 +1,4 @@
-﻿# Workflow Engine Storage Architecture: Hybrid Document-Relational Model
+# Workflow Engine Storage Architecture: Hybrid Document-Relational Model
 
 This document outlines the persistence strategy for the Workflows engine. The architecture employs a **Hybrid Document-Relational** approach, optimizing for both high-performance state-machine execution and rapid signal routing.
 
