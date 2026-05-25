@@ -81,7 +81,7 @@ namespace Workflows.Runner.ExpressionTransformers
             if (originalStateParam != null)
                 replacerMap[originalStateParam] = Expression.Convert(paramState, originalStateParam.Type);
             if (originalInstanceParam != null)
-                replacerMap[originalInstanceParam] = Expression.Convert(paramState, originalInstanceParam.Type);
+                replacerMap[originalInstanceParam] = Expression.Convert(paramSignal, originalInstanceParam.Type);
 
             var replacer = new ParameterReplacer(replacerMap);
             var stringType = typeof(string);

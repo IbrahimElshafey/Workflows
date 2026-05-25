@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Text.Json;
@@ -52,7 +52,7 @@ namespace Workflows.Runner.DataObjects
         /// The array of evaluated string values returned from compiling and invoking the InstanceExactMatchExpression.
         /// These are the pre-evaluated exact match keys (e.g., ["42", "Paid"]) ready to be saved as SQL routing indexes.
         /// </summary>
-        public string[] ExactMatchParts { get; init; }
+        public string[]? ExactMatchParts { get; init; }
 
         /// <summary>
         /// Gets a value indicating whether the match is both exact and a full match.

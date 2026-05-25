@@ -16,6 +16,7 @@ namespace Workflows.Storage.EntityFrameworkCore
         public DbSet<WorkflowDefinitionEntity> WorkflowDefinitions { get; set; }
         public DbSet<SignalDefinitionEntity> SignalDefinitions { get; set; }
         public DbSet<CommandDefinitionEntity> CommandDefinitions { get; set; }
+        public DbSet<TemplateCacheEntity> TemplateCache { get; set; }
 
         public WorkflowsDbContext(DbContextOptions<WorkflowsDbContext> options) : base(options)
         {
@@ -108,6 +109,11 @@ namespace Workflows.Storage.EntityFrameworkCore
             modelBuilder.Entity<CommandDefinitionEntity>(entity =>
             {
                 entity.HasKey(e => e.CommandName);
+            });
+
+            modelBuilder.Entity<TemplateCacheEntity>(entity =>
+            {
+                entity.HasKey(e => e.TemplateHashKey);
             });
         }
 

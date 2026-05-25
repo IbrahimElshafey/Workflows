@@ -40,21 +40,34 @@ namespace Workflows.Runner.Pipeline.Processors
             }
 
             // Extract and transform MatchExpression structures if present
-            if (signalWait.MatchExpression != null && signalWaitDto.TemplateHashKey != null)
+            if (signalWait.MatchExpression != null && !string.IsNullOrEmpty(signalWaitDto.TemplateHashKey))
             {
-                var hashKey = signalWaitDto.TemplateHashKey.ToString();
-
-                // Check if we already have this template cached
-                if (!string.IsNullOrEmpty(hashKey) && !Matchers.SignalWaitMatcher.SignalCache.ContainsKey(hashKey))
+                var hashKey = signalWaitDto.TemplateHashKey;
+                if (!Matchers.SignalWaitMatcher.SignalCache.ContainsKey(hashKey))
                 {
-                    // Cache record for template-based matching
-                    // The actual match compilation happens in SignalWaitMatcher during evaluation
-                    var cacheRecord = new SignalTemplateCacheRecord
+                    var transformResult = _matchExpressionTransformer.Transform(signalWait.MatchExpression, context.WorkflowInstance);
+
+                    Func<object, object, string[]> compiledInstanceExpr = null;
+                    if (transformResult.InstanceExactMatchExpression != null)
                     {
-                        // CompiledMatchDelegate will be set during matcher evaluation
+                        var compiler = new ExpressionCompiler();
+                        compiledInstanceExpr = compiler.CompiledInstanceExactMatchExpression(transformResult.InstanceExactMatchExpression);
+                    }
+
+                    Func<object, object, object, bool> compiledMatch = null;
+                    if (transformResult.MatchExpression != null)
+                    {
+                        var compiler = new ExpressionCompiler();
+                        compiledMatch = compiler.CompiledMatchExpression(transformResult.MatchExpression);
+                    }
+
+                    var record = new SignalTemplateCacheRecord
+                    {
+                        CompiledMatchDelegate = compiledMatch,
+                        CompiledInstanceExactMatchExpression = compiledInstanceExpr
                     };
 
-                    Matchers.SignalWaitMatcher.SignalCache.TryAdd(hashKey, cacheRecord);
+                    Matchers.SignalWaitMatcher.SignalCache.TryAdd(hashKey, record);
                 }
             }
 

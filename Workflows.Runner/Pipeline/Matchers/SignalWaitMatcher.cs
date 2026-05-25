@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
 using FastExpressionCompiler;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
+using Workflows.Abstraction.Persistence;
 using Workflows.Abstraction.Runner;
+using Workflows.Runner.Cache;
 using Workflows.Runner.ExpressionTransformers;
 using IExpressionSerializer = Workflows.Abstraction.Helpers.IExpressionSerializer;
 using ExpressionCompiler = Workflows.Runner.ExpressionTransformers.ExpressionCompiler;
@@ -19,24 +22,32 @@ namespace Workflows.Runner.Pipeline.Matchers
     /// </summary>
     internal class SignalWaitMatcher : WorkflowWaitMatcher
     {
+        internal static readonly ConcurrentDictionary<string, SignalTemplateCacheRecord> SignalCache = new();
+
         private readonly IWorkflowRegistry _workflowRegistry;
         private readonly WorkflowExecutionContext _context;
         private readonly MatcherFactory _matcherFactory;
         private readonly IExpressionSerializer _expressionSerializer;
         private readonly IDelegateSerializer _delegateSerializer;
+        private readonly MatchExpressionTransformer _matchExpressionTransformer;
+        private readonly ITemplateRepository? _templateRepository;
 
         public SignalWaitMatcher(
             IWorkflowRegistry workflowRegistry, 
             WorkflowExecutionContext context,
             MatcherFactory matcherFactory,
             IExpressionSerializer expressionSerializer,
-            IDelegateSerializer delegateSerializer)
+            IDelegateSerializer delegateSerializer,
+            MatchExpressionTransformer matchExpressionTransformer,
+            ITemplateRepository? templateRepository = null)
         {
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
             _expressionSerializer = expressionSerializer ?? throw new ArgumentNullException(nameof(expressionSerializer));
             _delegateSerializer = delegateSerializer ?? throw new ArgumentNullException(nameof(delegateSerializer));
+            _matchExpressionTransformer = matchExpressionTransformer ?? throw new ArgumentNullException(nameof(matchExpressionTransformer));
+            _templateRepository = templateRepository;
         }
 
         public override async Task<bool> MatchAsync(WaitInfrastructureDto waitDto)
@@ -108,16 +119,57 @@ namespace Workflows.Runner.Pipeline.Matchers
                     return cached.CompiledMatchDelegate;
                 }
 
+                // Try to load template from SQLite DB cache first
+                if (_templateRepository != null)
+                {
+                    var dbTemplate = _templateRepository.GetTemplate(hashKey);
+                    if (dbTemplate != null && dbTemplate.NormalizedMatchExpressionJson != null)
+                    {
+                        var normalizedExpr = _expressionSerializer.Deserialize(dbTemplate.NormalizedMatchExpressionJson);
+                        var compiler = new ExpressionCompiler();
+                        var compiled = compiler.CompiledMatchExpression(normalizedExpr);
+
+                        Func<object, object, string[]>? compiledInstanceExpr = null;
+                        if (dbTemplate.InstanceExactMatchExpressionJson != null)
+                        {
+                            compiledInstanceExpr = compiler.CompiledInstanceExactMatchExpression(
+                                _expressionSerializer.Deserialize(dbTemplate.InstanceExactMatchExpressionJson));
+                        }
+
+                        var record = SignalCache.GetOrAdd(hashKey, _ => new SignalTemplateCacheRecord());
+                        record.CompiledMatchDelegate = compiled;
+                        record.CompiledInstanceExactMatchExpression = compiledInstanceExpr;
+
+                        return compiled;
+                    }
+                }
+
                 if (dto.MatchExpression != null)
                 {
                     var matchExpr = _expressionSerializer.Deserialize(dto.MatchExpression);
-                    var normalizer = new MatchExpressionNormalizer();
-                    var normalizedExpr = normalizer.Normalize(matchExpr, _context.WorkflowInstance);
                     var compiler = new ExpressionCompiler();
-                    var compiled = compiler.CompiledMatchExpression(normalizedExpr);
+                    Func<object, object, object, bool> compiled;
+                    Func<object, object, string[]>? compiledInstanceExpr = null;
+
+                    if (matchExpr is Expression<Func<object, object, object, bool>> normalizedExpr)
+                    {
+                        compiled = compiler.CompiledMatchExpression(normalizedExpr);
+                    }
+                    else
+                    {
+                        var transformResult = _matchExpressionTransformer.Transform(matchExpr, _context.WorkflowInstance);
+                        compiled = compiler.CompiledMatchExpression(transformResult.MatchExpression);
+
+                        if (transformResult.InstanceExactMatchExpression != null)
+                        {
+                            compiledInstanceExpr = compiler.CompiledInstanceExactMatchExpression(transformResult.InstanceExactMatchExpression);
+                        }
+                    }
 
                     var record = SignalCache.GetOrAdd(hashKey, _ => new SignalTemplateCacheRecord());
                     record.CompiledMatchDelegate = compiled;
+                    record.CompiledInstanceExactMatchExpression = compiledInstanceExpr;
+
                     return compiled;
                 }
             }

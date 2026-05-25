@@ -17,13 +17,13 @@ namespace Workflows.Runner
         {
             // Core services - all internal, no interfaces
             services.AddSingleton<IWorkflowHydrator, WorkflowHydrator>();
-            services.AddSingleton<WorkflowStateService>();
+            services.AddScoped<WorkflowStateService>();
             services.AddSingleton<CallbackRegistry>();
             services.AddScoped<MatcherFactory>();
             services.AddScoped<ProcessorFactory>();
             services.AddSingleton<CancelProcessor>();
             services.AddSingleton<StateMachineAdvancer>();
-            services.AddSingleton<Mapper>();
+            services.AddScoped<Mapper>();
 
             services.AddScoped<SignalWaitMatcher>();
             services.AddScoped<TimeWaitMatcher>();
@@ -47,7 +47,7 @@ namespace Workflows.Runner
             services.AddSingleton<WorkflowBuilder>();
             services.AddSingleton<IWorkflowBuilder>(sp => sp.GetRequiredService<WorkflowBuilder>());
             services.AddSingleton<IWorkflowRegistry>(sp => sp.GetRequiredService<WorkflowBuilder>());
-            services.AddSingleton<Mapper>();
+            services.AddScoped<Mapper>();
             return services;
         }
 

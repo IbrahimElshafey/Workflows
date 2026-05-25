@@ -17,7 +17,7 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// <summary>
         /// Hash of the match expression for optimization and deduplication.
         /// </summary>
-        public object TemplateHashKey { get; set; }
+        public string? TemplateHashKey { get; set; }
 
         /// <summary>
         /// Match expression rewritten against generic object (e.g., JObject).
