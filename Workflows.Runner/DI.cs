@@ -48,7 +48,6 @@ namespace Workflows.Runner
             services.AddSingleton<WorkflowBuilder>();
             services.AddSingleton<IWorkflowBuilder>(sp => sp.GetRequiredService<WorkflowBuilder>());
             services.AddSingleton<IWorkflowRegistry>(sp => sp.GetRequiredService<WorkflowBuilder>());
-            services.AddSingleton<WorkflowTemplateCache>();
             services.AddSingleton<Mapper>();
             return services;
         }

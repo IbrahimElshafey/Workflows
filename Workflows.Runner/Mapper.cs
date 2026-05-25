@@ -91,7 +91,9 @@ namespace Workflows.Runner
 
             var dto = new GroupWaitDto
             {
-                MatchFuncName = waitsGroup.GroupMatchFilter?.Method?.Name,
+                MatchFuncName = waitsGroup.GroupMatchFilterOriginal != null 
+                    ? _delegateSerializer.Serialize(waitsGroup.GroupMatchFilterOriginal)
+                    : null,
                 CancelTokens = waitsGroup.CancelTokens
             };
 

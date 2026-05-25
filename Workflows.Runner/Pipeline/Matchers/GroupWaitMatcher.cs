@@ -1,9 +1,15 @@
 using System;
+using System.Collections.Concurrent;
 using System.Linq;
+using System.Linq.Expressions;
+using System.Reflection;
 using System.Threading.Tasks;
+using FastExpressionCompiler;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
+using Workflows.Abstraction.Helpers;
 using Workflows.Primitives;
+
 
 namespace Workflows.Runner.Pipeline.Matchers
 {
@@ -16,11 +22,17 @@ namespace Workflows.Runner.Pipeline.Matchers
     {
         private readonly WorkflowExecutionContext _context;
         private readonly MatcherFactory _matcherFactory;
+        private readonly IDelegateSerializer _delegateSerializer;
+        private static readonly ConcurrentDictionary<string, Func<object, object, bool>> _compiledFilters = new();
 
-        public GroupWaitMatcher(WorkflowExecutionContext context, MatcherFactory matcherFactory)
+        public GroupWaitMatcher(
+            WorkflowExecutionContext context, 
+            MatcherFactory matcherFactory,
+            IDelegateSerializer delegateSerializer)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
+            _delegateSerializer = delegateSerializer ?? throw new ArgumentNullException(nameof(delegateSerializer));
         }
 
         public override async Task<bool> MatchAsync(WaitInfrastructureDto waitDto)
@@ -71,9 +83,11 @@ namespace Workflows.Runner.Pipeline.Matchers
                     break;
 
                 case WaitType.GroupWaitWithExpression: // MatchIf with custom expression
-                    // TODO: For custom filters, we need to store and evaluate the filter from DTO
-                    // For now, treat as MatchAll
-                    groupMatches = completedChildren == totalChildren;
+                    groupMatches = EvaluateGroupFilter(groupWaitDto);
+                    if (groupMatches)
+                    {
+                        PruneRemainingChildren(groupWaitDto, _context);
+                    }
                     break;
 
                 default:
@@ -93,6 +107,99 @@ namespace Workflows.Runner.Pipeline.Matchers
             }
 
             return groupMatches;
+        }
+
+        private bool EvaluateGroupFilter(GroupWaitDto groupWaitDto)
+        {
+            if (string.IsNullOrWhiteSpace(groupWaitDto.MatchFuncName))
+            {
+                return false;
+            }
+
+            // Retrieve explicitState
+            object explicitState = null;
+            if (_context.WorkflowState?.StateObject?.WaitStatesObjects != null)
+            {
+                if (!_context.WorkflowState.StateObject.WaitStatesObjects.TryGetValue(groupWaitDto.StateKey, out explicitState))
+                {
+                    _context.WorkflowState.StateObject.WaitStatesObjects.TryGetValue(groupWaitDto.Id, out explicitState);
+                }
+            }
+
+            var filter = _compiledFilters.GetOrAdd(groupWaitDto.MatchFuncName, path =>
+            {
+                var method = _delegateSerializer.Deserialize(path);
+                if (method == null) return null;
+
+                var instanceParam = Expression.Parameter(typeof(object), "instance");
+                var stateParam = Expression.Parameter(typeof(object), "state");
+
+                var parameters = method.GetParameters();
+                
+                Expression targetExpr;
+                if (method.IsStatic)
+                {
+                    targetExpr = null;
+                }
+                else if (method.DeclaringType != null && method.DeclaringType.Name.Contains("<>c"))
+                {
+                    var singletonField = method.DeclaringType.GetField("<>9", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                    object targetObj = null;
+                    if (singletonField != null)
+                    {
+                        targetObj = singletonField.GetValue(null);
+                    }
+                    if (targetObj == null)
+                    {
+                        targetObj = Activator.CreateInstance(method.DeclaringType);
+                    }
+
+                    targetExpr = Expression.Constant(targetObj, method.DeclaringType);
+                }
+                else
+                {
+                    targetExpr = Expression.Convert(instanceParam, method.DeclaringType);
+                }
+
+                Expression call;
+                if (parameters.Length == 0)
+                {
+                    // Func<bool> - stateless
+                    call = Expression.Call(targetExpr, method);
+                }
+                else if (parameters.Length == 1)
+                {
+                    // Func<TState, bool> - stateful
+                    var convertStateMethod = typeof(StateConverter).GetMethod(
+                        nameof(StateConverter.ConvertState), 
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    call = Expression.Call(targetExpr, method,
+                        Expression.Convert(
+                            Expression.Call(convertStateMethod!, stateParam, Expression.Constant(parameters[0].ParameterType)),
+                            parameters[0].ParameterType));
+                }
+                else
+                {
+                    throw new InvalidOperationException($"Unsupported GroupMatchFilter method signature: {method}");
+                }
+
+                var lambda = Expression.Lambda<Func<object, object, bool>>(call, instanceParam, stateParam);
+                return lambda.CompileFast();
+            });
+
+            if (filter == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return filter(_context.WorkflowInstance, explicitState);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private void PruneRemainingChildren(GroupWaitDto groupWaitDto, WorkflowExecutionContext context)

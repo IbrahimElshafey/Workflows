@@ -25,6 +25,7 @@ namespace Workflows.Definition
         }
 
         internal Func<bool> GroupMatchFilter { get; set; }
+        internal Delegate GroupMatchFilterOriginal { get; set; }
 
 
         /// <summary>
@@ -44,6 +45,7 @@ namespace Workflows.Definition
             InCodeLine = inCodeLine;
             CallerName = callerName;
             GroupMatchFilter = groupMatchFilter;
+            GroupMatchFilterOriginal = groupMatchFilter;
             return this;
         }
 
@@ -56,6 +58,7 @@ namespace Workflows.Definition
             InCodeLine = inCodeLine;
             CallerName = callerName;
             GroupMatchFilter = new StatefulGroupMatchInvoker<TState>(this, groupMatchFilter).Invoke;
+            GroupMatchFilterOriginal = groupMatchFilter;
             return this;
         }
 

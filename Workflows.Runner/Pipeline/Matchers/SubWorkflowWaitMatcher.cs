@@ -1,5 +1,9 @@
+using FastExpressionCompiler;
 using System;
+using System.Collections.Concurrent;
 using System.Linq;
+using System.Linq.Expressions;
+using System.Reflection;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
@@ -17,13 +21,13 @@ namespace Workflows.Runner.Pipeline.Matchers
     /// </summary>
     internal class SubWorkflowWaitMatcher : WorkflowWaitMatcher
     {
+        private readonly ConcurrentDictionary<string, Func<object, object>> _workflowInvokers = new();
         private readonly WorkflowExecutionContext _context;
         private readonly MatcherFactory _matcherFactory;
         private readonly StateMachineAdvancer _stateMachineAdvancer;
         private readonly ProcessorFactory _processorFactory;
         private readonly CancelProcessor _cancelProcessor;
         private readonly IWorkflowRegistry _workflowRegistry;
-        private readonly WorkflowTemplateCache _templateCache;
 
         public SubWorkflowWaitMatcher(
             WorkflowExecutionContext context,
@@ -31,8 +35,7 @@ namespace Workflows.Runner.Pipeline.Matchers
             StateMachineAdvancer stateMachineAdvancer,
             ProcessorFactory processorFactory,
             CancelProcessor cancelProcessor,
-            IWorkflowRegistry workflowRegistry,
-            WorkflowTemplateCache templateCache)
+            IWorkflowRegistry workflowRegistry)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
@@ -40,7 +43,6 @@ namespace Workflows.Runner.Pipeline.Matchers
             _processorFactory = processorFactory ?? throw new ArgumentNullException(nameof(processorFactory));
             _cancelProcessor = cancelProcessor ?? throw new ArgumentNullException(nameof(cancelProcessor));
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
-            _templateCache = templateCache ?? throw new ArgumentNullException(nameof(templateCache));
         }
 
         public override async Task<bool> MatchAsync(WaitInfrastructureDto waitDto)
@@ -70,7 +72,7 @@ namespace Workflows.Runner.Pipeline.Matchers
 
             // Execute the sub-workflow to completion using the CallerName from the DTO
             var callerName = string.IsNullOrEmpty(subWorkflowWaitDto.CallerName) ? "Run" : subWorkflowWaitDto.CallerName;
-            var workflowInvoker = _templateCache.GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, callerName);
+            var workflowInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, callerName);
             var subWorkflowStream = (System.Collections.Generic.IAsyncEnumerable<Definition.Wait>)workflowInvoker(_context.WorkflowInstance);
             bool subWorkflowCompleted = false;
 
@@ -119,7 +121,7 @@ namespace Workflows.Runner.Pipeline.Matchers
             {
                 parentCallerName = string.IsNullOrEmpty(parentSub.CallerName) ? "Run" : parentSub.CallerName;
             }
-            var parentInvoker = _templateCache.GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, parentCallerName);
+            var parentInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, parentCallerName);
             _context.WorkflowStream = (System.Collections.Generic.IAsyncEnumerable<Definition.Wait>)parentInvoker(_context.WorkflowInstance);
 
             // Propagate matching to parent wait if present (e.g., GroupWait containing this sub-workflow)
@@ -157,6 +159,20 @@ namespace Workflows.Runner.Pipeline.Matchers
                 }
             }
             return null;
+        }
+        private Func<object, object> GetOrAddWorkflowInvoker(Type containerType, string methodName)
+        {
+            var key = $"{containerType.FullName}:{methodName}";
+            return _workflowInvokers.GetOrAdd(key, _ =>
+            {
+                var method = containerType.GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (method == null) return null;
+
+                var instanceParam = Expression.Parameter(typeof(object), "instance");
+                var call = Expression.Call(Expression.Convert(instanceParam, containerType), method);
+                var lambda = Expression.Lambda<Func<object, object>>(Expression.Convert(call, typeof(object)), instanceParam);
+                return lambda.CompileFast();
+            });
         }
     }
 }
