@@ -67,26 +67,18 @@ namespace Workflows.Storage.EntityFrameworkCore
                         _dbContext.WorkflowInstances.Update(dbInstance);
                     }
 
-                    // 2. Delete completed waits (check each concrete table — TPC, no base WorkflowWaits)
+                    // 2. Update status of completed/canceled/in-error waits (check each concrete table — TPC, no base WorkflowWaits)
                     if (completedWaitIds != null)
                     {
                         foreach (var id in completedWaitIds)
                         {
-                            await RemoveWaitByIdAsync(id);
+                            var waitDto = FindWaitById(state.Waits, id);
+                            var status = waitDto?.Status ?? WaitStatus.Completed;
+                            await UpdateWaitStatusAsync(id, status);
                         }
                     }
 
-                    // 3. Prune cancelled waits based on cancellation tokens
-                    var cancelledTokens = state.CancellationHistory?.Select(h => h.Token).ToHashSet() ?? new HashSet<string>();
-                    if (cancelledTokens.Count > 0)
-                    {
-                        var waitsToRemove = new List<Guid>();
-                        CollectCancelledWaitsRecursive(state.Waits, cancelledTokens, waitsToRemove);
-                        foreach (var id in waitsToRemove)
-                        {
-                            await RemoveWaitByIdAsync(id);
-                        }
-                    }
+                    // 3. No longer prune cancelled waits since their statuses are updated via completedWaitIds
 
                     // 4. Flatten and insert/update new waits into their concrete tables
                     if (newWaitsList.Count > 0)
@@ -317,18 +309,47 @@ namespace Workflows.Storage.EntityFrameworkCore
         }
 
         /// <summary>
-        /// Removes a wait row by ID from whichever concrete table owns it (TPC — no shared base table).
+        /// Updates a wait row's status by ID in whichever concrete table owns it.
         /// </summary>
-        private async Task RemoveWaitByIdAsync(Guid id)
+        private async Task UpdateWaitStatusAsync(Guid id, WaitStatus status)
         {
             var signal = await _dbContext.SignalWaits.FindAsync(id);
-            if (signal != null) { _dbContext.SignalWaits.Remove(signal); return; }
+            if (signal != null)
+            {
+                signal.Status = (int)status;
+                _dbContext.SignalWaits.Update(signal);
+                return;
+            }
 
             var command = await _dbContext.CommandWaits.FindAsync(id);
-            if (command != null) { _dbContext.CommandWaits.Remove(command); return; }
+            if (command != null)
+            {
+                command.Status = (int)status;
+                _dbContext.CommandWaits.Update(command);
+                return;
+            }
 
             var time = await _dbContext.TimeWaits.FindAsync(id);
-            if (time != null) { _dbContext.TimeWaits.Remove(time); }
+            if (time != null)
+            {
+                time.Status = (int)status;
+                _dbContext.TimeWaits.Update(time);
+            }
+        }
+
+        private WaitInfrastructureDto? FindWaitById(IEnumerable<WaitInfrastructureDto> waits, Guid id)
+        {
+            if (waits == null) return null;
+            foreach (var wait in waits)
+            {
+                if (wait.Id == id) return wait;
+                if (wait.ChildWaits != null)
+                {
+                    var found = FindWaitById(wait.ChildWaits, id);
+                    if (found != null) return found;
+                }
+            }
+            return null;
         }
 
         /// <summary>

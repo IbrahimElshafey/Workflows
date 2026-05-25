@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Newtonsoft.Json;
 using System;
@@ -61,6 +62,18 @@ namespace Workflows.Storage.EntityFrameworkCore
         {
             base.OnModelCreating(modelBuilder);
 
+            var cancellationHistoryComparer = new ValueComparer<List<CancellationHistoryEntry>>(
+                (c1, c2) => JsonConvert.SerializeObject(c1, Formatting.None) == JsonConvert.SerializeObject(c2, Formatting.None),
+                c => c == null ? 0 : JsonConvert.SerializeObject(c, Formatting.None).GetHashCode(),
+                c => JsonConvert.DeserializeObject<List<CancellationHistoryEntry>>(JsonConvert.SerializeObject(c, Formatting.None)) ?? new List<CancellationHistoryEntry>()
+            );
+
+            var waitsComparer = new ValueComparer<List<WaitInfrastructureDto>>(
+                (c1, c2) => JsonConvert.SerializeObject(c1, PolymorphicSerializerSettings) == JsonConvert.SerializeObject(c2, PolymorphicSerializerSettings),
+                c => c == null ? 0 : JsonConvert.SerializeObject(c, PolymorphicSerializerSettings).GetHashCode(),
+                c => JsonConvert.DeserializeObject<List<WaitInfrastructureDto>>(JsonConvert.SerializeObject(c, PolymorphicSerializerSettings), PolymorphicSerializerSettings) ?? new List<WaitInfrastructureDto>()
+            );
+
             // WorkflowInstance configuration
             modelBuilder.Entity<WorkflowInstance>(entity =>
             {
@@ -93,13 +106,15 @@ namespace Workflows.Storage.EntityFrameworkCore
                 entity.Property(e => e.CancellationHistory)
                       .HasConversion(
                           v => JsonConvert.SerializeObject(v, Formatting.None),
-                          v => JsonConvert.DeserializeObject<List<CancellationHistoryEntry>>(v) ?? new List<CancellationHistoryEntry>()
+                          v => JsonConvert.DeserializeObject<List<CancellationHistoryEntry>>(v) ?? new List<CancellationHistoryEntry>(),
+                          cancellationHistoryComparer
                       );
 
                 entity.Property(e => e.Waits)
                       .HasConversion(
                           v => JsonConvert.SerializeObject(v, PolymorphicSerializerSettings),
-                          v => JsonConvert.DeserializeObject<List<WaitInfrastructureDto>>(v, PolymorphicSerializerSettings) ?? new List<WaitInfrastructureDto>()
+                          v => JsonConvert.DeserializeObject<List<WaitInfrastructureDto>>(v, PolymorphicSerializerSettings) ?? new List<WaitInfrastructureDto>(),
+                          waitsComparer
                       );
             });
 
