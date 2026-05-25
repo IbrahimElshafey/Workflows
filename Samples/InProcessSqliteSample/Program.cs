@@ -129,6 +129,59 @@ namespace InProcessSqliteSample
                 }
             }
 
+            // 3.5. Restore dispatched deferred commands from DB on startup (for app restarts)
+            using (var scope = _serviceProvider.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+                var activeInstances = await dbContext.WorkflowInstances.ToListAsync();
+                
+                var restoredNotifications = new List<CommandDispatchNotification>();
+                
+                void CollectCommandWaitsLocal(WaitInfrastructureDto wait, List<CommandWaitDto> list)
+                {
+                    if (wait == null) return;
+                    if (wait is CommandWaitDto commandWait)
+                    {
+                        list.Add(commandWait);
+                    }
+                    if (wait.ChildWaits != null)
+                    {
+                        foreach (var child in wait.ChildWaits)
+                        {
+                            CollectCommandWaitsLocal(child, list);
+                        }
+                    }
+                }
+
+                foreach (var inst in activeInstances)
+                {
+                    var commandWaits = new List<CommandWaitDto>();
+                    foreach (var wait in inst.Waits)
+                    {
+                        CollectCommandWaitsLocal(wait, commandWaits);
+                    }
+                    
+                    foreach (var cw in commandWaits)
+                    {
+                        if (cw.Status == WaitStatus.Waiting && cw.ExecutionMode == CommandExecutionMode.Deferred)
+                        {
+                            restoredNotifications.Add(new CommandDispatchNotification
+                            {
+                                CommandWaitId = cw.Id,
+                                HandlerKey = cw.HandlerKey,
+                                CommandData = cw.CommandData?.ToString() ?? string.Empty
+                            });
+                        }
+                    }
+                }
+                
+                lock (ConsoleMessageTransport.DispatchedCommands)
+                {
+                    ConsoleMessageTransport.DispatchedCommands.Clear();
+                    ConsoleMessageTransport.DispatchedCommands.AddRange(restoredNotifications);
+                }
+            }
+
             // 4. Start the background scheduler
             var scheduler = _serviceProvider.GetRequiredService<Scheduler>();
             await scheduler.StartAsync(default);

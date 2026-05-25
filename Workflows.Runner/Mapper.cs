@@ -188,7 +188,9 @@ namespace Workflows.Runner
                             IsExactMatchFullMatch = transformResult.IsExactMatchFullMatch,
                             IsGenericMatchFullMatch = transformResult.IsGenericMatchFullMatch,
                             GenericMatchExpressionJson = transformResult.GenericMatchExpression != null ? _expressionSerializer.Serialize(transformResult.GenericMatchExpression) as string : null,
-                            InstanceExactMatchExpressionJson = transformResult.InstanceExactMatchExpression != null ? _expressionSerializer.Serialize(transformResult.InstanceExactMatchExpression) as string : null,
+                            InstanceExactMatchExpressionJson = (transformResult.SignalExactMatchPaths == null || transformResult.SignalExactMatchPaths.Count == 0)
+                                 ? null
+                                 : (transformResult.InstanceExactMatchExpression != null ? _expressionSerializer.Serialize(transformResult.InstanceExactMatchExpression) as string : null),
                             NormalizedMatchExpressionJson = transformResult.MatchExpression != null ? _expressionSerializer.Serialize(transformResult.MatchExpression) as string : null
                         };
                         _templateRepository.SaveTemplate(templateDto);
@@ -240,7 +242,9 @@ namespace Workflows.Runner
             }
             else
             {
-                instanceExactMatchExpr = transformResult?.InstanceExactMatchExpression;
+                instanceExactMatchExpr = (transformResult?.SignalExactMatchPaths == null || transformResult.SignalExactMatchPaths.Count == 0)
+                    ? null
+                    : transformResult?.InstanceExactMatchExpression;
             }
 
             if (instanceExactMatchExpr != null)
@@ -274,7 +278,9 @@ namespace Workflows.Runner
                 else
                 {
                     normalizedExprToCache = transformResult?.MatchExpression;
-                    instanceExprToCache = transformResult?.InstanceExactMatchExpression;
+                    instanceExprToCache = (transformResult?.SignalExactMatchPaths == null || transformResult.SignalExactMatchPaths.Count == 0)
+                        ? null
+                        : transformResult?.InstanceExactMatchExpression;
                 }
 
                 if (normalizedExprToCache != null)
