@@ -41,9 +41,6 @@ namespace Workflows.Runner.Pipeline.Processors
             var commandDto = _mapper.MapToDto(yieldedWait) as CommandWaitDto;
             if (commandDto != null && commandData != null)
             {
-                // Store command type name for external dispatcher
-                commandDto.HandlerKey = commandData.GetType().FullName;
-
                 // Note: Actual serialization to message bus would happen in the Orchestrator
                 // after receiving this DTO. The runner just marks it for dispatch.
             }

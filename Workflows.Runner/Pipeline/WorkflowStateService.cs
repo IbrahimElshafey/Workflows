@@ -156,17 +156,17 @@ namespace Workflows.Runner.Pipeline
                 context.ConsumedWaitsIds.Add(id);
             }
 
-            // Prune completed/canceled/in-error root-level waits from state.Waits
-            state.Waits.RemoveAll(w => w.Status == Abstraction.Enums.WaitStatus.Completed ||
-                                      w.Status == Abstraction.Enums.WaitStatus.Canceled ||
-                                      w.Status == Abstraction.Enums.WaitStatus.InError ||
-                                      context.ConsumedWaitsIds.Contains(w.Id));
+            // Do not prune completed/canceled/in-error waits from state.Waits tree
+            // state.Waits.RemoveAll(w => w.Status == Abstraction.Enums.WaitStatus.Completed ||
+            //                           w.Status == Abstraction.Enums.WaitStatus.Canceled ||
+            //                           w.Status == Abstraction.Enums.WaitStatus.InError ||
+            //                           context.ConsumedWaitsIds.Contains(w.Id));
 
             return new AsyncResult(
                 state.Id,
                 new
                 {
-                    NewWaitsIds = state.Waits.Select(w => w.Id).ToList(),
+                    NewWaitsIds = state.Waits.Where(w => w.Status == Abstraction.Enums.WaitStatus.Waiting).Select(w => w.Id).ToList(),
                     context.ConsumedWaitsIds
                 },
                 "Accepted",

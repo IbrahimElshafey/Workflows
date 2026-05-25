@@ -211,6 +211,7 @@ namespace Workflows.Runner.Pipeline.Matchers
 
             foreach (var child in childrenToPrune)
             {
+                child.Status = WaitStatus.Canceled;
                 // Mark as consumed so they get removed from persistence
                 context.ConsumedWaitsIds.Add(child.Id);
 
@@ -230,6 +231,7 @@ namespace Workflows.Runner.Pipeline.Matchers
             {
                 if (child.Status == WaitStatus.Waiting)
                 {
+                    child.Status = WaitStatus.Canceled;
                     context.ConsumedWaitsIds.Add(child.Id);
                     PruneChildrenRecursive(child, context);
                 }

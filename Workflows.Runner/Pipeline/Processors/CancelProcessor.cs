@@ -57,19 +57,19 @@ namespace Workflows.Runner.Pipeline.Processors
 
             var cancelledTokens = context.WorkflowState.CancellationHistory.GetCancelledTokens();
 
-            // Prune any waits that match cancelled tokens before they get persisted
-            var waitsToRemove = context.WorkflowState.Waits
+            // Find any waits that match cancelled tokens and set them to Canceled
+            var cancelledWaits = context.WorkflowState.Waits
                 .Where(waitDto => ShouldWaitBeCancelled(waitDto, cancelledTokens))
                 .ToList();
 
-            foreach (var waitDto in waitsToRemove)
+            foreach (var waitDto in cancelledWaits)
             {
-                // Mark as consumed so it doesn't get persisted
+                waitDto.Status = Abstraction.Enums.WaitStatus.Canceled;
+                // Mark as consumed so the store updates its status
                 context.ConsumedWaitsIds.Add(waitDto.Id);
-                context.WorkflowState.Waits.Remove(waitDto);
 
-                // Recursively prune children
-                PruneChildWaits(waitDto, context, cancelledTokens);
+                // Recursively cancel children
+                CancelChildWaitsRecursive(waitDto, context);
             }
         }
 
@@ -132,20 +132,20 @@ namespace Workflows.Runner.Pipeline.Processors
             return false;
         }
 
-        private void PruneChildWaits(
+        private void CancelChildWaitsRecursive(
             Abstraction.DTOs.Waits.WaitInfrastructureDto waitDto, 
-            WorkflowExecutionContext context,
-            HashSet<string> cancelledTokens)
+            WorkflowExecutionContext context)
         {
             if (waitDto.ChildWaits == null || !waitDto.ChildWaits.Any())
             {
                 return;
             }
 
-            foreach (var child in waitDto.ChildWaits.ToList())
+            foreach (var child in waitDto.ChildWaits)
             {
+                child.Status = Abstraction.Enums.WaitStatus.Canceled;
                 context.ConsumedWaitsIds.Add(child.Id);
-                PruneChildWaits(child, context, cancelledTokens);
+                CancelChildWaitsRecursive(child, context);
             }
         }
 
