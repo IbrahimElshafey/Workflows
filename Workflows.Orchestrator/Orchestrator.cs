@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
@@ -19,19 +20,25 @@ namespace Workflows.Orchestrator
         private readonly IWorkflowRunner _runner;
         private readonly IObjectSerializer _serializer;
         private readonly IWorkflowRegistry _workflowRegistry;
+        private readonly IWorkflowCloner _workflowCloner;
+        private readonly ISignalPreFilter _signalPreFilter;
 
         public Orchestrator(
             IWorkflowStore workflowStore,
             IDefinitionRepository definitionRepository,
             IWorkflowRunner runner,
             IObjectSerializer serializer,
-            IWorkflowRegistry workflowRegistry)
+            IWorkflowRegistry workflowRegistry,
+            IWorkflowCloner workflowCloner,
+            ISignalPreFilter signalPreFilter)
         {
             _workflowStore = workflowStore ?? throw new ArgumentNullException(nameof(workflowStore));
             _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
             _runner = runner ?? throw new ArgumentNullException(nameof(runner));
             _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
+            _workflowCloner = workflowCloner ?? throw new ArgumentNullException(nameof(workflowCloner));
+            _signalPreFilter = signalPreFilter ?? throw new ArgumentNullException(nameof(signalPreFilter));
         }
 
         public async Task ProcessCommandResultAsync(CommandResultDto commandResultDto)
@@ -51,7 +58,7 @@ namespace Workflows.Orchestrator
             }
 
             object rawResult = commandResultDto.Result;
-            var commandWait = FindWaitingRecordForCommand(state.Waits, commandResultDto.CommandWaitId);
+            var commandWait = WaitFinder.FindWaitingRecordForCommand(state.Waits, commandResultDto.CommandWaitId);
             if (commandWait != null && !string.IsNullOrEmpty(commandWait.HandlerKey))
             {
                 (Type CommandPayloadType, Type CommandResultType) types = default;
@@ -159,8 +166,13 @@ namespace Workflows.Orchestrator
                 var state = await _workflowStore.GetInstanceStateAsync(instanceId);
                 if (state == null) continue;
 
-                var triggeringWait = FindWaitingRecordForSignal(state.Waits, signalDto.SignalIdentifier);
+                var triggeringWait = WaitFinder.FindWaitingRecordForSignal(state.Waits, signalDto.SignalIdentifier);
                 if (triggeringWait == null) continue;
+
+                if (triggeringWait is SignalWaitDto signalWait && !_signalPreFilter.IsMatch(signalWait, signalDto, state))
+                {
+                    continue; // Tier 1.5 filter: Skip invoking runner
+                }
 
                 var isFirstWait = triggeringWait is SignalWaitDto sw && sw.IsFirstWait;
 
@@ -170,7 +182,7 @@ namespace Workflows.Orchestrator
                 if (isFirstWait)
                 {
                     // Clone the immutable state and update all IDs
-                    runState = CloneStateWithNewIds(state, out var newTriggeringWaitId, triggeringWait.Id);
+                    runState = _workflowCloner.CloneStateWithNewIds(state, out var newTriggeringWaitId, triggeringWait.Id);
                     triggeringWaitId = newTriggeringWaitId;
                 }
 
@@ -183,117 +195,6 @@ namespace Workflows.Orchestrator
 
                 await _runner.RunWorkflowAsync(request);
             }
-        }
-
-        private WorkflowStateDto CloneStateWithNewIds(WorkflowStateDto source, out Guid newTriggeringWaitId, Guid oldTriggeringWaitId)
-        {
-            var clone = new WorkflowStateDto
-            {
-                Id = Guid.NewGuid(),
-                Created = DateTime.UtcNow,
-                Status = source.Status,
-                WorkflowType = source.WorkflowType,
-                StateObject = CloneStateObject(source.StateObject),
-                Waits = new List<WaitInfrastructureDto>(),
-                CancellationHistory = source.CancellationHistory != null ? new List<CancellationHistoryEntry>(source.CancellationHistory) : new()
-            };
-
-            // 1. Build a map of old wait ID -> new wait ID
-            var idMap = new Dictionary<Guid, Guid>();
-            BuildIdMapRecursive(source.Waits, idMap);
-
-            // 2. Map the triggering wait ID
-            if (idMap.TryGetValue(oldTriggeringWaitId, out var mappedTriggerId))
-            {
-                newTriggeringWaitId = mappedTriggerId;
-            }
-            else
-            {
-                newTriggeringWaitId = oldTriggeringWaitId;
-            }
-
-            // 3. Clone and apply new IDs to the waits
-            foreach (var wait in source.Waits)
-            {
-                clone.Waits.Add(CloneAndRemapWaitRecursive(wait, idMap));
-            }
-
-            // 4. Update keys in WaitStatesObjects in StateObject
-            if (clone.StateObject?.WaitStatesObjects != null)
-            {
-                var updatedWaitStates = new Dictionary<Guid, object>();
-                foreach (var kvp in clone.StateObject.WaitStatesObjects)
-                {
-                    if (idMap.TryGetValue(kvp.Key, out var newWaitId))
-                    {
-                        updatedWaitStates[newWaitId] = kvp.Value;
-                    }
-                    else
-                    {
-                        updatedWaitStates[kvp.Key] = kvp.Value;
-                    }
-                }
-                clone.StateObject.WaitStatesObjects = updatedWaitStates;
-            }
-
-            return clone;
-        }
-
-        private void BuildIdMapRecursive(IEnumerable<WaitInfrastructureDto> waits, Dictionary<Guid, Guid> idMap)
-        {
-            if (waits == null) return;
-            foreach (var w in waits)
-            {
-                idMap[w.Id] = Guid.NewGuid();
-                if (w.ChildWaits != null)
-                {
-                    BuildIdMapRecursive(w.ChildWaits, idMap);
-                }
-            }
-        }
-
-        private WaitInfrastructureDto CloneAndRemapWaitRecursive(WaitInfrastructureDto wait, Dictionary<Guid, Guid> idMap)
-        {
-            // Serialize and deserialize to clone the wait DTO polymorphically
-            var serialized = _serializer.Serialize(wait, SerializationScope.CompilerGeneratedClass);
-            var cloned = (WaitInfrastructureDto)_serializer.Deserialize(serialized, wait.GetType(), SerializationScope.CompilerGeneratedClass);
-
-            // Apply new ID
-            if (idMap.TryGetValue(wait.Id, out var newId))
-            {
-                cloned.Id = newId;
-            }
-            else
-            {
-                cloned.Id = Guid.NewGuid();
-            }
-
-            cloned.IsPersisted = false; // Reset persistence flag so it gets indexed
-
-            // Reset parent ID
-            if (wait.ParentWaitId.HasValue && idMap.TryGetValue(wait.ParentWaitId.Value, out var newParentId))
-            {
-                cloned.ParentWaitId = newParentId;
-            }
-
-            // Clone and apply to children recursively
-            if (wait.ChildWaits != null)
-            {
-                cloned.ChildWaits = new List<WaitInfrastructureDto>();
-                foreach (var child in wait.ChildWaits)
-                {
-                    cloned.ChildWaits.Add(CloneAndRemapWaitRecursive(child, idMap));
-                }
-            }
-
-            return cloned;
-        }
-
-        private WorkflowStateObject CloneStateObject(WorkflowStateObject source)
-        {
-            if (source == null) return null;
-            var serialized = _serializer.Serialize(source, SerializationScope.CompilerGeneratedClass);
-            return _serializer.Deserialize<WorkflowStateObject>(serialized, SerializationScope.CompilerGeneratedClass);
         }
 
         public async Task<Guid> StartWorkflowAsync(string workflowName, string version, object input)
@@ -309,52 +210,6 @@ namespace Workflows.Orchestrator
 
             var result = await _runner.StartWorkflow(workflowName, input);
             return result.Id;
-        }
-
-        private WaitInfrastructureDto FindWaitingRecordForSignal(IEnumerable<WaitInfrastructureDto> waits, string signalPath)
-        {
-            if (waits == null) return null;
-
-            foreach (var w in waits)
-            {
-                if (w is SignalWaitDto signalWait && signalWait.SignalIdentifier == signalPath && signalWait.Status == WaitStatus.Waiting)
-                {
-                    return signalWait;
-                }
-                if (w is TimeWaitDto timeWait && timeWait.UniqueMatchId == signalPath && timeWait.Status == WaitStatus.Waiting)
-                {
-                    return timeWait;
-                }
-
-                if (w.ChildWaits != null && w.ChildWaits.Count > 0)
-                {
-                    var child = FindWaitingRecordForSignal(w.ChildWaits, signalPath);
-                    if (child != null) return child;
-                }
-            }
-
-            return null;
-        }
-
-        private CommandWaitDto FindWaitingRecordForCommand(IEnumerable<WaitInfrastructureDto> waits, Guid commandWaitId)
-        {
-            if (waits == null) return null;
-
-            foreach (var w in waits)
-            {
-                if (w is CommandWaitDto commandWait && commandWait.Id == commandWaitId)
-                {
-                    return commandWait;
-                }
-
-                if (w.ChildWaits != null && w.ChildWaits.Count > 0)
-                {
-                    var child = FindWaitingRecordForCommand(w.ChildWaits, commandWaitId);
-                    if (child != null) return child;
-                }
-            }
-
-            return null;
         }
     }
 }
