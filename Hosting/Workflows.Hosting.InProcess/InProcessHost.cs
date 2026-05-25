@@ -29,6 +29,8 @@ namespace Workflows.Hosting.InProcess
             services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<Scheduler>());
 
             services.AddScoped<IWorkflowRunnerClient, WorkflowRunnerClient>();
+            services.AddScoped<Workflows.Orchestrator.IWorkflowCloner, Workflows.Orchestrator.WorkflowCloner>();
+            services.AddScoped<Workflows.Orchestrator.ISignalPreFilter, Workflows.Orchestrator.SignalPreFilter>();
             services.AddScoped<IOrchestrator, Workflows.Orchestrator.Orchestrator>();
 
             // 4. In-Process Message Transport & Routing Setup

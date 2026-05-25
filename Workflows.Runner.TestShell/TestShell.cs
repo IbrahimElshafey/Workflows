@@ -31,7 +31,7 @@ namespace Workflows.TestShell
 
         public WorkflowStateDto? CurrentState => _currentState;
 
-        public IReadOnlyList<WaitInfrastructureDto> ActiveWaits => _currentState?.Waits ?? new List<WaitInfrastructureDto>();
+        public IReadOnlyList<WaitInfrastructureDto> ActiveWaits => _currentState?.Waits?.Where(w => w.Status == WaitStatus.Waiting).ToList() ?? new List<WaitInfrastructureDto>();
 
         public WorkflowInstanceStatus CurrentStatus => _currentState?.Status ?? WorkflowInstanceStatus.New;
 
@@ -77,7 +77,7 @@ namespace Workflows.TestShell
             {
                 TriggeringWaitId = _lastTriggeringWaitId,
                 ConsumedWaitIds = response.ConsumedWaitsIds?.Distinct().ToList() ?? new List<Guid>(),
-                NewWaitIds = response.UpdatedState.Waits?.Select(w => w.Id).ToList() ?? new List<Guid>(),
+                NewWaitIds = response.UpdatedState.Waits?.Where(w => w.Status == WaitStatus.Waiting).Select(w => w.Id).ToList() ?? new List<Guid>(),
                 Status = response.UpdatedState.Status,
                 SerializedStateSnapshot = _currentStateJson,
                 Timestamp = DateTime.UtcNow

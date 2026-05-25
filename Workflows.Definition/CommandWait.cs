@@ -153,6 +153,7 @@ namespace Workflows.Definition
             : base(WaitType.Command, commandName, inCodeLine, caller, callerFilePath)
         {
             CommandData = data;
+            HandlerKey = commandName;
         }
 
         internal CommandWait()
