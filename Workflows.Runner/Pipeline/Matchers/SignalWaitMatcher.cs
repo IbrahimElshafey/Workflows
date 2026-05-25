@@ -7,7 +7,6 @@ using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Runner;
-using Workflows.Runner.Cache;
 using Workflows.Runner.ExpressionTransformers;
 using IExpressionSerializer = Workflows.Abstraction.Helpers.IExpressionSerializer;
 using ExpressionCompiler = Workflows.Runner.ExpressionTransformers.ExpressionCompiler;
@@ -25,7 +24,6 @@ namespace Workflows.Runner.Pipeline.Matchers
         private readonly MatcherFactory _matcherFactory;
         private readonly IExpressionSerializer _expressionSerializer;
         private readonly IDelegateSerializer _delegateSerializer;
-        internal static readonly ConcurrentDictionary<string, SignalTemplateCacheRecord> SignalCache = new();
 
         public SignalWaitMatcher(
             IWorkflowRegistry workflowRegistry, 

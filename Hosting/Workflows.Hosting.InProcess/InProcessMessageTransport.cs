@@ -48,7 +48,7 @@ namespace Workflows.Hosting.InProcess
         {
             using (var scope = _serviceProvider.CreateScope())
             {
-                var runner = scope.ServiceProvider.GetRequiredService<RefactoredWorkflowRunner>();
+                var runner = scope.ServiceProvider.GetRequiredService<WorkflowRunner>();
                 if (message is WorkflowExecutionRequest req && typeof(TResponse) == typeof(AsyncResult))
                 {
                     var result = await runner.RunWorkflowAsync(req);

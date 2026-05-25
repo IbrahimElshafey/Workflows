@@ -9,20 +9,24 @@
     <Import_RootNamespace>_Documents</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)Command Execution Modes.md" />
-    <None Include="$(MSBuildThisFileDirectory)Recursive Matcher Pattern.md" />
-    <None Include="$(MSBuildThisFileDirectory)Refactored Runner Review Report.md" />
-    <None Include="$(MSBuildThisFileDirectory)Runner Evaluation Logic.md" />
-    <None Include="$(MSBuildThisFileDirectory)State Management Implementation.md" />
-    <None Include="$(MSBuildThisFileDirectory)Sub-Workflow Execution.md" />
-    <None Include="$(MSBuildThisFileDirectory)Todo\Hosting.md" />
-    <None Include="$(MSBuildThisFileDirectory)Todo\Runner-Db.md" />
-    <None Include="$(MSBuildThisFileDirectory)Todo\Versioning.md" />
-    <None Include="$(MSBuildThisFileDirectory)Todo\_Todo.md" />
-    <None Include="$(MSBuildThisFileDirectory)Two-Tier Expression Evaluation &amp; Routing.md" />
-    <None Include="$(MSBuildThisFileDirectory)Workflow Compensation Logic %28Saga Pattern%29.md" />
-    <None Include="$(MSBuildThisFileDirectory)Architectural Reference Guide.md" />
-    <None Include="$(MSBuildThisFileDirectory)Workflow Messaging Architecture.md" />
-    <None Include="$(MSBuildThisFileDirectory)Savig-state.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Architectural Reference Guide.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Command Execution Modes.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Runner Evaluation Logic.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Workflow Engine Storage Architecture.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Workflow Messaging Architecture.md" />
+    <None Include="$(MSBuildThisFileDirectory)Archive\PIPELINE_IMPLEMENTATION_COMPLETE.md" />
+    <None Include="$(MSBuildThisFileDirectory)Archive\Refactored_Runner_Review_Report.md" />
+    <None Include="$(MSBuildThisFileDirectory)Design_Patterns\Recursive Matcher Pattern.md" />
+    <None Include="$(MSBuildThisFileDirectory)Design_Patterns\Sub-Workflow Execution.md" />
+    <None Include="$(MSBuildThisFileDirectory)Design_Patterns\Two-Tier Expression Evaluation &amp; Routing.md" />
+    <None Include="$(MSBuildThisFileDirectory)Design_Patterns\Workflow Compensation Logic %28Saga Pattern%29.md" />
+    <None Include="$(MSBuildThisFileDirectory)Development\Reflection Bottleneck Fix.md" />
+    <None Include="$(MSBuildThisFileDirectory)Development\State Management Implementation.md" />
+    <None Include="$(MSBuildThisFileDirectory)Development\Workflow DTO Refactoring.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Engine_Performance_&amp;_Scaling.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Feature_Gap_Analysis.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\UI_Administration_Features.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Upcoming_Implementation_Tasks.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning.md" />
   </ItemGroup>
 </Project>

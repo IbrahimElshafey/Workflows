@@ -3,7 +3,6 @@ using System;
 using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition.Registration;
-using Workflows.Runner.Cache;
 using Workflows.Runner.ExpressionTransformers;
 using Workflows.Runner.Helpers;
 using Workflows.Runner.Pipeline;
@@ -33,11 +32,11 @@ namespace Workflows.Runner
             services.AddScoped<SubWorkflowWaitMatcher>();
             services.AddScoped<WorkflowExecutionContext>();
             services.AddScoped<StateMachineAdvancer>();
-            services.AddScoped<IWorkflowRunner, RefactoredWorkflowRunner>();
+            services.AddScoped<IWorkflowRunner, WorkflowRunner>();
            
             // The refactored runner (can be registered as IWorkflowRunner when ready to switch)
             // For now, register with a different lifetime to allow side-by-side testing
-            services.AddScoped<RefactoredWorkflowRunner>();
+            services.AddScoped<WorkflowRunner>();
             /*to add
              * RunWorkflowSettings settings,
             IWorkflowRunResultSender runResultSender,

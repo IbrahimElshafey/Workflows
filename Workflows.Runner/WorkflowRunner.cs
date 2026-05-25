@@ -13,7 +13,7 @@ namespace Workflows.Runner
     /// Refactored stateless workflow runner implementation.
     /// Uses a two-phase pipeline: Matchers validate incoming events, Processors handle yielded waits.
     /// </summary>
-    internal class RefactoredWorkflowRunner : IWorkflowRunner
+    internal class WorkflowRunner : IWorkflowRunner
     {
         private readonly WorkflowStateService _stateService;
         private readonly MatcherFactory _matcherFactory;
@@ -23,7 +23,7 @@ namespace Workflows.Runner
         private readonly IWorkflowRunnerClient _resultSender;
         private readonly WorkflowExecutionContext _context;
 
-        public RefactoredWorkflowRunner(
+        public WorkflowRunner(
             WorkflowStateService stateService,
             MatcherFactory matcherFactory,
             ProcessorFactory processorFactory,
