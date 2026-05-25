@@ -2,6 +2,9 @@
 
 This document provides a comprehensive analysis of the Workflows engine's features, comparing planned roadmaps against actual implementations and outlining critical features that are currently missing from the roadmap but are essential for a production-ready orchestration system.
 
+* Link standard logs that happen when a specific workflow instance runs to this specific workflow instance.
+* Calling runner.startworkflow twice should not create two instances if same instance object returned (same data and same waits)
+* Signal should not trigger same workflow instance twice
 ---
 
 ## 1. Planned but Unimplemented (or Partially Implemented) Features

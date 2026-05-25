@@ -23,6 +23,7 @@
     <None Include="$(MSBuildThisFileDirectory)Development\Reflection Bottleneck Fix.md" />
     <None Include="$(MSBuildThisFileDirectory)Development\State Management Implementation.md" />
     <None Include="$(MSBuildThisFileDirectory)Development\Workflow DTO Refactoring.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Proactive Look-Ahead Timer Checking.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Engine_Performance_&amp;_Scaling.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Feature_Gap_Analysis.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\UI_Administration_Features.md" />
