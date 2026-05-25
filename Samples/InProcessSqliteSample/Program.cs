@@ -50,7 +50,10 @@ namespace InProcessSqliteSample
             services.AddWorkflowsShared();
             services.AddWorkflowsRunner();
             services.AddSingleton<JSchemaGenerator>();
-            services.AddSingleton<ICommandHandlerFactory, SimpleMockCommandHandlerFactory>();
+
+            // Register deferred command handlers (resolved manually after orchestrator dispatches the notification)
+            services.AddTransient<AuthorizePaymentHandler>();
+            services.AddTransient<ShipOrderHandler>();
 
             // Setup in-process host with SQLite provider
             services.AddWorkflowsInProcessHost($"Data Source={DbFileName}");
@@ -251,7 +254,7 @@ namespace InProcessSqliteSample
             var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
 
             // Start with empty input — domain state comes from the first generic signal
-            var instanceId = await orchestrator.StartWorkflowAsync("OrderWorkflow", "1.0", null);
+            var instanceId = await orchestrator.StartWorkflowAsync("OrderWorkflow", "1.0", new { });
 
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine($"Workflow Instance created and is now waiting for 'OrderReceived' signal!");
@@ -454,31 +457,32 @@ namespace InProcessSqliteSample
             Console.WriteLine($"Simulating results for command: {selectedCommand.HandlerKey}");
             object resultObj;
 
-            if (selectedCommand.HandlerKey == "AuthorizePayment")
-            {
-                Console.Write("Payment successful? (y/n): ");
-                bool success = Console.ReadLine()?.Trim().ToLower() == "y";
-                resultObj = new PaymentResult { Success = success, TransactionId = success ? $"TXN_{Guid.NewGuid().ToString()[..8].ToUpper()}" : string.Empty };
-            }
-            else if (selectedCommand.HandlerKey == "ShipOrder")
-            {
-                Console.Write("Shipment successful? (y/n): ");
-                bool success = Console.ReadLine()?.Trim().ToLower() == "y";
-                resultObj = new ShipOrderResult { Success = success, TrackingNumber = success ? $"TRK-{new Random().Next(100000, 999999)}" : string.Empty };
-            }
-            else
-            {
-                Console.WriteLine($"Unknown handler key '{selectedCommand.HandlerKey}'. Cannot auto-generate result.");
-                return;
-            }
-
-            // Remove command from queue
+            // Remove command from queue before executing to avoid double-processing
             lock (ConsoleMessageTransport.DispatchedCommands)
             {
                 ConsoleMessageTransport.DispatchedCommands.Remove(selectedCommand);
             }
 
             using var scope = _serviceProvider.CreateScope();
+            string commandJson = JsonConvert.SerializeObject(selectedCommand.CommandData);
+
+            if (selectedCommand.HandlerKey == "AuthorizePayment")
+            {
+                var handler = scope.ServiceProvider.GetRequiredService<AuthorizePaymentHandler>();
+                var request = JsonConvert.DeserializeObject<PaymentRequest>(commandJson) ?? new();
+                resultObj = await handler.HandleAsync(request);
+            }
+            else if (selectedCommand.HandlerKey == "ShipOrder")
+            {
+                var handler = scope.ServiceProvider.GetRequiredService<ShipOrderHandler>();
+                var command = JsonConvert.DeserializeObject<ShipOrderCommand>(commandJson) ?? new();
+                resultObj = await handler.HandleAsync(command);
+            }
+            else
+            {
+                Console.WriteLine($"Unknown handler key '{selectedCommand.HandlerKey}'. Cannot auto-generate result.");
+                return;
+            }
             var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
 
             Console.WriteLine("Pushing command result to orchestrator...");
@@ -553,11 +557,6 @@ namespace InProcessSqliteSample
     }
 
 
-
-    public class SimpleMockCommandHandlerFactory : ICommandHandlerFactory
-    {
-        public object GetHandler(string handlerKey) => null!;
-    }
 
     // Loopback transport to capture deferred command dispatches
     public class ConsoleMessageTransport : IMessageTransport
