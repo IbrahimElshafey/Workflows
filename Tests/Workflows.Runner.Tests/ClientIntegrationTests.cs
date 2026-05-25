@@ -57,15 +57,19 @@ namespace Workflows.Runner.Tests
 
         public override async IAsyncEnumerable<Wait> Run()
         {
-            yield return ExecuteCommand<TestCommand, TestResult>(
-                "test-handler",
-                new TestCommand { Message = "hello" }
-            )
-            .WithExecutionMode(CommandExecutionMode.Deferred)
-            .OnResult(result =>
+            yield return WaitGroup(new Wait[]
             {
-                CommandResponse = result.Response;
-            });
+                ExecuteCommand<TestCommand, TestResult>(
+                    "test-handler",
+                    new TestCommand { Message = "hello" }
+                )
+                .WithExecutionMode(CommandExecutionMode.Deferred)
+                .OnResult(result =>
+                {
+                    CommandResponse = result.Response;
+                }),
+                WaitSignal<string>("DummyStartSignal", "Dummy")
+            }, "FirstGroup").MatchAny();
 
             yield return WaitSignal<string>("Finished", "Finish signal")
                 .MatchIf(msg => msg == CommandResponse);
@@ -142,7 +146,7 @@ namespace Workflows.Runner.Tests
                     services.AddRouting();
                     services.AddWorkflowsShared();
                     services.AddWorkflowsClient()
-                        .AddCommandExecutor<TestCommand, TestResult, TestExecutor>(typeof(TestCommand).FullName!);
+                        .AddCommandExecutor<TestCommand, TestResult, TestExecutor>("test-handler");
                     services.AddWorkflowsHttpTransport();
 
                     // Register custom transport that sends signal/command results to the server host
@@ -217,7 +221,7 @@ namespace Workflows.Runner.Tests
                 state.Should().NotBeNull();
                 // Since the command completed and returned "hello-echo", it should now be waiting for the Finished signal with that value
                 state!.Waits.Should().ContainSingle(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting);
-                var signalWait = (SignalWaitDto)state.Waits[0];
+                var signalWait = (SignalWaitDto)state.Waits.First(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting);
                 signalWait.SignalIdentifier.Should().Be("Finished");
             }
 
@@ -297,7 +301,7 @@ namespace Workflows.Runner.Tests
                     services.AddGrpc();
                     services.AddWorkflowsShared();
                     services.AddWorkflowsClient()
-                        .AddCommandExecutor<TestCommand, TestResult, TestExecutor>(typeof(TestCommand).FullName!);
+                        .AddCommandExecutor<TestCommand, TestResult, TestExecutor>("test-handler");
                     services.AddWorkflowsGrpcTransport();
 
                     // Register custom gRPC service
@@ -376,7 +380,7 @@ namespace Workflows.Runner.Tests
                 state.Should().NotBeNull();
                 // Since the gRPC executor completed and returned "hello-echo", it should now be waiting for the Finished signal
                 state!.Waits.Should().ContainSingle(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting);
-                var signalWait = (SignalWaitDto)state.Waits[0];
+                var signalWait = (SignalWaitDto)state.Waits.First(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting);
                 signalWait.SignalIdentifier.Should().Be("Finished");
             }
 

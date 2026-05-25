@@ -178,7 +178,7 @@ namespace Workflows.Runner.Tests
 
                 var clonedInstance = allInstances.First(wi => wi.Id != originalInstanceId);
                 clonedInstance.Status.Should().Be((int)WorkflowInstanceStatus.Completed);
-                clonedInstance.Waits.Should().BeEmpty();
+                clonedInstance.Waits.Should().ContainSingle(w => w.Status == WaitStatus.Completed);
 
                 // Assert instance property state of the cloned instance
                 var state = await workflowStore.GetInstanceStateAsync(clonedInstance.Id);
@@ -197,7 +197,7 @@ namespace Workflows.Runner.Tests
                 originalSignalWaits.All(sw => sw.IsFirstWait).Should().BeTrue();
 
                 var clonedSignalWaits = await dbContext.SignalWaits.Where(sw => sw.WorkflowInstanceId == clonedInstance.Id).ToListAsync();
-                clonedSignalWaits.Should().BeEmpty(); // Since it completed, waits are pruned
+                clonedSignalWaits.Should().ContainSingle(sw => sw.Status == (int)WaitStatus.Completed);
             }
 
             connection.Close();

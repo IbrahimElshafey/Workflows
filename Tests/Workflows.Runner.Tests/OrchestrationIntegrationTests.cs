@@ -145,12 +145,11 @@ namespace Workflows.Runner.Tests
 
             dbContext.ChangeTracker.Clear();
 
-            // Verify first wait is deleted and second wait (Command) is created
+            // Verify first wait is completed and second wait (Command) is created
             state = await workflowStore.GetInstanceStateAsync(instanceId);
             state.Should().NotBeNull();
-            state!.Waits.Should().HaveCount(1);
-            state.Waits.First().Should().BeOfType<CommandWaitDto>();
-            var commandWait = (CommandWaitDto)state.Waits.First();
+            state!.Waits.Should().HaveCount(2);
+            var commandWait = (CommandWaitDto)state.Waits.First(w => w.Status == WaitStatus.Waiting);
             commandWait.WaitName.Should().Be("ProcessPayment");
 
             // Verify the local state of ResumeCount incremented in the runner
@@ -158,11 +157,12 @@ namespace Workflows.Runner.Tests
             instanceStep2!.ResumeCount.Should().Be(8, because: $"ExecutionLog: {string.Join(" | ", instanceStep2.ExecutionLog)}");
 
             // Verify DB has the new command wait (TPC: look up in CommandWaits)
-            var newWaitInDb = await dbContext.CommandWaits.FindAsync(state.Waits.First().Id);
+            var newWaitInDb = await dbContext.CommandWaits.FindAsync(commandWait.Id);
             newWaitInDb.Should().NotBeNull();
-            // Verify the old wait we completed is NOT in DB
+            // Verify the old wait we completed is STILL in DB with Completed status
             var firstWaitRecord = await dbContext.SignalWaits.FindAsync(firstWaitId);
-            firstWaitRecord.Should().BeNull();
+            firstWaitRecord.Should().NotBeNull();
+            firstWaitRecord!.Status.Should().Be((int)WaitStatus.Completed);
 
 
             // Step 3: Send Command Result to advance past second wait to Group wait
@@ -177,9 +177,8 @@ namespace Workflows.Runner.Tests
             // Verify we advanced to GroupWaitDto containing two children
             state = await workflowStore.GetInstanceStateAsync(instanceId);
             state.Should().NotBeNull();
-            state!.Waits.Should().HaveCount(1);
-            state.Waits.First().Should().BeOfType<GroupWaitDto>();
-            var groupWait = (GroupWaitDto)state.Waits.First();
+            state!.Waits.Should().HaveCount(3);
+            var groupWait = (GroupWaitDto)state.Waits.First(w => w.Status == WaitStatus.Waiting);
             groupWait.WaitName.Should().Be("PaymentGroup");
             groupWait.ChildWaits.Should().HaveCount(2);
             groupWait.ChildWaits[0].ParentWaitId.Should().Be(groupWait.Id);
@@ -200,27 +199,24 @@ namespace Workflows.Runner.Tests
 
             dbContext.ChangeTracker.Clear();
 
-            // Verify group wait and child waits are removed from the DB, and we advanced to delay wait
+            // Verify group wait and child waits are in the DB with correct statuses, and we advanced to delay wait
             state = await workflowStore.GetInstanceStateAsync(instanceId);
             state.Should().NotBeNull();
-            state!.Waits.Should().HaveCount(1);
-            state.Waits.First().Should().BeOfType<TimeWaitDto>();
-            var timeWait = (TimeWaitDto)state.Waits.First();
+            state!.Waits.Should().HaveCount(4);
+            var timeWait = (TimeWaitDto)state.Waits.First(w => w.Status == WaitStatus.Waiting);
             timeWait.WaitName.Should().Be("DelayWait");
 
             var instanceStep4 = state.StateObject.Instance as FirstWaitAndResumeWorkflow;
             instanceStep4!.ResumeCount.Should().Be(10);
 
-            // Verify all group/child wait records were pruned from the database.
+            // Verify all group/child wait records were updated with correct terminal status in the database.
             // With TPC there is no shared WorkflowWaits base table; check each concrete set.
-            // Use explicit OR comparisons — EF Core on .NET 10 cannot translate Guid List/Array.Contains.
-            var hasSignalRecords = await dbContext.SignalWaits.AnyAsync(w =>
-                w.Id == groupWaitId || w.Id == child1Id || w.Id == child2Id);
-            var hasCommandRecords = await dbContext.CommandWaits.AnyAsync(w =>
-                w.Id == groupWaitId || w.Id == child1Id || w.Id == child2Id);
-            var hasTimeRecords = await dbContext.TimeWaits.AnyAsync(w =>
-                w.Id == groupWaitId || w.Id == child1Id || w.Id == child2Id);
-            (hasSignalRecords || hasCommandRecords || hasTimeRecords).Should().BeFalse();
+            var dbChild1 = await dbContext.SignalWaits.FindAsync(child1Id);
+            var dbChild2 = await dbContext.SignalWaits.FindAsync(child2Id);
+            dbChild1.Should().NotBeNull();
+            dbChild2.Should().NotBeNull();
+            var childStatuses = new[] { dbChild1!.Status, dbChild2!.Status };
+            childStatuses.Should().BeEquivalentTo(new[] { (int)WaitStatus.Completed, (int)WaitStatus.Canceled });
 
 
 
@@ -274,7 +270,8 @@ namespace Workflows.Runner.Tests
                 // Hydrate from database and verify status is Completed
                 state.Should().NotBeNull();
                 state!.Status.Should().Be(WorkflowInstanceStatus.Completed);
-                state.Waits.Should().BeEmpty();
+                state.Waits.Should().NotBeEmpty();
+                state.Waits.Should().OnlyContain(w => w.Status == WaitStatus.Completed);
             }
             finally
             {
@@ -319,12 +316,68 @@ namespace Workflows.Runner.Tests
             state = await workflowStore.GetInstanceStateAsync(instanceId);
             state.Should().NotBeNull();
             state!.Status.Should().Be(WorkflowInstanceStatus.Completed);
-            state.Waits.Should().BeEmpty();
+            state.Waits.Should().NotBeEmpty();
+            state.Waits.Should().OnlyContain(w => w.Status == WaitStatus.Completed);
 
             var instance = state.StateObject.Instance as EnumMatchingWorkflow;
             instance.Should().NotBeNull();
             instance!.Completed.Should().BeTrue();
             instance.ReceivedStatus.Should().Be(System.Threading.Tasks.TaskStatus.Running);
+
+            connection.Close();
+        }
+
+        [Fact]
+        public async Task Tier15Matching_ShouldFilterOutMismatchedSignals_AndProcessMatchedSignals()
+        {
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            using var provider = CreateServiceProvider(dbName, out var connection);
+            await SyncDefinitions(provider);
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+            var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+
+            // Step 1: Start Workflow with minAmount = 1000 in FirstWaitAndResumeWorkflow
+            var instanceId = await orchestrator.StartWorkflowAsync("FirstWaitTest", "1.0", new { ResumeCount = 7 });
+            instanceId.Should().NotBeEmpty();
+
+            dbContext.ChangeTracker.Clear();
+
+            // Step 2: Send mismatched signal (Amount = 500 <= 1000)
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "OrderReceived",
+                Data = new OrderReceivedSignal { OrderId = "ORD-LOW", Amount = 500 }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Verify it was filtered out by Tier 1.5 and is still waiting on First Wait
+            var state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            state!.Status.Should().Be(WorkflowInstanceStatus.Running);
+            state.Waits.Should().HaveCount(1);
+            state.Waits.First().Should().BeOfType<SignalWaitDto>();
+            state.Waits.First().WaitName.Should().Be("First wait");
+
+            // Step 3: Send matched signal (Amount = 1500 > 1000)
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "OrderReceived",
+                Data = new OrderReceivedSignal { OrderId = "ORD-HIGH", Amount = 1500 }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Verify it matched and progressed past First Wait to the command wait
+            state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            state!.Waits.Should().HaveCount(2);
+            var activeWait = state.Waits.First(w => w.Status == WaitStatus.Waiting);
+            activeWait.Should().BeOfType<CommandWaitDto>();
+            activeWait.WaitName.Should().Be("ProcessPayment");
 
             connection.Close();
         }

@@ -1,40 +1,96 @@
 using System;
-using System.Linq.Expressions;
+using System.Collections.Generic;
+using Newtonsoft.Json;
+using Workflows.Abstraction.DTOs.Waits;
+using Workflows.Abstraction.Enums;
+using Workflows.Primitives;
 
 class Program
 {
+    private static readonly JsonSerializerSettings PolymorphicSerializerSettings = new JsonSerializerSettings
+    {
+        TypeNameHandling = TypeNameHandling.All,
+        NullValueHandling = NullValueHandling.Ignore,
+        Formatting = Formatting.Indented,
+        ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor,
+        ObjectCreationHandling = ObjectCreationHandling.Replace,
+        ContractResolver = new PrivateSetterContractResolver(),
+        PreserveReferencesHandling = PreserveReferencesHandling.Objects,
+        Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
+    };
+
+    private class PrivateSetterContractResolver : Newtonsoft.Json.Serialization.DefaultContractResolver
+    {
+        protected override Newtonsoft.Json.Serialization.JsonProperty CreateProperty(
+            System.Reflection.MemberInfo member, 
+            Newtonsoft.Json.MemberSerialization memberSerialization)
+        {
+            var prop = base.CreateProperty(member, memberSerialization);
+            if (!prop.Writable)
+            {
+                var property = member as System.Reflection.PropertyInfo;
+                if (property != null)
+                {
+                    var hasPrivateSetter = property.GetSetMethod(true) != null;
+                    prop.Writable = hasPrivateSetter;
+                }
+            }
+            return prop;
+        }
+    }
+
     static void Main(string[] args)
     {
-        Type serializerType = null;
-        foreach (var ass in AppDomain.CurrentDomain.GetAssemblies())
+        var signal = new SignalWaitDto
         {
-            serializerType = ass.GetType("Workflows.Shared.Serialization.ExpressionSerializer");
-            if (serializerType != null)
-                break;
-        }
+            Id = Guid.NewGuid(),
+            SignalIdentifier = "TestSignal",
+            WaitName = "Child Signal Wait",
+            Status = WaitStatus.Waiting,
+            WaitType = WaitType.SignalWait
+        };
 
-        if (serializerType == null)
+        var group = new GroupWaitDto
         {
-            // Force load assembly
-            var sharedAssembly = System.Reflection.Assembly.Load("Workflows.Shared");
-            serializerType = sharedAssembly.GetType("Workflows.Shared.Serialization.ExpressionSerializer");
-        }
+            Id = Guid.NewGuid(),
+            WaitName = "Parent Group Wait",
+            Status = WaitStatus.Waiting,
+            WaitType = WaitType.GroupWaitAll,
+            ChildWaits = new List<WaitInfrastructureDto> { signal }
+        };
 
-        if (serializerType == null)
+        signal.ParentWaitId = group.Id;
+
+        var list = new List<WaitInfrastructureDto> { group };
+
+        var serialized = JsonConvert.SerializeObject(list, PolymorphicSerializerSettings);
+        Console.WriteLine("--- Serialized JSON ---");
+        Console.WriteLine(serialized);
+
+        var deserialized = JsonConvert.DeserializeObject<List<WaitInfrastructureDto>>(serialized, PolymorphicSerializerSettings);
+        Console.WriteLine("\n--- Deserialized tree check ---");
+        if (deserialized == null)
         {
-            Console.WriteLine("Could not find ExpressionSerializer type!");
+            Console.WriteLine("Deserialized list is null!");
             return;
         }
 
-        var serializer = (Workflows.Abstraction.Helpers.IExpressionSerializer)Activator.CreateInstance(serializerType);
-        Expression<Func<int, int>> expr = x => x + 1;
-        Console.WriteLine($"Original Expression: {expr}");
-        
-        var serialized = serializer.Serialize(expr);
-        Console.WriteLine($"Serialized: {serialized}");
-        Console.WriteLine($"Serialized Type: {serialized?.GetType().FullName}");
-        
-        var deserialized = serializer.Deserialize(serialized);
-        Console.WriteLine($"Deserialized: {deserialized}");
+        Console.WriteLine($"Root count: {deserialized.Count}");
+        var deserializedGroup = deserialized[0] as GroupWaitDto;
+        if (deserializedGroup != null)
+        {
+            Console.WriteLine($"Group Wait Name: {deserializedGroup.WaitName}");
+            Console.WriteLine($"Group ChildWaits count: {deserializedGroup.ChildWaits?.Count}");
+            if (deserializedGroup.ChildWaits != null && deserializedGroup.ChildWaits.Count > 0)
+            {
+                var child = deserializedGroup.ChildWaits[0];
+                Console.WriteLine($"Child Wait Name: {child.WaitName}");
+                Console.WriteLine($"Child ParentWaitId: {child.ParentWaitId}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("First item is not a GroupWaitDto!");
+        }
     }
 }
