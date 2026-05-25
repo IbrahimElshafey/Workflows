@@ -14,7 +14,6 @@ namespace Workflows.Abstraction.Persistence
         /// </summary>
         Task SaveContextSyncAsync(
             WorkflowStateDto state,
-            IEnumerable<WaitInfrastructureDto> newWaits,
             IEnumerable<Guid> completedWaitIds);
 
         /// <summary>
@@ -23,9 +22,9 @@ namespace Workflows.Abstraction.Persistence
         Task<WorkflowStateDto> GetInstanceStateAsync(Guid instanceId);
 
         /// <summary>
-        /// Fast relational lookup to find which instances are waiting for a specific signal path.
+        /// Fast relational lookup to find which instances are waiting for a specific signal path and exact match data.
         /// </summary>
-        Task<List<Guid>> FindInstancesWaitingForSignalAsync(string signalPath);
+        Task<List<Guid>> FindInstancesWaitingForSignalAsync(string signalPath, string signalDataJson);
 
         /// <summary>
         /// Fast relational lookup for command completion.

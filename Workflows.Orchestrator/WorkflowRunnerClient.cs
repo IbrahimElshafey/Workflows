@@ -44,7 +44,6 @@ namespace Workflows.Orchestrator
             // 2. Commit the state updates, new/active waits, and completed wait IDs atomically
             await _workflowStore.SaveContextSyncAsync(
                 result.UpdatedState,
-                result.UpdatedState.Waits,
                 result.ConsumedWaitsIds);
 
             // 3. Scan the active waits recursively for any waiting TimeWaitDto and schedule them
@@ -60,10 +59,11 @@ namespace Workflows.Orchestrator
             {
                 if (timeWait.Status == Abstraction.Enums.WaitStatus.Waiting && !existingWaitIds.Contains(timeWait.Id))
                 {
-                    var executeAt = DateTime.UtcNow.Add(timeWait.TimeToWait);
-                    await _scheduler.ScheduleSignalAsync(timeWait.UniqueMatchId, null, executeAt);
+                    // ExecutionTime is an absolute UTC datetime already computed by the Mapper
+                    await _scheduler.ScheduleSignalAsync(timeWait.UniqueMatchId, null, timeWait.ExecutionTime);
                 }
             }
+
 
             // 4. Scan the active waits recursively for any waiting deferred CommandWaitDto and dispatch them
             var commandWaits = new List<CommandWaitDto>();

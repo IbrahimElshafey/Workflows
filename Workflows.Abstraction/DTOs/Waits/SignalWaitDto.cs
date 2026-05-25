@@ -58,5 +58,10 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// Paths used for exact matching against signal properties.
         /// </summary>
         public List<string> SignalExactMatchPaths { get; internal set; }
+
+        /// <summary>
+        /// Indicates if this is a first wait used for auto-instantiation.
+        /// </summary>
+        public bool IsFirstWait { get; set; }
     }
 }

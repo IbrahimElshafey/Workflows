@@ -9,7 +9,7 @@ namespace Workflows.Abstraction.Runner
     /// </summary>
     public interface IWorkflowRunner
     {
-        Task<AsyncResult> StartWorkflow(string workflowName, object input = null);
+        Task<AsyncResult> StartWorkflow(string workflowName, object intialState = null);
         /// <summary>
         /// Executes the next step of a workflow based on the provided context, 
         /// which includes the current state and the incoming signal.

@@ -83,6 +83,7 @@ namespace Workflows.Runner.Tests
             registry.RegisterWorkflow<ShortDelayWorkflow>("ShortDelayWorkflow", "1.0");
             registry.RegisterWorkflow<EnumMatchingWorkflow>("EnumMatchingWorkflow", "1.0");
             registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
+            registry.RegisterSignal<OrderReceivedSignal>("DummyOrderReceived");
             registry.RegisterSignal<PaymentConfirmedSignal>("Payment1");
             registry.RegisterSignal<PaymentConfirmedSignal>("Payment2");
             registry.RegisterSignal<ShipmentSignal>("FinalShipment");
@@ -133,6 +134,7 @@ namespace Workflows.Runner.Tests
             state.Waits.Should().HaveCount(1);
             state.Waits.First().Should().BeOfType<SignalWaitDto>();
             state.Waits.First().WaitName.Should().Be("First wait");
+            var firstWaitId = state.Waits.First().Id;
 
             // Step 2: Send Signal to advance past First wait
             await orchestrator.ProcessSignalAsync(new SignalDto
@@ -155,13 +157,13 @@ namespace Workflows.Runner.Tests
             var instanceStep2 = state.StateObject.Instance as FirstWaitAndResumeWorkflow;
             instanceStep2!.ResumeCount.Should().Be(8, because: $"ExecutionLog: {string.Join(" | ", instanceStep2.ExecutionLog)}");
 
-            // Verify DB doesn't have the old wait
-            var oldWaitInDb = await dbContext.WorkflowWaits.FindAsync(state.Waits.First().Id);
-            // wait we just created IS in DB
-            oldWaitInDb.Should().NotBeNull();
-            // wait we completed is NOT in DB
-            var firstWaitRecord = await dbContext.WorkflowWaits.FirstOrDefaultAsync(w => w.WaitName == "First wait");
+            // Verify DB has the new command wait (TPC: look up in CommandWaits)
+            var newWaitInDb = await dbContext.CommandWaits.FindAsync(state.Waits.First().Id);
+            newWaitInDb.Should().NotBeNull();
+            // Verify the old wait we completed is NOT in DB
+            var firstWaitRecord = await dbContext.SignalWaits.FindAsync(firstWaitId);
             firstWaitRecord.Should().BeNull();
+
 
             // Step 3: Send Command Result to advance past second wait to Group wait
             await orchestrator.ProcessCommandResultAsync(new CommandResultDto
@@ -182,6 +184,9 @@ namespace Workflows.Runner.Tests
             groupWait.ChildWaits.Should().HaveCount(2);
             groupWait.ChildWaits[0].ParentWaitId.Should().Be(groupWait.Id);
             groupWait.ChildWaits[1].ParentWaitId.Should().Be(groupWait.Id);
+            var groupWaitId = groupWait.Id;
+            var child1Id = groupWait.ChildWaits[0].Id;
+            var child2Id = groupWait.ChildWaits[1].Id;
 
             var instanceStep3 = state.StateObject.Instance as FirstWaitAndResumeWorkflow;
             instanceStep3!.ResumeCount.Should().Be(9);
@@ -206,11 +211,19 @@ namespace Workflows.Runner.Tests
             var instanceStep4 = state.StateObject.Instance as FirstWaitAndResumeWorkflow;
             instanceStep4!.ResumeCount.Should().Be(10);
 
-            // Verify all group wait records were pruned from the database
-            var hasGroupWaitRecords = await dbContext.WorkflowWaits.AnyAsync(w =>
-                w.WorkflowInstanceId == instanceId &&
-                (w.WaitName == "PaymentGroup" || w.WaitName == "Payment option 1" || w.WaitName == "Payment option 2"));
-            hasGroupWaitRecords.Should().BeFalse();
+            // Verify all group/child wait records were pruned from the database.
+            // With TPC there is no shared WorkflowWaits base table; check each concrete set.
+            // Use explicit OR comparisons — EF Core on .NET 10 cannot translate Guid List/Array.Contains.
+            var hasSignalRecords = await dbContext.SignalWaits.AnyAsync(w =>
+                w.Id == groupWaitId || w.Id == child1Id || w.Id == child2Id);
+            var hasCommandRecords = await dbContext.CommandWaits.AnyAsync(w =>
+                w.Id == groupWaitId || w.Id == child1Id || w.Id == child2Id);
+            var hasTimeRecords = await dbContext.TimeWaits.AnyAsync(w =>
+                w.Id == groupWaitId || w.Id == child1Id || w.Id == child2Id);
+            (hasSignalRecords || hasCommandRecords || hasTimeRecords).Should().BeFalse();
+
+
+
 
             connection.Close();
         }
@@ -323,7 +336,9 @@ namespace Workflows.Runner.Tests
 
         public override async IAsyncEnumerable<Wait> Run()
         {
-            yield return WaitDelay(TimeSpan.FromMilliseconds(50), "ShortDelay", "50ms delay");
+            var delay = WaitDelay(TimeSpan.FromMilliseconds(50), "ShortDelay", "50ms delay");
+            var dummySignal = WaitSignal<OrderReceivedSignal>("DummyOrderReceived", "Dummy");
+            yield return WaitGroup(new Wait[] { delay, (SignalWait<OrderReceivedSignal>)dummySignal }, "DelayGroup").MatchAny();
             Completed = true;
         }
     }

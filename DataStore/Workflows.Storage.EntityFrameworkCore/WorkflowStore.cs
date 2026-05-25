@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,10 +27,16 @@ namespace Workflows.Storage.EntityFrameworkCore
 
         public async Task SaveContextSyncAsync(
             WorkflowStateDto state,
-            IEnumerable<WaitInfrastructureDto> newWaits,
             IEnumerable<Guid> completedWaitIds)
         {
             if (state == null) throw new ArgumentNullException(nameof(state));
+
+            // Extract new waits that are not yet persisted before we change their flag to true
+            var newWaitsList = new List<WaitInfrastructureDto>();
+            CollectNewWaitsRecursive(state.Waits, newWaitsList);
+
+            // Mark all waits in state.Waits as persisted so the serialized JSON reflects this
+            MarkWaitsAsPersistedRecursive(state.Waits);
 
             using (var transaction = await _dbContext.Database.BeginTransactionAsync())
             {
@@ -45,7 +53,8 @@ namespace Workflows.Storage.EntityFrameworkCore
                             Status = (int)state.Status,
                             WorkflowType = state.WorkflowType,
                             StateObject = state.StateObject ?? new(),
-                            CancellationHistory = state.CancellationHistory ?? new()
+                            CancellationHistory = state.CancellationHistory ?? new(),
+                            Waits = state.Waits ?? new()
                         };
                         _dbContext.WorkflowInstances.Add(dbInstance);
                     }
@@ -54,19 +63,16 @@ namespace Workflows.Storage.EntityFrameworkCore
                         dbInstance.Status = (int)state.Status;
                         dbInstance.StateObject = state.StateObject ?? new();
                         dbInstance.CancellationHistory = state.CancellationHistory ?? new();
+                        dbInstance.Waits = state.Waits ?? new();
                         _dbContext.WorkflowInstances.Update(dbInstance);
                     }
 
-                    // 2. Delete completed waits
+                    // 2. Delete completed waits (check each concrete table — TPC, no base WorkflowWaits)
                     if (completedWaitIds != null)
                     {
                         foreach (var id in completedWaitIds)
                         {
-                            var existing = await _dbContext.WorkflowWaits.FindAsync(id);
-                            if (existing != null)
-                            {
-                                _dbContext.WorkflowWaits.Remove(existing);
-                            }
+                            await RemoveWaitByIdAsync(id);
                         }
                     }
 
@@ -74,71 +80,26 @@ namespace Workflows.Storage.EntityFrameworkCore
                     var cancelledTokens = state.CancellationHistory?.Select(h => h.Token).ToHashSet() ?? new HashSet<string>();
                     if (cancelledTokens.Count > 0)
                     {
-                        var activeWaitsInDb = await _dbContext.WorkflowWaits
-                            .Where(w => w.WorkflowInstanceId == state.Id)
-                            .ToListAsync();
-
-                        foreach (var waitRec in activeWaitsInDb)
+                        var waitsToRemove = new List<Guid>();
+                        CollectCancelledWaitsRecursive(state.Waits, cancelledTokens, waitsToRemove);
+                        foreach (var id in waitsToRemove)
                         {
-                            if (completedWaitIds != null && completedWaitIds.Contains(waitRec.Id))
-                            {
-                                continue;
-                            }
-
-                            if (!string.IsNullOrEmpty(waitRec.CancelTokens))
-                            {
-                                var tokens = waitRec.CancelTokens.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-                                if (tokens.Any(t => cancelledTokens.Contains(t.Trim())))
-                                {
-                                    _dbContext.WorkflowWaits.Remove(waitRec);
-                                }
-                            }
+                            await RemoveWaitByIdAsync(id);
                         }
                     }
 
-                    // 4. Flatten and insert/update new waits
-                    if (newWaits != null)
+                    // 4. Flatten and insert/update new waits into their concrete tables
+                    if (newWaitsList.Count > 0)
                     {
-                        var flattenedRecords = new List<WorkflowWait>();
-                        foreach (var wait in newWaits)
+                        var flattenedRecords = new List<WorkflowWaitEntity>();
+                        foreach (var wait in newWaitsList)
                         {
                             FlattenAndCollectWaits(wait, null, state.Id, flattenedRecords);
                         }
 
                         foreach (var record in flattenedRecords)
                         {
-                            var existing = await _dbContext.WorkflowWaits
-                                .IgnoreQueryFilters()
-                                .FirstOrDefaultAsync(w => w.Id == record.Id);
-
-                            if (existing != null)
-                            {
-                                existing.Status = record.Status;
-                                existing.StateAfterWait = record.StateAfterWait;
-                                existing.StateKey = record.StateKey;
-                                existing.ParentWaitId = record.ParentWaitId;
-                                existing.WaitName = record.WaitName;
-                                existing.WaitType = record.WaitType;
-                                existing.DtoJson = record.DtoJson;
-                                existing.DtoType = record.DtoType;
-                                existing.CancelTokens = record.CancelTokens;
-                                existing.IsDeleted = record.IsDeleted;
-
-                                if (record is SignalWait sigRecord && existing is SignalWait sigExisting)
-                                {
-                                    sigExisting.SignalPath = sigRecord.SignalPath;
-                                }
-                                else if (record is CommandWait cmdRecord && existing is CommandWait cmdExisting)
-                                {
-                                    cmdExisting.CommandWaitId = cmdRecord.CommandWaitId;
-                                }
-
-                                _dbContext.WorkflowWaits.Update(existing);
-                            }
-                            else
-                            {
-                                _dbContext.WorkflowWaits.Add(record);
-                            }
+                            await UpsertWaitEntityAsync(record);
                         }
                     }
 
@@ -153,59 +114,98 @@ namespace Workflows.Storage.EntityFrameworkCore
             }
         }
 
+        private void CollectNewWaitsRecursive(IEnumerable<WaitInfrastructureDto> waits, List<WaitInfrastructureDto> result)
+        {
+            if (waits == null) return;
+            foreach (var wait in waits)
+            {
+                if (!wait.IsPersisted)
+                {
+                    result.Add(wait);
+                }
+                if (wait.ChildWaits != null)
+                {
+                    CollectNewWaitsRecursive(wait.ChildWaits, result);
+                }
+            }
+        }
+
+        private void MarkWaitsAsPersistedRecursive(IEnumerable<WaitInfrastructureDto> waits)
+        {
+            if (waits == null) return;
+            foreach (var wait in waits)
+            {
+                wait.IsPersisted = true;
+                if (wait.ChildWaits != null)
+                {
+                    MarkWaitsAsPersistedRecursive(wait.ChildWaits);
+                }
+            }
+        }
+
+        private void CollectCancelledWaitsRecursive(
+            IEnumerable<WaitInfrastructureDto> waits,
+            HashSet<string> cancelledTokens,
+            List<Guid> result)
+        {
+            if (waits == null) return;
+            foreach (var wait in waits)
+            {
+                if (wait.CancelTokens != null && wait.CancelTokens.Any(t => cancelledTokens.Contains(t)))
+                {
+                    result.Add(wait.Id);
+                }
+                if (wait.ChildWaits != null)
+                {
+                    CollectCancelledWaitsRecursive(wait.ChildWaits, cancelledTokens, result);
+                }
+            }
+        }
+
         private void FlattenAndCollectWaits(
             WaitInfrastructureDto wait,
             Guid? parentWaitId,
             Guid workflowInstanceId,
-            List<WorkflowWait> resultList)
+            List<WorkflowWaitEntity> resultList)
         {
             if (wait == null) return;
+            if (resultList.Any(r => r.Id == wait.Id)) return;
 
-            wait.ParentWaitId = parentWaitId;
-
-            var originalChildWaits = wait.ChildWaits;
-            wait.ChildWaits = new List<WaitInfrastructureDto>();
-
-            WorkflowWait record;
+            WorkflowWaitEntity record;
             if (wait is SignalWaitDto signalWait)
             {
-                record = new SignalWait
+                record = new SignalWaitEntity
                 {
-                    SignalPath = signalWait.SignalIdentifier ?? string.Empty
+                    SignalPath = signalWait.SignalIdentifier ?? string.Empty,
+                    SignalExactMatchPaths = signalWait.SignalExactMatchPaths != null ? string.Join(",", signalWait.SignalExactMatchPaths) : string.Empty,
+                    ExactMatchFilter = signalWait.ExactMatchPart ?? string.Empty,
+                    IsFirstWait = signalWait.IsFirstWait
                 };
             }
             else if (wait is TimeWaitDto timeWait)
             {
-                record = new SignalWait
+                record = new TimeWaitEntity
                 {
-                    SignalPath = timeWait.UniqueMatchId ?? string.Empty
+                    UniqueMatchId = timeWait.UniqueMatchId ?? string.Empty,
+                    ExecutionTime = timeWait.ExecutionTime
                 };
             }
             else if (wait is CommandWaitDto commandWait)
             {
-                record = new CommandWait
+                record = new CommandWaitEntity
                 {
                     CommandWaitId = commandWait.Id
                 };
             }
             else
             {
-                record = new WorkflowWait();
+                record = new WorkflowWaitEntity();
             }
 
             record.Id = wait.Id;
             record.WorkflowInstanceId = workflowInstanceId;
             record.Status = (int)wait.Status;
-            record.StateAfterWait = wait.StateAfterWait;
-            record.StateKey = wait.StateKey;
-            record.ParentWaitId = parentWaitId;
-            record.WaitName = wait.WaitName ?? string.Empty;
-            record.WaitType = (int)wait.WaitType;
-            record.DtoJson = _serializer.Serialize(wait, SerializationScope.Standard).ToString() ?? string.Empty;
-            record.DtoType = wait.GetType().AssemblyQualifiedName ?? wait.GetType().FullName ?? string.Empty;
-            record.CancelTokens = wait.CancelTokens != null ? string.Join(",", wait.CancelTokens) : string.Empty;
 
-            wait.ChildWaits = originalChildWaits;
             resultList.Add(record);
 
             if (wait.ChildWaits != null)
@@ -222,51 +222,8 @@ namespace Workflows.Storage.EntityFrameworkCore
             var dbInstance = await _dbContext.WorkflowInstances.FindAsync(instanceId);
             if (dbInstance == null) return null;
 
-            var dbWaits = await _dbContext.WorkflowWaits
-                .Where(w => w.WorkflowInstanceId == instanceId)
-                .ToListAsync();
-
-            var dtoList = new List<WaitInfrastructureDto>();
-            foreach (var dbWait in dbWaits)
-            {
-                var type = Type.GetType(dbWait.DtoType);
-                if (type == null)
-                {
-                    throw new InvalidOperationException($"Could not load type '{dbWait.DtoType}' for wait ID '{dbWait.Id}'.");
-                }
-
-                var dto = (WaitInfrastructureDto)_serializer.Deserialize(dbWait.DtoJson, type, SerializationScope.Standard);
-                if (dto != null)
-                {
-                    dto.Id = dbWait.Id;
-                    dto.Status = (WaitStatus)dbWait.Status;
-                    dto.ParentWaitId = dbWait.ParentWaitId;
-                    dto.WaitName = dbWait.WaitName;
-                    dto.WaitType = (WaitType)dbWait.WaitType;
-                    dto.StateAfterWait = dbWait.StateAfterWait;
-                    dto.StateKey = dbWait.StateKey;
-                    dto.CancelTokens = !string.IsNullOrEmpty(dbWait.CancelTokens)
-                        ? new HashSet<string>(dbWait.CancelTokens.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim()))
-                        : new HashSet<string>();
-                    dto.ChildWaits = new List<WaitInfrastructureDto>();
-                    dtoList.Add(dto);
-                }
-            }
-
-            var rootWaits = new List<WaitInfrastructureDto>();
-            var waitMap = dtoList.ToDictionary(w => w.Id);
-
-            foreach (var dto in dtoList)
-            {
-                if (dto.ParentWaitId.HasValue && waitMap.TryGetValue(dto.ParentWaitId.Value, out var parent))
-                {
-                    parent.ChildWaits.Add(dto);
-                }
-                else
-                {
-                    rootWaits.Add(dto);
-                }
-            }
+            var waits = dbInstance.Waits ?? new();
+            MarkWaitsAsPersistedRecursive(waits);
 
             return new WorkflowStateDto
             {
@@ -275,18 +232,173 @@ namespace Workflows.Storage.EntityFrameworkCore
                 Status = (WorkflowInstanceStatus)dbInstance.Status,
                 WorkflowType = dbInstance.WorkflowType,
                 StateObject = dbInstance.StateObject,
-                Waits = rootWaits,
+                Waits = waits,
                 CancellationHistory = dbInstance.CancellationHistory
             };
         }
 
-        public async Task<List<Guid>> FindInstancesWaitingForSignalAsync(string signalPath)
+        public async Task<List<Guid>> FindInstancesWaitingForSignalAsync(string signalPath, string signalDataJson)
         {
-            return await _dbContext.SignalWaits
-                .Where(w => w.SignalPath == signalPath && w.Status == (int)WaitStatus.Waiting)
+            var matchedInstanceIds = new List<Guid>();
+
+            // 1. Query TimeWaits for matching unique match ID (timer events)
+            var matchedTimeWaits = await _dbContext.TimeWaits
+                .Where(w => w.UniqueMatchId == signalPath && w.Status == (int)WaitStatus.Waiting)
                 .Select(w => w.WorkflowInstanceId)
+                .ToListAsync();
+            matchedInstanceIds.AddRange(matchedTimeWaits);
+
+            // 2. Get distinct exact match path configurations for active waits of this signal path
+            var distinctMatchPaths = await _dbContext.SignalWaits
+                .Where(w => w.SignalPath == signalPath && w.Status == (int)WaitStatus.Waiting)
+                .Select(w => w.SignalExactMatchPaths)
                 .Distinct()
                 .ToListAsync();
+
+            if (distinctMatchPaths.Count > 0)
+            {
+                // Fallback: If signalDataJson is empty, retrieve all waiting instances for this signal path
+                if (string.IsNullOrEmpty(signalDataJson))
+                {
+                    var allSignalMatched = await _dbContext.SignalWaits
+                        .Where(w => w.SignalPath == signalPath && w.Status == (int)WaitStatus.Waiting)
+                        .Select(w => w.WorkflowInstanceId)
+                        .Distinct()
+                        .ToListAsync();
+                    matchedInstanceIds.AddRange(allSignalMatched);
+                }
+                else
+                {
+                    var jObject = JObject.Parse(signalDataJson);
+
+                    foreach (var pathsString in distinctMatchPaths)
+                    {
+                        if (string.IsNullOrEmpty(pathsString))
+                        {
+                            // Broadcast waits (no exact match requirements)
+                            var broadcastIds = await _dbContext.SignalWaits
+                                .Where(w => w.SignalPath == signalPath 
+                                         && w.Status == (int)WaitStatus.Waiting 
+                                         && (w.SignalExactMatchPaths == "" || w.SignalExactMatchPaths == null))
+                                .Select(w => w.WorkflowInstanceId)
+                                .ToListAsync();
+
+                            matchedInstanceIds.AddRange(broadcastIds);
+                        }
+                        else
+                        {
+                            // Extract the values from the incoming signal payload according to the path config
+                            var paths = pathsString.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                            var values = new string[paths.Length];
+                            for (int i = 0; i < paths.Length; i++)
+                            {
+                                var token = jObject.SelectToken(paths[i]);
+                                values[i] = FormatJToken(token);
+                            }
+
+                            // Serialize to JSON array to match ExactMatchFilter in DB
+                            string calculatedFilter = System.Text.Json.JsonSerializer.Serialize(values);
+
+                            var matchedIds = await _dbContext.SignalWaits
+                                .Where(w => w.SignalPath == signalPath 
+                                         && w.Status == (int)WaitStatus.Waiting 
+                                         && w.SignalExactMatchPaths == pathsString 
+                                         && w.ExactMatchFilter == calculatedFilter)
+                                .Select(w => w.WorkflowInstanceId)
+                                .ToListAsync();
+
+                            matchedInstanceIds.AddRange(matchedIds);
+                        }
+                    }
+                }
+            }
+
+            return matchedInstanceIds.Distinct().ToList();
+        }
+
+        /// <summary>
+        /// Removes a wait row by ID from whichever concrete table owns it (TPC — no shared base table).
+        /// </summary>
+        private async Task RemoveWaitByIdAsync(Guid id)
+        {
+            var signal = await _dbContext.SignalWaits.FindAsync(id);
+            if (signal != null) { _dbContext.SignalWaits.Remove(signal); return; }
+
+            var command = await _dbContext.CommandWaits.FindAsync(id);
+            if (command != null) { _dbContext.CommandWaits.Remove(command); return; }
+
+            var time = await _dbContext.TimeWaits.FindAsync(id);
+            if (time != null) { _dbContext.TimeWaits.Remove(time); }
+        }
+
+        /// <summary>
+        /// Inserts or updates a wait entity in the appropriate concrete table (TPC — no shared base table).
+        /// </summary>
+        private async Task UpsertWaitEntityAsync(WorkflowWaitEntity record)
+        {
+            if (record is SignalWaitEntity sigRecord)
+            {
+                var existing = await _dbContext.SignalWaits.FindAsync(sigRecord.Id);
+                if (existing != null)
+                {
+                    existing.Status = sigRecord.Status;
+                    existing.SignalPath = sigRecord.SignalPath;
+                    existing.SignalExactMatchPaths = sigRecord.SignalExactMatchPaths;
+                    existing.ExactMatchFilter = sigRecord.ExactMatchFilter;
+                    _dbContext.SignalWaits.Update(existing);
+                }
+                else
+                {
+                    _dbContext.SignalWaits.Add(sigRecord);
+                }
+            }
+            else if (record is CommandWaitEntity cmdRecord)
+            {
+                var existing = await _dbContext.CommandWaits.FindAsync(cmdRecord.Id);
+                if (existing != null)
+                {
+                    existing.Status = cmdRecord.Status;
+                    existing.CommandWaitId = cmdRecord.CommandWaitId;
+                    _dbContext.CommandWaits.Update(existing);
+                }
+                else
+                {
+                    _dbContext.CommandWaits.Add(cmdRecord);
+                }
+            }
+            else if (record is TimeWaitEntity timeRecord)
+            {
+                var existing = await _dbContext.TimeWaits.FindAsync(timeRecord.Id);
+                if (existing != null)
+                {
+                    existing.Status = timeRecord.Status;
+                    existing.UniqueMatchId = timeRecord.UniqueMatchId;
+                    existing.ExecutionTime = timeRecord.ExecutionTime;
+                    _dbContext.TimeWaits.Update(existing);
+                }
+                else
+                {
+                    _dbContext.TimeWaits.Add(timeRecord);
+                }
+            }
+            // Base WorkflowWaitEntity (group/sub-workflow containers) — no concrete table, skip.
+        }
+
+        private static string FormatJToken(JToken? token)
+        {
+            if (token == null || token.Type == JTokenType.Null)
+            {
+                return string.Empty;
+            }
+
+            if (token is JValue jValue)
+            {
+                var val = jValue.Value;
+                if (val == null) return string.Empty;
+                return Convert.ToString(val, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+            }
+
+            return token.ToString();
         }
 
         public async Task<Guid> GetInstanceByCommandWaitIdAsync(Guid commandWaitId)

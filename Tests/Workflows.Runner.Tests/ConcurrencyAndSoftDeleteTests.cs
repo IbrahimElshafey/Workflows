@@ -84,7 +84,7 @@ namespace Workflows.Runner.Tests
         }
 
         [Fact]
-        public async Task SoftDelete_ShouldMarkRowAsDeleted_AndFilterFromDefaultQueries()
+        public async Task HardDelete_ShouldRemoveRowFromDatabase_AndPruneDirectly()
         {
             var instanceId = Guid.NewGuid();
             var waitId = Guid.NewGuid();
@@ -101,52 +101,46 @@ namespace Workflows.Runner.Tests
                 };
                 context.WorkflowInstances.Add(instance);
 
-                var wait = new SignalWait
+                var wait = new SignalWaitEntity
                 {
                     Id = waitId,
                     WorkflowInstanceId = instanceId,
                     Status = 1, // Waiting
-                    WaitName = "TestSignalWait",
-                    WaitType = 1,
                     SignalPath = "some/signal/path",
                     Created = DateTime.UtcNow
                 };
-                context.WorkflowWaits.Add(wait);
+                context.SignalWaits.Add(wait);
                 await context.SaveChangesAsync();
             }
 
-            // 2. Act: Soft-delete the wait record
+            // 2. Act: Delete the wait record
             using (var context = new WorkflowsDbContext(_options))
             {
-                var wait = await context.WorkflowWaits.FindAsync(waitId);
+                var wait = await context.SignalWaits.FindAsync(waitId);
                 wait.Should().NotBeNull();
                 
-                context.WorkflowWaits.Remove(wait!);
+                context.SignalWaits.Remove(wait!);
                 await context.SaveChangesAsync();
             }
 
-            // 3. Assert: Verify the wait record is filtered by default queries,
-            // but is still present in the database with IsDeleted = true.
+            // 3. Assert: Verify the wait record is completely removed from the database (hard delete)
             using (var context = new WorkflowsDbContext(_options))
             {
-                // Default query should filter it out
-                var activeWait = await context.WorkflowWaits.FindAsync(waitId);
+                var activeWait = await context.SignalWaits.FindAsync(waitId);
                 activeWait.Should().BeNull();
 
-                var activeWaitsList = await context.WorkflowWaits
+                var activeWaitsList = await context.SignalWaits
                     .Where(w => w.WorkflowInstanceId == instanceId)
                     .ToListAsync();
                 activeWaitsList.Should().BeEmpty();
 
-                // Ignoring query filters should retrieve the soft-deleted row
-                var softDeletedWait = await context.WorkflowWaits
-                    .IgnoreQueryFilters()
+                // No soft-delete filters in TPC — the row is physically gone
+                var deletedWait = await context.SignalWaits
                     .FirstOrDefaultAsync(w => w.Id == waitId);
 
-                softDeletedWait.Should().NotBeNull();
-                softDeletedWait!.IsDeleted.Should().BeTrue();
-                softDeletedWait.WaitName.Should().Be("TestSignalWait");
+                deletedWait.Should().BeNull();
             }
         }
     }
+
 }

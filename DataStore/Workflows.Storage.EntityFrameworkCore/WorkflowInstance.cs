@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.DTOs.Waits;
 
 namespace Workflows.Storage.EntityFrameworkCore
 {
@@ -19,5 +20,8 @@ namespace Workflows.Storage.EntityFrameworkCore
 
         // Stored using value converter to serialize/deserialize List<CancellationHistoryEntry> to JSON string
         public List<CancellationHistoryEntry> CancellationHistory { get; set; } = new();
+
+        // Stored using value converter to serialize/deserialize List<WaitInfrastructureDto> to JSON string
+        public List<WaitInfrastructureDto> Waits { get; set; } = new();
     }
 }

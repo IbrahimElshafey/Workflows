@@ -4,15 +4,18 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.DTOs.Waits;
 
 namespace Workflows.Storage.EntityFrameworkCore
 {
     public class WorkflowsDbContext : DbContext
     {
         public DbSet<WorkflowInstance> WorkflowInstances { get; set; }
-        public DbSet<WorkflowWait> WorkflowWaits { get; set; }
-        public DbSet<SignalWait> SignalWaits { get; set; }
-        public DbSet<CommandWait> CommandWaits { get; set; }
+        // Note: WorkflowWaits (base table) is intentionally omitted — TPC strategy
+        // means each concrete type maps to its own complete table.
+        public DbSet<SignalWaitEntity> SignalWaits { get; set; }
+        public DbSet<CommandWaitEntity> CommandWaits { get; set; }
+        public DbSet<TimeWaitEntity> TimeWaits { get; set; }
         public DbSet<WorkflowDefinitionEntity> WorkflowDefinitions { get; set; }
         public DbSet<SignalDefinitionEntity> SignalDefinitions { get; set; }
         public DbSet<CommandDefinitionEntity> CommandDefinitions { get; set; }
@@ -20,6 +23,38 @@ namespace Workflows.Storage.EntityFrameworkCore
 
         public WorkflowsDbContext(DbContextOptions<WorkflowsDbContext> options) : base(options)
         {
+        }
+
+        private static readonly JsonSerializerSettings PolymorphicSerializerSettings = new JsonSerializerSettings
+        {
+            TypeNameHandling = TypeNameHandling.All,
+            NullValueHandling = NullValueHandling.Ignore,
+            Formatting = Formatting.None,
+            ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor,
+            ObjectCreationHandling = ObjectCreationHandling.Replace,
+            ContractResolver = new PrivateSetterContractResolver(),
+            PreserveReferencesHandling = PreserveReferencesHandling.Objects,
+            Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
+        };
+
+        private class PrivateSetterContractResolver : Newtonsoft.Json.Serialization.DefaultContractResolver
+        {
+            protected override Newtonsoft.Json.Serialization.JsonProperty CreateProperty(
+                System.Reflection.MemberInfo member, 
+                Newtonsoft.Json.MemberSerialization memberSerialization)
+            {
+                var prop = base.CreateProperty(member, memberSerialization);
+                if (!prop.Writable)
+                {
+                    var property = member as System.Reflection.PropertyInfo;
+                    if (property != null)
+                    {
+                        var hasPrivateSetter = property.GetSetMethod(true) != null;
+                        prop.Writable = hasPrivateSetter;
+                    }
+                }
+                return prop;
+            }
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -38,20 +73,20 @@ namespace Workflows.Storage.EntityFrameworkCore
 
                     cb.Property(p => p.Instance)
                       .HasConversion(
-                          v => JsonConvert.SerializeObject(v, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All }),
-                          v => JsonConvert.DeserializeObject(v, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All })
+                          v => JsonConvert.SerializeObject(v, PolymorphicSerializerSettings),
+                          v => JsonConvert.DeserializeObject(v, PolymorphicSerializerSettings)
                       );
 
                     cb.Property(p => p.StateMachinesObjects)
                       .HasConversion(
-                          v => JsonConvert.SerializeObject(v, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All }),
-                          v => JsonConvert.DeserializeObject<Dictionary<string, object>>(v, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All }) ?? new Dictionary<string, object>()
+                          v => JsonConvert.SerializeObject(v, PolymorphicSerializerSettings),
+                          v => JsonConvert.DeserializeObject<Dictionary<string, object>>(v, PolymorphicSerializerSettings) ?? new Dictionary<string, object>()
                       );
 
                     cb.Property(p => p.WaitStatesObjects)
                       .HasConversion(
-                          v => JsonConvert.SerializeObject(v, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All }),
-                          v => JsonConvert.DeserializeObject<Dictionary<Guid, object>>(v, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.All }) ?? new Dictionary<Guid, object>()
+                          v => JsonConvert.SerializeObject(v, PolymorphicSerializerSettings),
+                          v => JsonConvert.DeserializeObject<Dictionary<Guid, object>>(v, PolymorphicSerializerSettings) ?? new Dictionary<Guid, object>()
                       );
                 });
 
@@ -60,40 +95,62 @@ namespace Workflows.Storage.EntityFrameworkCore
                           v => JsonConvert.SerializeObject(v, Formatting.None),
                           v => JsonConvert.DeserializeObject<List<CancellationHistoryEntry>>(v) ?? new List<CancellationHistoryEntry>()
                       );
+
+                entity.Property(e => e.Waits)
+                      .HasConversion(
+                          v => JsonConvert.SerializeObject(v, PolymorphicSerializerSettings),
+                          v => JsonConvert.DeserializeObject<List<WaitInfrastructureDto>>(v, PolymorphicSerializerSettings) ?? new List<WaitInfrastructureDto>()
+                      );
             });
 
-            // WorkflowWait inheritance and configurations
-            modelBuilder.Entity<WorkflowWait>(entity =>
+            // WorkflowWait hierarchy — TPC (Table-Per-Concrete-Type):
+            // Each concrete table contains ALL columns (Id, WorkflowInstanceId, Status, Created)
+            // so Status is always available without a join.
+            modelBuilder.Entity<WorkflowWaitEntity>(entity =>
             {
+                entity.UseTpcMappingStrategy();
                 entity.HasKey(e => e.Id);
+            });
+
+            modelBuilder.Entity<SignalWaitEntity>(entity =>
+            {
+                entity.ToTable("SignalWaits");
                 entity.HasIndex(e => e.WorkflowInstanceId);
+                // Optimized composite index for Phase-1 exact-match routing
+                entity.HasIndex(e => new { e.SignalPath, e.Status, e.SignalExactMatchPaths, e.ExactMatchFilter });
 
-                // Setup TPH discriminator mapping
-                entity.HasDiscriminator<int>("WaitDiscriminator")
-                      .HasValue<WorkflowWait>(0)
-                      .HasValue<SignalWait>(1)
-                      .HasValue<CommandWait>(2);
-
-                // Foreign key to WorkflowInstance
+                // FK to WorkflowInstance
                 entity.HasOne<WorkflowInstance>()
                       .WithMany()
                       .HasForeignKey(e => e.WorkflowInstanceId)
                       .OnDelete(DeleteBehavior.Cascade);
             });
 
-            modelBuilder.Entity<SignalWait>(entity =>
+            modelBuilder.Entity<CommandWaitEntity>(entity =>
             {
-                entity.HasIndex(e => e.SignalPath);
-            });
-
-            modelBuilder.Entity<CommandWait>(entity =>
-            {
+                entity.ToTable("CommandWaits");
+                entity.HasIndex(e => e.WorkflowInstanceId);
                 entity.HasIndex(e => e.CommandWaitId);
+
+                entity.HasOne<WorkflowInstance>()
+                      .WithMany()
+                      .HasForeignKey(e => e.WorkflowInstanceId)
+                      .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Setup Global Query Filter for soft delete on the root type
-            modelBuilder.Entity<WorkflowWait>()
-                        .HasQueryFilter(w => !w.IsDeleted);
+            modelBuilder.Entity<TimeWaitEntity>(entity =>
+            {
+                entity.ToTable("TimeWaits");
+                entity.HasIndex(e => e.WorkflowInstanceId);
+                // Index for scheduler polling: WHERE ExecutionTime <= NOW() AND Status = Waiting
+                entity.HasIndex(e => new { e.Status, e.ExecutionTime });
+                entity.HasIndex(e => e.UniqueMatchId);
+
+                entity.HasOne<WorkflowInstance>()
+                      .WithMany()
+                      .HasForeignKey(e => e.WorkflowInstanceId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
 
             // Definitions configurations
             modelBuilder.Entity<WorkflowDefinitionEntity>(entity =>
@@ -124,24 +181,6 @@ namespace Workflows.Storage.EntityFrameworkCore
 
             configurationBuilder.Properties<DateTime?>()
                 .HaveConversion<NullableDateTimeUtcConverter>();
-        }
-    }
-
-    public class DateTimeUtcConverter : ValueConverter<DateTime, DateTime>
-    {
-        public DateTimeUtcConverter() : base(
-            v => DateTime.SpecifyKind(v, DateTimeKind.Utc),
-            v => DateTime.SpecifyKind(v, DateTimeKind.Utc))
-        {
-        }
-    }
-
-    public class NullableDateTimeUtcConverter : ValueConverter<DateTime?, DateTime?>
-    {
-        public NullableDateTimeUtcConverter() : base(
-            v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : null,
-            v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : null)
-        {
         }
     }
 }

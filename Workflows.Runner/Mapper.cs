@@ -87,7 +87,8 @@ namespace Workflows.Runner
 
             var dto = new TimeWaitDto
             {
-                TimeToWait = waitsGroup.TimeToWait,
+                // Convert relative duration to an absolute UTC fire time at mapping time
+                ExecutionTime = DateTime.UtcNow.Add(waitsGroup.TimeToWait),
                 UniqueMatchId = waitsGroup.UniqueMatchId,
                 CancelAction = _delegateSerializer.Serialize(waitsGroup.CancelAction),
                 CancelTokens = waitsGroup.CancelTokens
@@ -96,6 +97,7 @@ namespace Workflows.Runner
             CopyBase(waitsGroup, dto);
             return dto;
         }
+
 
         public GroupWaitDto MapToDto(GroupWait waitsGroup)
         {

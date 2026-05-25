@@ -9,9 +9,10 @@ namespace Workflows.Abstraction.DTOs.Waits
     public class TimeWaitDto : WaitInfrastructureDto
     {
         /// <summary>
-        /// The duration or until time to wait.
+        /// Absolute UTC date/time at which the timer fires.
+        /// Computed once at mapping time as DateTime.UtcNow + TimeWait.TimeToWait.
         /// </summary>
-        public TimeSpan TimeToWait { get; set; }
+        public DateTime ExecutionTime { get; set; }
 
         /// <summary>
         /// Unique match identifier for time-based matching.

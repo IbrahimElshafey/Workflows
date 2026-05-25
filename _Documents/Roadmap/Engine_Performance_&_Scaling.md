@@ -1,7 +1,7 @@
 # Engine Performance & Scaling: Optimizations and Architecture
 
 This document describes planned performance optimizations, concurrency safeguards, and scaling architectural features for the Workflows engine.
-
+* Link standard logs that happen when a specific workflow instance runs to this specific workflow instance.
 ## 1. High-Performance JSON Serialization (Newtonsoft.Json Settings)
 
 To prevent serialization/deserialization of workflow contexts from becoming the CPU and memory bottleneck, we minimize Garbage Collector (GC) pressure and avoid reflection in serialization loops.

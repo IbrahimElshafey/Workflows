@@ -40,5 +40,10 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// Token IDs that, when cancelled, will interrupt this passive wait before evaluation.
         /// </summary>
         public HashSet<string> CancelTokens { get; set; }
+
+        /// <summary>
+        /// Indication of whether this wait has been persisted to the DB query tables.
+        /// </summary>
+        public bool IsPersisted { get; set; }
     }
 }
