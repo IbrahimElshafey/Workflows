@@ -45,6 +45,9 @@ namespace Workflows.Runner
             services.AddSingleton<MatchExpressionTransformer>();
             services.AddSingleton<IDelegateSerializer, DelegateSerializer>();
             services.AddSingleton<WorkflowBuilder>();
+
+            // Default ICommandHandlerFactory — resolves handlers by key from DI
+            services.AddSingleton<ICommandHandlerFactory, DiCommandHandlerFactory>();
             services.AddSingleton<IWorkflowBuilder>(sp => sp.GetRequiredService<WorkflowBuilder>());
             services.AddSingleton<IWorkflowRegistry>(sp => sp.GetRequiredService<WorkflowBuilder>());
             services.AddScoped<Mapper>();
@@ -56,6 +59,20 @@ namespace Workflows.Runner
             where THandler : class, IImmediateCommandHandler<TCommand, TResult>
         {
             services.AddTransient<IImmediateCommandHandler<TCommand, TResult>, THandler>();
+            return services;
+        }
+
+        /// <summary>
+        /// Registers a keyed immediate command handler so <see cref="DiCommandHandlerFactory"/>
+        /// can resolve it by <paramref name="handlerKey"/> at runtime.
+        /// </summary>
+        public static IServiceCollection AddImmediateCommand<TCommand, TResult, THandler>(
+            this IServiceCollection services,
+            string handlerKey)
+            where THandler : class, IImmediateCommandHandler<TCommand, TResult>
+        {
+            services.AddTransient<IImmediateCommandHandler<TCommand, TResult>, THandler>();
+            services.AddSingleton(new HandlerKeyEntry(handlerKey, typeof(TCommand), typeof(TResult)));
             return services;
         }
 
