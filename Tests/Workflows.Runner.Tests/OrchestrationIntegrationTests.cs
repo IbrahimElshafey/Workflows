@@ -381,6 +381,7 @@ namespace Workflows.Runner.Tests
 
             connection.Close();
         }
+        
     }
 
     public sealed class ShortDelayWorkflow : WorkflowContainer
