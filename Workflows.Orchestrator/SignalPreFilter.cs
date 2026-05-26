@@ -66,9 +66,10 @@ namespace Workflows.Orchestrator
                 var stateElement = ToJsonElement(explicitState);
                 var instanceElement = ToJsonElement(state.StateObject?.Instance);
 
-                return compiled(signalElement, stateElement, instanceElement);
+                var matchResult = compiled(signalElement, stateElement, instanceElement);
+                return matchResult;
             }
-            catch
+            catch (Exception)
             {
                 // Defensive fallback: proceed to runner if evaluation fails
                 return true;

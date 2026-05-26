@@ -10,6 +10,7 @@ using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Orchestrator;
 using Workflows.Abstraction.Persistence;
 using Workflows.Abstraction.Runner;
+using Workflows.Primitives;
 
 namespace Workflows.Orchestrator
 {
@@ -22,6 +23,7 @@ namespace Workflows.Orchestrator
         private readonly IWorkflowRegistry _workflowRegistry;
         private readonly IWorkflowCloner _workflowCloner;
         private readonly ISignalPreFilter _signalPreFilter;
+        private readonly ITemplateRepository? _templateRepository;
 
         public Orchestrator(
             IWorkflowStore workflowStore,
@@ -30,7 +32,8 @@ namespace Workflows.Orchestrator
             IObjectSerializer serializer,
             IWorkflowRegistry workflowRegistry,
             IWorkflowCloner workflowCloner,
-            ISignalPreFilter signalPreFilter)
+            ISignalPreFilter signalPreFilter,
+            ITemplateRepository? templateRepository = null)
         {
             _workflowStore = workflowStore ?? throw new ArgumentNullException(nameof(workflowStore));
             _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
@@ -39,6 +42,7 @@ namespace Workflows.Orchestrator
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
             _workflowCloner = workflowCloner ?? throw new ArgumentNullException(nameof(workflowCloner));
             _signalPreFilter = signalPreFilter ?? throw new ArgumentNullException(nameof(signalPreFilter));
+            _templateRepository = templateRepository;
         }
 
         public async Task ProcessCommandResultAsync(CommandResultDto commandResultDto)
@@ -184,6 +188,39 @@ namespace Workflows.Orchestrator
                     // Clone the immutable state and update all IDs
                     runState = _workflowCloner.CloneStateWithNewIds(state, out var newTriggeringWaitId, triggeringWait.Id);
                     triggeringWaitId = newTriggeringWaitId;
+                }
+
+                var triggeringWaitInRunState = WaitFinder.FindWaitById(runState.Waits, triggeringWaitId);
+                if (triggeringWaitInRunState is SignalWaitDto signalWaitInRunState && !string.IsNullOrEmpty(signalWaitInRunState.TemplateHashKey))
+                {
+                    var template = _templateRepository?.GetTemplate(signalWaitInRunState.TemplateHashKey);
+                    if (template != null && (template.IsGenericMatchFullMatch || template.IsExactMatchFullMatch))
+                    {
+                        signalWaitInRunState.Status = WaitStatus.Matched;
+                        if (signalWaitInRunState.ParentWaitId.HasValue)
+                        {
+                            var parentWait = WaitFinder.FindWaitById(runState.Waits, signalWaitInRunState.ParentWaitId.Value);
+                            if (parentWait is GroupWaitDto parentGroup && parentGroup.WaitType == WaitType.GroupWaitAll)
+                            {
+                                bool allCompletedOrMatched = true;
+                                if (parentGroup.ChildWaits != null)
+                                {
+                                    foreach (var child in parentGroup.ChildWaits)
+                                    {
+                                        if (child.Status != WaitStatus.Completed && child.Status != WaitStatus.Matched)
+                                        {
+                                            allCompletedOrMatched = false;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (allCompletedOrMatched)
+                                {
+                                    parentGroup.Status = WaitStatus.Matched;
+                                }
+                            }
+                        }
+                    }
                 }
 
                 var request = new WorkflowExecutionRequest

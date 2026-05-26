@@ -52,5 +52,26 @@ namespace Workflows.Orchestrator
 
             return null;
         }
+
+        public static WaitInfrastructureDto? FindWaitById(IEnumerable<WaitInfrastructureDto>? waits, Guid id)
+        {
+            if (waits == null) return null;
+
+            foreach (var w in waits)
+            {
+                if (w.Id == id)
+                {
+                    return w;
+                }
+
+                if (w.ChildWaits != null && w.ChildWaits.Count > 0)
+                {
+                    var child = FindWaitById(w.ChildWaits, id);
+                    if (child != null) return child;
+                }
+            }
+
+            return null;
+        }
     }
 }

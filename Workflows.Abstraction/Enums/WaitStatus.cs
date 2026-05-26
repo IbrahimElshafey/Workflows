@@ -5,6 +5,7 @@ namespace Workflows.Abstraction.Enums
         Waiting = 0,
         Canceled = 1,
         Completed = 2,
+        Matched = 3,
         Transient = 4,
         InError = 5
     }
