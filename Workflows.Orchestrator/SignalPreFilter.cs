@@ -5,12 +5,14 @@ using System.Text.Json.Serialization;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Helpers;
+using Workflows.Abstraction.Persistence;
 
 namespace Workflows.Orchestrator
 {
     public class SignalPreFilter : ISignalPreFilter
     {
         private readonly IExpressionSerializer _expressionSerializer;
+        private readonly ITemplateRepository? _templateRepository;
 
         private static readonly ConcurrentDictionary<string, Func<JsonElement, JsonElement, JsonElement, bool>> _compiledGenericExpressionsCache = new();
         private static readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions
@@ -18,9 +20,10 @@ namespace Workflows.Orchestrator
             Converters = { new JsonStringEnumConverter() }
         };
 
-        public SignalPreFilter(IExpressionSerializer expressionSerializer)
+        public SignalPreFilter(IExpressionSerializer expressionSerializer, ITemplateRepository? templateRepository = null)
         {
             _expressionSerializer = expressionSerializer ?? throw new ArgumentNullException(nameof(expressionSerializer));
+            _templateRepository = templateRepository;
         }
 
         public bool IsMatch(SignalWaitDto signalWait, SignalDto signalDto, WorkflowStateDto state)
@@ -29,14 +32,22 @@ namespace Workflows.Orchestrator
             if (signalDto == null) throw new ArgumentNullException(nameof(signalDto));
             if (state == null) throw new ArgumentNullException(nameof(state));
 
-            if (string.IsNullOrEmpty(signalWait.GenericMatchExpression))
+            // GenericMatchExpression now lives in the template cache — look it up by TemplateHashKey
+            string? genericMatchExpression = null;
+            if (!string.IsNullOrEmpty(signalWait.TemplateHashKey))
+            {
+                var template = _templateRepository?.GetTemplate(signalWait.TemplateHashKey);
+                genericMatchExpression = template?.GenericMatchExpressionJson;
+            }
+
+            if (string.IsNullOrEmpty(genericMatchExpression))
             {
                 return true;
             }
 
             try
             {
-                var compiled = _compiledGenericExpressionsCache.GetOrAdd(signalWait.GenericMatchExpression, exprStr =>
+                var compiled = _compiledGenericExpressionsCache.GetOrAdd(genericMatchExpression, exprStr =>
                 {
                     var lambda = _expressionSerializer.Deserialize(exprStr);
                     return (Func<JsonElement, JsonElement, JsonElement, bool>)lambda.Compile();
