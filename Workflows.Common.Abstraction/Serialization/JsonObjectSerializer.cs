@@ -46,6 +46,48 @@ namespace Workflows.Shared.Serialization
                         prop.Writable = hasPrivateSetter;
                     }
                 }
+
+                prop.DefaultValueHandling = DefaultValueHandling.Ignore;
+
+                if (prop.PropertyType != typeof(string) && typeof(System.Collections.IEnumerable).IsAssignableFrom(prop.PropertyType))
+                {
+                    var originalShouldSerialize = prop.ShouldSerialize;
+                    prop.ShouldSerialize = instance =>
+                    {
+                        if (originalShouldSerialize != null && !originalShouldSerialize(instance))
+                        {
+                            return false;
+                        }
+
+                        var value = prop.ValueProvider?.GetValue(instance);
+                        if (value == null)
+                        {
+                            return false;
+                        }
+
+                        if (value is System.Collections.IEnumerable enumerable)
+                        {
+                            var enumerator = enumerable.GetEnumerator();
+                            try
+                            {
+                                if (!enumerator.MoveNext())
+                                {
+                                    return false;
+                                }
+                            }
+                            finally
+                            {
+                                if (enumerator is IDisposable disposable)
+                                {
+                                    disposable.Dispose();
+                                }
+                            }
+                        }
+
+                        return true;
+                    };
+                }
+
                 return prop;
             }
         }

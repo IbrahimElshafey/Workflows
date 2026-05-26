@@ -22,6 +22,13 @@ namespace Workflows.Shared
         /// </summary>
         public static T Get<T>(this JsonElement element, string path)
         {
+            if (string.IsNullOrEmpty(path))
+            {
+                if (element.ValueKind == JsonValueKind.Undefined)
+                    return default;
+                return JsonSerializer.Deserialize<T>(element.GetRawText(), SerializerOptions);
+            }
+
             var current = element;
             foreach (var segment in path.Split('.'))
             {
