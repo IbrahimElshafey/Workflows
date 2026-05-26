@@ -8,6 +8,8 @@ using FastExpressionCompiler;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
+using Workflows.Abstraction.Persistence;
+using Workflows.Definition;
 using Workflows.Primitives;
 
 
@@ -22,17 +24,20 @@ namespace Workflows.Runner.Pipeline.Matchers
     {
         private readonly WorkflowExecutionContext _context;
         private readonly MatcherFactory _matcherFactory;
-        private readonly IDelegateSerializer _delegateSerializer;
+        private readonly ICallbackRegistry _callbackRegistry;
+        private readonly ITemplateRepository? _templateRepository;
         private static readonly ConcurrentDictionary<string, Func<object, object, bool>> _compiledFilters = new();
 
         public GroupWaitMatcher(
             WorkflowExecutionContext context, 
             MatcherFactory matcherFactory,
-            IDelegateSerializer delegateSerializer)
+            ICallbackRegistry callbackRegistry,
+            ITemplateRepository? templateRepository = null)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
-            _delegateSerializer = delegateSerializer ?? throw new ArgumentNullException(nameof(delegateSerializer));
+            _callbackRegistry = callbackRegistry ?? throw new ArgumentNullException(nameof(callbackRegistry));
+            _templateRepository = templateRepository;
         }
 
         public override async Task<bool> MatchAsync(WaitInfrastructureDto waitDto)
@@ -61,7 +66,7 @@ namespace Workflows.Runner.Pipeline.Matchers
             }
 
             // Count completed children
-            var completedChildren = groupWaitDto.ChildWaits.Count(child => child.Status == WaitStatus.Completed);
+            var completedChildren = groupWaitDto.ChildWaits.Count(child => child.Status == WaitStatus.Completed || child.Status == WaitStatus.Matched);
             var totalChildren = groupWaitDto.ChildWaits.Count;
 
             bool groupMatches = false;
@@ -128,7 +133,28 @@ namespace Workflows.Runner.Pipeline.Matchers
 
             var filter = _compiledFilters.GetOrAdd(groupWaitDto.MatchFuncName, path =>
             {
-                var method = _delegateSerializer.Deserialize(path);
+                // Try CallbackRegistry first
+                MethodInfo method = null;
+                object target = null;
+
+                if (_callbackRegistry.TryGet(path, out var registeredDelegate) && registeredDelegate != null)
+                {
+                    method = registeredDelegate.Method;
+                    target = registeredDelegate.Target;
+                }
+                else
+                {
+                    // Fallback: look up in SQLite template repository
+                    if (_templateRepository != null)
+                    {
+                        var dbTemplate = _templateRepository.GetTemplate(path);
+                        if (dbTemplate != null && !string.IsNullOrWhiteSpace(dbTemplate.AfterMatchAction))
+                        {
+                            method = Helpers.MethodResolver.ResolveMethod(dbTemplate.AfterMatchAction);
+                        }
+                    }
+                }
+
                 if (method == null) return null;
 
                 var instanceParam = Expression.Parameter(typeof(object), "instance");
@@ -141,20 +167,9 @@ namespace Workflows.Runner.Pipeline.Matchers
                 {
                     targetExpr = null;
                 }
-                else if (method.DeclaringType != null && method.DeclaringType.Name.Contains("<>c"))
+                else if (target != null && !(target is WorkflowContainer))
                 {
-                    var singletonField = method.DeclaringType.GetField("<>9", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                    object targetObj = null;
-                    if (singletonField != null)
-                    {
-                        targetObj = singletonField.GetValue(null);
-                    }
-                    if (targetObj == null)
-                    {
-                        targetObj = Activator.CreateInstance(method.DeclaringType);
-                    }
-
-                    targetExpr = Expression.Constant(targetObj, method.DeclaringType);
+                    targetExpr = Expression.Constant(target);
                 }
                 else
                 {

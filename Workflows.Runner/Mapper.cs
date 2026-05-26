@@ -7,6 +7,7 @@ using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Persistence;
 using Workflows.Definition;
+using Workflows.Definition.Helpers;
 using Workflows.Runner.DataObjects;
 using Workflows.Runner.ExpressionTransformers;
 using IExpressionSerializer = Workflows.Abstraction.Helpers.IExpressionSerializer;
@@ -17,8 +18,8 @@ namespace Workflows.Runner
     {
         private readonly IExpressionSerializer _expressionSerializer;
         private readonly IObjectSerializer _objectSerializer;
-        private readonly IDelegateSerializer _delegateSerializer;
         private readonly MatchExpressionTransformer _matchExpressionTransformer;
+        private readonly ICallbackRegistry _callbackRegistry;
         private readonly ITemplateRepository? _templateRepository;
 
         public IExpressionSerializer ExpressionSerializer => _expressionSerializer;
@@ -26,16 +27,26 @@ namespace Workflows.Runner
         public Mapper(
             IExpressionSerializer expressionSerializer,
             IObjectSerializer objectSerializer,
-            IDelegateSerializer delegateSerializer,
             MatchExpressionTransformer matchExpressionTransformer,
+            ICallbackRegistry callbackRegistry,
             ITemplateRepository? templateRepository = null)
         {
             _expressionSerializer = expressionSerializer ??
                 throw new ArgumentNullException(nameof(expressionSerializer));
             _objectSerializer = objectSerializer ?? throw new ArgumentNullException(nameof(objectSerializer));
-            _delegateSerializer = delegateSerializer ?? throw new ArgumentNullException(nameof(delegateSerializer));
             _matchExpressionTransformer = matchExpressionTransformer ?? throw new ArgumentNullException(nameof(matchExpressionTransformer));
+            _callbackRegistry = callbackRegistry ?? throw new ArgumentNullException(nameof(callbackRegistry));
             _templateRepository = templateRepository;
+        }
+
+        private static string? GetFullMethodName(Delegate? callback)
+        {
+            if (callback == null) return null;
+            var unwrapped = CallbackRegistry.UnwrapDelegate(callback);
+            var owner = unwrapped.Method.DeclaringType?.FullName;
+            return string.IsNullOrWhiteSpace(owner)
+                ? unwrapped.Method.Name
+                : $"{owner}.{unwrapped.Method.Name}";
         }
 
         #region To DTO
@@ -85,12 +96,27 @@ namespace Workflows.Runner
             if(waitsGroup == null)
                 throw new ArgumentNullException(nameof(waitsGroup));
 
+            string? cancelActionKey = null;
+            if (waitsGroup.CancelAction != null && !string.IsNullOrEmpty(waitsGroup.CancelActionKey))
+            {
+                cancelActionKey = $"Time:{waitsGroup.UniqueMatchId}:{waitsGroup.CancelActionKey}:Cancel";
+                _callbackRegistry.Register(cancelActionKey, waitsGroup.CancelAction);
+                if (_templateRepository != null)
+                {
+                    _templateRepository.SaveTemplate(new TemplateCacheRecordDto
+                    {
+                        TemplateHashKey = cancelActionKey,
+                        AfterMatchAction = GetFullMethodName(waitsGroup.CancelAction)
+                    });
+                }
+            }
+
             var dto = new TimeWaitDto
             {
                 // Convert relative duration to an absolute UTC fire time at mapping time
                 ExecutionTime = DateTime.UtcNow.Add(waitsGroup.TimeToWait),
                 UniqueMatchId = waitsGroup.UniqueMatchId,
-                CancelAction = _delegateSerializer.Serialize(waitsGroup.CancelAction),
+                CancelAction = cancelActionKey,
                 CancelTokens = waitsGroup.CancelTokens
             };
 
@@ -104,11 +130,34 @@ namespace Workflows.Runner
             if(waitsGroup == null)
                 throw new ArgumentNullException(nameof(waitsGroup));
 
+            string? matchFuncName = null;
+            if (waitsGroup.GroupMatchFilterOriginal != null)
+            {
+                if (!string.IsNullOrEmpty(waitsGroup.HandlerKey))
+                {
+                    matchFuncName = $"{waitsGroup.WaitName}:{waitsGroup.HandlerKey}";
+                }
+                else
+                {
+                    var hash = WorkflowHashCalculator.CalculateHash(null, waitsGroup.CallerName, "GroupMatch_" + waitsGroup.WaitName);
+                    matchFuncName = $"{waitsGroup.WaitName}:{hash}";
+                }
+
+                _callbackRegistry.Register(matchFuncName, waitsGroup.GroupMatchFilterOriginal);
+
+                if (_templateRepository != null)
+                {
+                    _templateRepository.SaveTemplate(new TemplateCacheRecordDto
+                    {
+                        TemplateHashKey = matchFuncName,
+                        AfterMatchAction = GetFullMethodName(waitsGroup.GroupMatchFilterOriginal)
+                    });
+                }
+            }
+
             var dto = new GroupWaitDto
             {
-                MatchFuncName = waitsGroup.GroupMatchFilterOriginal != null 
-                    ? _delegateSerializer.Serialize(waitsGroup.GroupMatchFilterOriginal)
-                    : null,
+                MatchFuncName = matchFuncName,
                 CancelTokens = waitsGroup.CancelTokens
             };
 
@@ -126,14 +175,71 @@ namespace Workflows.Runner
             if(commandWait == null)
                 throw new ArgumentNullException(nameof(commandWait));
 
+            // Register live delegates into the registry so the runner can resolve them
+            // by the stable HandlerKey (= command name) without any reflection.
+            if (commandWait.OnResultAction != null)
+            {
+                var key = commandWait.HandlerKey + ":OnResult";
+                _callbackRegistry.Register(key, commandWait.OnResultAction);
+                if (_templateRepository != null)
+                {
+                    _templateRepository.SaveTemplate(new TemplateCacheRecordDto
+                    {
+                        TemplateHashKey = key,
+                        AfterMatchAction = GetFullMethodName(commandWait.OnResultAction)
+                    });
+                }
+            }
+            if (commandWait.OnFailureAction != null)
+            {
+                var key = commandWait.HandlerKey + ":OnFailure";
+                _callbackRegistry.Register(key, commandWait.OnFailureAction);
+                if (_templateRepository != null)
+                {
+                    _templateRepository.SaveTemplate(new TemplateCacheRecordDto
+                    {
+                        TemplateHashKey = key,
+                        AfterMatchAction = GetFullMethodName(commandWait.OnFailureAction)
+                    });
+                }
+            }
+            if (commandWait.CompensationAction != null)
+            {
+                var key = commandWait.HandlerKey + ":Compensation";
+                _callbackRegistry.Register(key, commandWait.CompensationAction);
+                if (_templateRepository != null)
+                {
+                    _templateRepository.SaveTemplate(new TemplateCacheRecordDto
+                    {
+                        TemplateHashKey = key,
+                        AfterMatchAction = GetFullMethodName(commandWait.CompensationAction)
+                    });
+                }
+            }
+
+            string? cancelActionKey = null;
+            if (commandWait.CancelAction != null && !string.IsNullOrEmpty(commandWait.CancelActionKey))
+            {
+                cancelActionKey = $"{commandWait.HandlerKey}:{commandWait.CancelActionKey}:Cancel";
+                _callbackRegistry.Register(cancelActionKey, commandWait.CancelAction);
+                if (_templateRepository != null)
+                {
+                    _templateRepository.SaveTemplate(new TemplateCacheRecordDto
+                    {
+                        TemplateHashKey = cancelActionKey,
+                        AfterMatchAction = GetFullMethodName(commandWait.CancelAction)
+                    });
+                }
+            }
+
             CommandWaitDto? dto = new CommandWaitDto
             {
                 CommandData = _objectSerializer.Serialize(commandWait.CommandData, SerializationScope.Standard),
                 MaxRetryAttempts = commandWait.MaxRetryAttempts,
                 RetryBackoff = commandWait.RetryBackoff,
                 CompensationMethodName = commandWait.CompensationAction?.Method?.Name,
-                CancelAction = _delegateSerializer.Serialize(commandWait.CancelAction),
-                ResultAction = _delegateSerializer.Serialize(commandWait.OnResultAction),
+                CancelAction = cancelActionKey,
+                ResultAction = commandWait.HandlerKey + ":OnResult",
                 HandlerKey = commandWait.HandlerKey,
                 ExecutionMode = commandWait.ExecutionMode,
             };
@@ -147,26 +253,37 @@ namespace Workflows.Runner
             if(signalWait == null)
                 throw new ArgumentNullException(nameof(signalWait));
 
-            // Always serialize callbacks — they belong to the template regardless of whether
-            // there is a match expression. Doing this here ensures they are available for DB persist.
-            var afterMatchAction = _delegateSerializer.Serialize(signalWait.AfterMatchAction);
-            var cancelAction = _delegateSerializer.Serialize(signalWait.CancelAction);
+            // Resolve the stable template hash key.
+            // Priority: HandlerKey set by MatchIf (most precise) → fallback to CallerName hashing.
+            string? templateHashKey;
+            if (!string.IsNullOrEmpty(signalWait.HandlerKey))
+            {
+                // Hash key was pre-computed in MatchIf via WorkflowHashCalculator.
+                templateHashKey = $"{signalWait.SignalIdentifier}:{signalWait.HandlerKey}";
+            }
+            else if (signalWait.MatchExpression != null)
+            {
+                // Fallback: compute here using CallerName + expression text (MatchAny path won't hit this).
+                var hash = WorkflowHashCalculator.CalculateHash(
+                    signalWait.MatchExpressionAsText,
+                    signalWait.CallerName,
+                    "Match_" + signalWait.SignalIdentifier);
+                templateHashKey = $"{signalWait.SignalIdentifier}:{hash}";
+            }
+            else
+            {
+                templateHashKey = $"{signalWait.SignalIdentifier}:";
+            }
+            // Register the live AfterMatchAction delegate in the CallbackRegistry so the
+            // SignalWaitMatcher can retrieve it by the stable hash key without reflection.
+            if (signalWait.AfterMatchAction != null && !string.IsNullOrEmpty(templateHashKey))
+                _callbackRegistry.Register(templateHashKey, signalWait.AfterMatchAction);
 
-            string? templateHashKey = null;
             MatchTransformationResult? transformResult = null;
             TemplateCacheRecordDto? dbCached = null;
 
             if (signalWait.MatchExpression != null)
             {
-                string hashStr;
-                using (var sha256 = System.Security.Cryptography.SHA256.Create())
-                {
-                    var uinqueExpressionPart = $"{signalWait.MatchExpressionAsText}{signalWait.CallerName}";
-                    var hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(uinqueExpressionPart));
-                    hashStr = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
-                }
-                templateHashKey = $"{signalWait.SignalIdentifier}:{hashStr}";
-
                 // Try to load template from SQLite DB cache first
                 dbCached = _templateRepository?.GetTemplate(templateHashKey);
 
@@ -189,8 +306,8 @@ namespace Workflows.Runner
                                  ? null
                                  : (transformResult.InstanceExactMatchExpression != null ? _expressionSerializer.Serialize(transformResult.InstanceExactMatchExpression) as string : null),
                             NormalizedMatchExpressionJson = transformResult.MatchExpression != null ? _expressionSerializer.Serialize(transformResult.MatchExpression) as string : null,
-                            AfterMatchAction = afterMatchAction,
-                            CancelAction = cancelAction
+                            AfterMatchAction = GetFullMethodName(signalWait.AfterMatchAction),
+                            CancelAction = null
                         };
                         _templateRepository.SaveTemplate(templateDto);
                     }
@@ -198,18 +315,43 @@ namespace Workflows.Runner
             }
             else
             {
-                templateHashKey = $"{signalWait.SignalIdentifier}:";
+                // MatchAny or empty expression - save template if we have AfterMatchAction and template key
+                if (signalWait.AfterMatchAction != null && _templateRepository != null)
+                {
+                    var templateDto = new TemplateCacheRecordDto
+                    {
+                        TemplateHashKey = templateHashKey,
+                        AfterMatchAction = GetFullMethodName(signalWait.AfterMatchAction),
+                        CancelAction = null
+                    };
+                    _templateRepository.SaveTemplate(templateDto);
+                }
             }
 
+            string? cancelActionKey = null;
+            if (signalWait.CancelAction != null && !string.IsNullOrEmpty(signalWait.CancelActionKey))
+            {
+                cancelActionKey = $"{signalWait.SignalIdentifier}:{signalWait.CancelActionKey}:Cancel";
+                _callbackRegistry.Register(cancelActionKey, signalWait.CancelAction);
+                if (_templateRepository != null)
+                {
+                    _templateRepository.SaveTemplate(new TemplateCacheRecordDto
+                    {
+                        TemplateHashKey = cancelActionKey,
+                        AfterMatchAction = GetFullMethodName(signalWait.CancelAction)
+                    });
+                }
+            }
 
             // Build DTO — instance-specific data including callbacks.
             // Template-level data (expressions, match paths) is in the template cache.
+            // NOTE: The CallbackRegistry provides the fast same-process path via TemplateHashKey.
             var dto = new SignalWaitDto
             {
                 SignalIdentifier = signalWait.SignalIdentifier,
                 TemplateHashKey = templateHashKey,
-                AfterMatchAction = afterMatchAction,
-                CancelAction = cancelAction,
+                AfterMatchAction = templateHashKey,
+                CancelAction = cancelActionKey,
                 CancelTokens = signalWait.CancelTokens,
             };
 
@@ -271,7 +413,7 @@ namespace Workflows.Runner
                 }
 
                 // Resolve the serialized afterMatchAction for the cache record
-                var serializedAfterMatch = dbCached?.AfterMatchAction ?? afterMatchAction;
+                var serializedAfterMatch = dbCached?.AfterMatchAction ?? GetFullMethodName(signalWait.AfterMatchAction);
 
                 Func<object, object, object, bool>? compiledDelegate = null;
                 Func<object, object, string[]>? compiledInstanceExpr = null;

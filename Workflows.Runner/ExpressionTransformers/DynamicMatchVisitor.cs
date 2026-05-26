@@ -271,6 +271,15 @@ namespace Workflows.Runner.ExpressionTransformers
             return base.VisitMember(node);
         }
 
+        protected override Expression VisitParameter(ParameterExpression node)
+        {
+            if (node == _signalParam) return BuildJsonGet(_jsonSignalParam, "", node.Type);
+            if (node == _stateParam) return BuildJsonGet(_jsonStateParam, "", node.Type);
+            if (node == _instanceParam) return BuildJsonGet(_jsonInstanceParam, "", node.Type);
+
+            return base.VisitParameter(node);
+        }
+
         private Expression BuildJsonGet(ParameterExpression jsonParam, string path, Type targetType)
         {
             var method = typeof(Workflows.Shared.JsonElementExtensions)

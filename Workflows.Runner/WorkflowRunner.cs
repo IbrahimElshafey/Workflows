@@ -81,7 +81,7 @@ namespace Workflows.Runner
                         _context.WorkflowState.Waits,
                         _context.TriggeringWaitId);
 
-                    if (triggeringWaitDto != null && triggeringWaitDto.Status == Abstraction.Enums.WaitStatus.Completed)
+                    if (triggeringWaitDto != null && (triggeringWaitDto.Status == Abstraction.Enums.WaitStatus.Completed || triggeringWaitDto.Status == Abstraction.Enums.WaitStatus.Matched))
                     {
                         return await SendResultAsync(_context);
                     }

@@ -49,9 +49,9 @@ namespace Workflows.Runner.Pipeline
                     throw new InvalidOperationException($"Triggering wait with ID {incomingRequest.TriggeringWaitId} not found.");
                 }
 
-                if (triggeringWaitDto.Status != Abstraction.Enums.WaitStatus.Waiting)
+                if (triggeringWaitDto.Status != Abstraction.Enums.WaitStatus.Waiting && triggeringWaitDto.Status != Abstraction.Enums.WaitStatus.Matched)
                 {
-                    throw new InvalidOperationException("Triggering wait is not in Waiting status.");
+                    throw new InvalidOperationException("Triggering wait is not in Waiting or Matched status.");
                 }
             }
 
@@ -180,7 +180,8 @@ namespace Workflows.Runner.Pipeline
 
             if (wait.Status == Abstraction.Enums.WaitStatus.Completed ||
                 wait.Status == Abstraction.Enums.WaitStatus.Canceled ||
-                wait.Status == Abstraction.Enums.WaitStatus.InError)
+                wait.Status == Abstraction.Enums.WaitStatus.InError ||
+                wait.Status == Abstraction.Enums.WaitStatus.Matched)
             {
                 CollectAllIdsRecursive(wait, completedIds);
                 return;

@@ -6,6 +6,8 @@ using FastExpressionCompiler;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
+using Workflows.Abstraction.Persistence;
+using Workflows.Definition;
 
 namespace Workflows.Runner.Pipeline.Matchers
 {
@@ -17,17 +19,20 @@ namespace Workflows.Runner.Pipeline.Matchers
     {
         private readonly WorkflowExecutionContext _context;
         private readonly MatcherFactory _matcherFactory;
-        private readonly IDelegateSerializer _delegateSerializer;
+        private readonly ICallbackRegistry _callbackRegistry;
+        private readonly ITemplateRepository? _templateRepository;
         private static readonly ConcurrentDictionary<string, Action<object, object, object>> _compiledActions = new();
 
         public DeferredCommandMatcher(
             WorkflowExecutionContext context, 
             MatcherFactory matcherFactory,
-            IDelegateSerializer delegateSerializer)
+            ICallbackRegistry callbackRegistry,
+            ITemplateRepository? templateRepository = null)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
-            _delegateSerializer = delegateSerializer ?? throw new ArgumentNullException(nameof(delegateSerializer));
+            _callbackRegistry = callbackRegistry ?? throw new ArgumentNullException(nameof(callbackRegistry));
+            _templateRepository = templateRepository;
         }
 
         public override async Task<bool> MatchAsync(WaitInfrastructureDto waitDto)
@@ -83,36 +88,51 @@ namespace Workflows.Runner.Pipeline.Matchers
             return true;
         }
 
-        private void ExecuteOnResultAction(string resultActionPath, object result, object explicitState)
+        private string? GetDeferredCommandAction(string key)
         {
-            var action = _compiledActions.GetOrAdd(resultActionPath, path =>
+            if (_templateRepository != null)
             {
-                var method = _delegateSerializer.Deserialize(path);
-                if (method == null) return null;
+                var dbTemplate = _templateRepository.GetTemplate(key);
+                return dbTemplate?.AfterMatchAction;
+            }
+            return null;
+        }
+
+        private void ExecuteOnResultAction(string resultActionKey, object result, object explicitState)
+        {
+            // Fast path: try the CallbackRegistry first (stable handlerKey:OnResult — no reflection).
+            if (_callbackRegistry.TryGet(resultActionKey, out var registeredDelegate) && registeredDelegate != null)
+            {
+                var method = registeredDelegate.Method;
+                var target = registeredDelegate.Target;
 
                 var instanceParam = Expression.Parameter(typeof(object), "instance");
-                var resultParam = Expression.Parameter(typeof(object), "result");
-                var stateParam = Expression.Parameter(typeof(object), "state");
+                var resultParam   = Expression.Parameter(typeof(object), "result");
+                var stateParam    = Expression.Parameter(typeof(object), "state");
+
+                Expression targetExpr = method.IsStatic
+                    ? null!
+                    : target != null && !(target is WorkflowContainer)
+                        ? Expression.Constant(target)
+                        : Expression.Convert(instanceParam, method.DeclaringType!);
 
                 var parameters = method.GetParameters();
                 Expression call;
-
-                var targetExpr = method.IsStatic ? null : Expression.Convert(instanceParam, method.DeclaringType);
-
                 if (parameters.Length == 0)
                 {
                     call = Expression.Call(targetExpr, method);
                 }
                 else if (parameters.Length == 1)
                 {
-                    call = Expression.Call(targetExpr, method, Expression.Convert(resultParam, parameters[0].ParameterType));
+                    call = Expression.Call(targetExpr, method,
+                        Expression.Convert(resultParam, parameters[0].ParameterType));
                 }
                 else if (parameters.Length == 2)
                 {
                     var convertStateMethod = typeof(StateConverter).GetMethod(
-                        nameof(StateConverter.ConvertState), 
+                        nameof(StateConverter.ConvertState),
                         System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                    call = Expression.Call(targetExpr, method, 
+                    call = Expression.Call(targetExpr, method,
                         Expression.Convert(resultParam, parameters[0].ParameterType),
                         Expression.Convert(
                             Expression.Call(convertStateMethod!, stateParam, Expression.Constant(parameters[1].ParameterType)),
@@ -120,14 +140,63 @@ namespace Workflows.Runner.Pipeline.Matchers
                 }
                 else
                 {
-                    throw new InvalidOperationException($"Unsupported OnResultAction method signature: {method}");
+                    throw new InvalidOperationException($"Unsupported OnResultAction signature: {method}");
                 }
 
-                var lambda = Expression.Lambda<Action<object, object, object>>(call, instanceParam, resultParam, stateParam);
-                return lambda.CompileFast();
-            });
+                var action = Expression.Lambda<Action<object, object, object>>(call, instanceParam, resultParam, stateParam)
+                                     .CompileFast();
+                action?.Invoke(_context.WorkflowInstance, result, explicitState);
+                return;
+            }
 
-            action?.Invoke(_context.WorkflowInstance, result, explicitState);
+            // Fallback: look up in the SQLite template repository.
+            var methodPath = GetDeferredCommandAction(resultActionKey);
+            if (!string.IsNullOrWhiteSpace(methodPath))
+            {
+                var action = _compiledActions.GetOrAdd(methodPath, path =>
+                {
+                    var method = Helpers.MethodResolver.ResolveMethod(path);
+                    if (method == null) return null;
+
+                    var instanceParam = Expression.Parameter(typeof(object), "instance");
+                    var resultParam = Expression.Parameter(typeof(object), "result");
+                    var stateParam = Expression.Parameter(typeof(object), "state");
+
+                    var parameters = method.GetParameters();
+                    Expression call;
+
+                    var targetExpr = method.IsStatic ? null : Expression.Convert(instanceParam, method.DeclaringType);
+
+                    if (parameters.Length == 0)
+                    {
+                        call = Expression.Call(targetExpr, method);
+                    }
+                    else if (parameters.Length == 1)
+                    {
+                        call = Expression.Call(targetExpr, method, Expression.Convert(resultParam, parameters[0].ParameterType));
+                    }
+                    else if (parameters.Length == 2)
+                    {
+                        var convertStateMethod = typeof(StateConverter).GetMethod(
+                            nameof(StateConverter.ConvertState),
+                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                        call = Expression.Call(targetExpr, method,
+                            Expression.Convert(resultParam, parameters[0].ParameterType),
+                            Expression.Convert(
+                                Expression.Call(convertStateMethod!, stateParam, Expression.Constant(parameters[1].ParameterType)),
+                                parameters[1].ParameterType));
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Unsupported OnResultAction method signature: {method}");
+                    }
+
+                    var lambda = Expression.Lambda<Action<object, object, object>>(call, instanceParam, resultParam, stateParam);
+                    return lambda.CompileFast();
+                });
+
+                action?.Invoke(_context.WorkflowInstance, result, explicitState);
+            }
         }
     }
 }

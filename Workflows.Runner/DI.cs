@@ -19,6 +19,7 @@ namespace Workflows.Runner
             services.AddSingleton<IWorkflowHydrator, WorkflowHydrator>();
             services.AddScoped<WorkflowStateService>();
             services.AddSingleton<CallbackRegistry>();
+            services.AddSingleton<ICallbackRegistry>(sp => sp.GetRequiredService<CallbackRegistry>());
             services.AddScoped<MatcherFactory>();
             services.AddScoped<ProcessorFactory>();
             services.AddSingleton<CancelProcessor>();
@@ -43,7 +44,6 @@ namespace Workflows.Runner
             */
             //services.AddScoped<IWorkflowRunner, WorkflowRunner>();
             services.AddSingleton<MatchExpressionTransformer>();
-            services.AddSingleton<IDelegateSerializer, DelegateSerializer>();
             services.AddSingleton<WorkflowBuilder>();
 
             // Default ICommandHandlerFactory — resolves handlers by key from DI
