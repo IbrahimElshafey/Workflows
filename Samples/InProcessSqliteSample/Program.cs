@@ -310,6 +310,10 @@ namespace InProcessSqliteSample
                         {
                             Console.WriteLine($"    * [SignalWait] Wait ID: {sigWait.Id}");
                             Console.WriteLine($"      Signal Path: {sigWait.SignalPath}");
+                            if (!string.IsNullOrEmpty(sigWait.TemplateHashKey))
+                            {
+                                Console.WriteLine($"      Template Hash Key: {sigWait.TemplateHashKey}");
+                            }
                             if (!string.IsNullOrEmpty(sigWait.SignalExactMatchPaths))
                             {
                                 Console.WriteLine($"      Exact Match Paths: {sigWait.SignalExactMatchPaths}");
@@ -468,7 +472,7 @@ namespace InProcessSqliteSample
             }
 
             using var scope = _serviceProvider.CreateScope();
-            string commandJson = JsonConvert.SerializeObject(selectedCommand.CommandData);
+            string commandJson = selectedCommand.CommandData is string s ? s : JsonConvert.SerializeObject(selectedCommand.CommandData);
 
             if (selectedCommand.HandlerKey == "AuthorizePayment")
             {
