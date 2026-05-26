@@ -18,11 +18,13 @@ namespace Workflows.Storage.EntityFrameworkCore
     {
         private readonly WorkflowsDbContext _dbContext;
         private readonly IObjectSerializer _serializer;
+        private readonly ITemplateRepository? _templateRepository;
 
-        public WorkflowStore(WorkflowsDbContext dbContext, IObjectSerializer serializer)
+        public WorkflowStore(WorkflowsDbContext dbContext, IObjectSerializer serializer, ITemplateRepository? templateRepository = null)
         {
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
+            _templateRepository = templateRepository;
         }
 
         public async Task SaveContextSyncAsync(
@@ -166,12 +168,25 @@ namespace Workflows.Storage.EntityFrameworkCore
             WorkflowWaitEntity record;
             if (wait is SignalWaitDto signalWait)
             {
+                // SignalExactMatchPaths lives in the template cache — look it up by TemplateHashKey
+                string signalExactMatchPaths = string.Empty;
+                if (!string.IsNullOrEmpty(signalWait.TemplateHashKey))
+                {
+                    var template = _templateRepository?.GetTemplate(signalWait.TemplateHashKey);
+                    if (template?.SignalExactMatchPathsJson != null && template.SignalExactMatchPathsJson != "[]")
+                    {
+                        var paths = System.Text.Json.JsonSerializer.Deserialize<List<string>>(template.SignalExactMatchPathsJson);
+                        signalExactMatchPaths = paths != null ? string.Join(",", paths) : string.Empty;
+                    }
+                }
+
                 record = new SignalWaitEntity
                 {
                     SignalPath = signalWait.SignalIdentifier ?? string.Empty,
-                    SignalExactMatchPaths = signalWait.SignalExactMatchPaths != null ? string.Join(",", signalWait.SignalExactMatchPaths) : string.Empty,
+                    SignalExactMatchPaths = signalExactMatchPaths,
                     ExactMatchFilter = signalWait.ExactMatchPart ?? string.Empty,
-                    IsFirstWait = signalWait.IsFirstWait
+                    IsFirstWait = signalWait.IsFirstWait,
+                    TemplateHashKey = signalWait.TemplateHashKey
                 };
             }
             else if (wait is TimeWaitDto timeWait)
@@ -366,6 +381,8 @@ namespace Workflows.Storage.EntityFrameworkCore
                     existing.SignalPath = sigRecord.SignalPath;
                     existing.SignalExactMatchPaths = sigRecord.SignalExactMatchPaths;
                     existing.ExactMatchFilter = sigRecord.ExactMatchFilter;
+                    existing.IsFirstWait = sigRecord.IsFirstWait;
+                    existing.TemplateHashKey = sigRecord.TemplateHashKey;
                     _dbContext.SignalWaits.Update(existing);
                 }
                 else

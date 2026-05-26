@@ -11,6 +11,10 @@ namespace Workflows.Storage.EntityFrameworkCore
         public string? GenericMatchExpressionJson { get; set; }
         public string? InstanceExactMatchExpressionJson { get; set; }
         public string? NormalizedMatchExpressionJson { get; set; }
+        public string? AfterMatchAction { get; set; }
+        public string? CancelAction { get; set; }
+
         public DateTime Created { get; set; } = DateTime.UtcNow;
     }
 }
+

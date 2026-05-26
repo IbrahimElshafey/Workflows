@@ -25,7 +25,9 @@ namespace Workflows.Storage.EntityFrameworkCore
                 IsGenericMatchFullMatch = entity.IsGenericMatchFullMatch,
                 GenericMatchExpressionJson = entity.GenericMatchExpressionJson,
                 InstanceExactMatchExpressionJson = entity.InstanceExactMatchExpressionJson,
-                NormalizedMatchExpressionJson = entity.NormalizedMatchExpressionJson
+                NormalizedMatchExpressionJson = entity.NormalizedMatchExpressionJson,
+                AfterMatchAction = entity.AfterMatchAction,
+                CancelAction = entity.CancelAction
             };
         }
 
@@ -44,7 +46,9 @@ namespace Workflows.Storage.EntityFrameworkCore
                     IsGenericMatchFullMatch = dto.IsGenericMatchFullMatch,
                     GenericMatchExpressionJson = dto.GenericMatchExpressionJson,
                     InstanceExactMatchExpressionJson = dto.InstanceExactMatchExpressionJson,
-                    NormalizedMatchExpressionJson = dto.NormalizedMatchExpressionJson
+                    NormalizedMatchExpressionJson = dto.NormalizedMatchExpressionJson,
+                    AfterMatchAction = dto.AfterMatchAction,
+                    CancelAction = dto.CancelAction
                 };
                 _dbContext.Set<TemplateCacheEntity>().Add(entity);
             }
@@ -56,6 +60,8 @@ namespace Workflows.Storage.EntityFrameworkCore
                 entity.GenericMatchExpressionJson = dto.GenericMatchExpressionJson;
                 entity.InstanceExactMatchExpressionJson = dto.InstanceExactMatchExpressionJson;
                 entity.NormalizedMatchExpressionJson = dto.NormalizedMatchExpressionJson;
+                entity.AfterMatchAction = dto.AfterMatchAction;
+                entity.CancelAction = dto.CancelAction;
                 _dbContext.Set<TemplateCacheEntity>().Update(entity);
             }
 

@@ -8,5 +8,6 @@ namespace Workflows.Storage.EntityFrameworkCore
         public string SignalExactMatchPaths { get; set; } = string.Empty;
         public string ExactMatchFilter { get; set; } = string.Empty;
         public bool IsFirstWait { get; set; }
+        public string? TemplateHashKey { get; set; }
     }
 }
