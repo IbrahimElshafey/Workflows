@@ -1,6 +1,13 @@
 # Feature Gap Analysis: Planned vs. Unimplemented & Unplanned Must-Haves
 
-This document provides a comprehensive analysis of the Workflows engine's features, comparing planned roadmaps against actual implementations and outlining critical features that are currently missing from the roadmap but are essential for a production-ready orchestration system.
+1. I want serialization to skip default values and `Array.Empty` instances to not show in JSON output.
+2. Stop sending template parts with every signal wait; send only the template hash.
+3. Update how the template hash is calculated and add a column for the signal hash.
+4. `StateAfterWait` is not being set correctly for waits.
+5. Nuqleon serialization has a critical bug: it serializes instances containing serializable `Expression` objects, which should not happen.
+6. If `IsGenericMatchFullMatch == true` or `IsExactMatchFullMatch == true`, the orchestrator should also evaluate the parent group match when its type is `WaitAll`. It should also change the wait status to `Matched`.
+7. Delegate names such as `InProcessSqliteSample.OrderProcessingWorkflow.<Run>b__44_3` may cause issues after recompilation.
+8. CompiledInstanceExactMatchExpression not in signal wait dto
 * Review method `FindInstancesWaitingForSignalAsync`
 * Link standard logs that happen when a specific workflow instance runs to this specific workflow instance.
 * Calling runner.startworkflow twice should not create two instances if same instance object returned (same data and same waits)
