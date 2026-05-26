@@ -81,14 +81,14 @@ namespace Workflows.Runner.Tests
             result.IsExactMatchFullMatch.Should().BeTrue();
             result.SignalExactMatchPaths.Should().ContainSingle().Which.Should().Be("OrderId");
 
-            // Evaluate the InstanceExactMatchExpression. Because the original codebase builds
-            // InstanceExactMatchExpression on the unnormalized lambda, it captures the 'workflow'
-            // instance as a constant. Thus, evaluating it with a different workflow instance
-            // still yields the value from the captured workflow instance.
+            // Evaluate the InstanceExactMatchExpression. Because the normalizer builds
+            // InstanceExactMatchExpression on the normalized lambda, it uses the passed workflow
+            // instance parameter. Thus, evaluating it with a different workflow instance
+            // yields the value from the new workflow instance.
             var newWorkflow = new TestWorkflow { ExpectedOrderId = "ORD-999" };
             var compiledInstanceExpr = result.InstanceExactMatchExpression.Compile();
             var values = compiledInstanceExpr(newWorkflow, null);
-            values.Should().ContainSingle().Which.Should().Be("ORD-123");
+            values.Should().ContainSingle().Which.Should().Be("ORD-999");
         }
 
         [Fact]
@@ -419,7 +419,8 @@ namespace Workflows.Runner.Tests
             // Verify compiled JSON pre-filter works
             var compiled = result.GenericMatchExpression.Compile();
             using var docMatch = System.Text.Json.JsonDocument.Parse("{\"CreatedAt\": \"2026-05-24T03:30:00Z\", \"Duration\": \"00:15:00\"}");
-            bool isMatch = compiled(docMatch.RootElement, default, default);
+            var instanceElement = System.Text.Json.JsonSerializer.SerializeToElement(workflow);
+            bool isMatch = compiled(docMatch.RootElement, default, instanceElement);
             isMatch.Should().BeTrue();
         }
 

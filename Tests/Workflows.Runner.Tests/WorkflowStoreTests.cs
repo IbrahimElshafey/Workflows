@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
 using Workflows.Storage.EntityFrameworkCore;
 using Xunit;
@@ -137,6 +139,47 @@ namespace Workflows.Runner.Tests
                 // Scenario D: Signal payload is empty, should return all waiting instances
                 var matchesD = await store.FindInstancesWaitingForSignalAsync("OrderSignal", null);
                 matchesD.Should().Contain(new[] { instId1, instId2, instId3, instId4 });
+            }
+        }
+
+        [Fact]
+        public async Task SaveAndLoadTemplateHashKey_ShouldCorrectlyPersist()
+        {
+            var instId = Guid.NewGuid();
+            var waitId = Guid.NewGuid();
+
+            using (var context = new WorkflowsDbContext(_options))
+            {
+                var serializer = new Infrastructure.TestObjectSerializer();
+                var store = new WorkflowStore(context, serializer);
+
+                var state = new WorkflowStateDto
+                {
+                    Id = instId,
+                    WorkflowType = "TestWorkflow",
+                    Status = WorkflowInstanceStatus.Running,
+                    Created = DateTime.UtcNow,
+                    Waits = new List<WaitInfrastructureDto>
+                    {
+                        new SignalWaitDto
+                        {
+                            Id = waitId,
+                            Status = WaitStatus.Waiting,
+                            SignalIdentifier = "TestSignal",
+                            TemplateHashKey = "HashKey-12345",
+                            IsPersisted = false
+                        }
+                    }
+                };
+
+                await store.SaveContextSyncAsync(state, Enumerable.Empty<Guid>());
+            }
+
+            using (var context = new WorkflowsDbContext(_options))
+            {
+                var signalWait = await context.SignalWaits.FindAsync(waitId);
+                signalWait.Should().NotBeNull();
+                signalWait!.TemplateHashKey.Should().Be("HashKey-12345");
             }
         }
     }

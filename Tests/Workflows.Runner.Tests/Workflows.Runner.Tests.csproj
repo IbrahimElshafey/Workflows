@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Workflows.Analyzers\Workflows.Analyzers.csproj" />
+    <ProjectReference Include="..\..\Workflows.Common.Abstraction\Workflows.Shared.csproj" />
     <ProjectReference Include="..\..\Workflows.Runner\Workflows.Runner.csproj" />
     <ProjectReference Include="..\..\Workflows.Definition\Workflows.Definition.csproj" />
     <ProjectReference Include="..\..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
