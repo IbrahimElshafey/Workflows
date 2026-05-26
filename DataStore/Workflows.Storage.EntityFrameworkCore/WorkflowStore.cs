@@ -48,6 +48,32 @@ namespace Workflows.Storage.EntityFrameworkCore
                     var dbInstance = await _dbContext.WorkflowInstances.FindAsync(state.Id);
                     if (dbInstance == null)
                     {
+                        var serializedNewInstance = JsonConvert.SerializeObject(state.StateObject?.Instance, WorkflowsDbContext.PolymorphicSerializerSettings);
+
+                        var candidates = await _dbContext.WorkflowInstances
+                            .Where(i => i.WorkflowType == state.WorkflowType && i.Status == (int)WorkflowInstanceStatus.Running)
+                            .ToListAsync();
+
+                        foreach (var candidate in candidates)
+                        {
+                            if (HasFirstWait(candidate.Waits))
+                            {
+                                continue;
+                            }
+                            var serializedCandidate = JsonConvert.SerializeObject(candidate.StateObject?.Instance, WorkflowsDbContext.PolymorphicSerializerSettings);
+                            var waitsEqual = AreWaitsEqual(state.Waits, candidate.Waits);
+                            var jsonEqual = serializedCandidate == serializedNewInstance;
+                            if (jsonEqual && waitsEqual)
+                            {
+                                state.Id = candidate.Id;
+                                dbInstance = candidate;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (dbInstance == null)
+                    {
                         dbInstance = new WorkflowInstance
                         {
                             Id = state.Id,
@@ -256,11 +282,16 @@ namespace Workflows.Storage.EntityFrameworkCore
             matchedInstanceIds.AddRange(matchedTimeWaits);
 
             // 2. Get distinct exact match path configurations for active waits of this signal path
-            var distinctMatchPaths = await _dbContext.SignalWaits
+            var rawMatchPaths = await _dbContext.SignalWaits
                 .Where(w => w.SignalPath == signalPath && w.Status == (int)WaitStatus.Waiting)
                 .Select(w => w.SignalExactMatchPaths)
                 .Distinct()
                 .ToListAsync();
+
+            var distinctMatchPaths = rawMatchPaths
+                .Select(p => p ?? string.Empty)
+                .Distinct()
+                .ToList();
 
             if (distinctMatchPaths.Count > 0)
             {
@@ -276,7 +307,15 @@ namespace Workflows.Storage.EntityFrameworkCore
                 }
                 else
                 {
-                    var jObject = JObject.Parse(signalDataJson);
+                    JToken? parsedToken = null;
+                    try
+                    {
+                        parsedToken = JToken.Parse(signalDataJson);
+                    }
+                    catch (Exception)
+                    {
+                        // Fall back to null token without throwing
+                    }
 
                     foreach (var pathsString in distinctMatchPaths)
                     {
@@ -299,7 +338,25 @@ namespace Workflows.Storage.EntityFrameworkCore
                             var values = new string[paths.Length];
                             for (int i = 0; i < paths.Length; i++)
                             {
-                                var token = jObject.SelectToken(paths[i]);
+                                JToken? token = null;
+                                if (parsedToken != null)
+                                {
+                                    if (parsedToken is JContainer container)
+                                    {
+                                        try
+                                        {
+                                            token = container.SelectToken(paths[i]);
+                                        }
+                                        catch (Exception)
+                                        {
+                                            // Handle invalid paths gracefully
+                                        }
+                                    }
+                                    else if (parsedToken is JValue && paths[i] == "$")
+                                    {
+                                        token = parsedToken;
+                                    }
+                                }
                                 values[i] = FormatJToken(token);
                             }
 
@@ -444,6 +501,71 @@ namespace Workflows.Storage.EntityFrameworkCore
             var record = await _dbContext.CommandWaits
                 .FirstOrDefaultAsync(w => w.CommandWaitId == commandWaitId);
             return record?.WorkflowInstanceId ?? Guid.Empty;
+        }
+
+        private static bool AreWaitsEqual(List<WaitInfrastructureDto>? list1, List<WaitInfrastructureDto>? list2)
+        {
+            if (list1 == null && list2 == null) return true;
+            if (list1 == null || list2 == null) return false;
+            if (list1.Count != list2.Count) return false;
+
+            for (int i = 0; i < list1.Count; i++)
+            {
+                if (!IsWaitEqual(list1[i], list2[i]))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsWaitEqual(WaitInfrastructureDto w1, WaitInfrastructureDto w2)
+        {
+            if (w1 == null && w2 == null) return true;
+            if (w1 == null || w2 == null) return false;
+
+            if (w1.WaitType != w2.WaitType) return false;
+            if (w1.WaitName != w2.WaitName) return false;
+            if (w1.CallerName != w2.CallerName) return false;
+            if (w1.InCodeLine != w2.InCodeLine) return false;
+            if (w1.StateKey != w2.StateKey) return false;
+
+            if (w1 is SignalWaitDto sw1 && w2 is SignalWaitDto sw2)
+            {
+                if (sw1.SignalIdentifier != sw2.SignalIdentifier) return false;
+                if (sw1.ExactMatchPart != sw2.ExactMatchPart) return false;
+            }
+            else if (w1 is TimeWaitDto tw1 && w2 is TimeWaitDto tw2)
+            {
+                if (tw1.UniqueMatchId != tw2.UniqueMatchId) return false;
+                if (Math.Abs((tw1.ExecutionTime - tw2.ExecutionTime).TotalSeconds) > 5) return false;
+            }
+            else if (w1 is CommandWaitDto cw1 && w2 is CommandWaitDto cw2)
+            {
+                if (cw1.HandlerKey != cw2.HandlerKey) return false;
+                if (cw1.CommandData != cw2.CommandData) return false;
+            }
+            else if (w1 is GroupWaitDto gw1 && w2 is GroupWaitDto gw2)
+            {
+                if (gw1.MatchFuncName != gw2.MatchFuncName) return false;
+                if (!AreWaitsEqual(gw1.ChildWaits, gw2.ChildWaits)) return false;
+            }
+            else if (w1 is SubWorkflowWaitDto sub1 && w2 is SubWorkflowWaitDto sub2)
+            {
+                if (!AreWaitsEqual(sub1.ChildWaits, sub2.ChildWaits)) return false;
+            }
+
+            return true;
+        }
+
+        private static bool HasFirstWait(List<WaitInfrastructureDto>? waits)
+        {
+            if (waits == null) return false;
+            foreach (var w in waits)
+            {
+                if (w is SignalWaitDto sw && sw.IsFirstWait) return true;
+                if (w.ChildWaits != null && HasFirstWait(w.ChildWaits)) return true;
+            }
+            return false;
         }
     }
 }
