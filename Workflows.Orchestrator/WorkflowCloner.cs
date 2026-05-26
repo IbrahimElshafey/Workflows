@@ -103,6 +103,10 @@ namespace Workflows.Orchestrator
 
             cloned.IsPersisted = false; // Reset persistence flag so it gets indexed
 
+            // Reset IsFirstWait so this real instance is never mistaken for a template
+            if (cloned is SignalWaitDto clonedSignal)
+                clonedSignal.IsFirstWait = false;
+
             // Reset parent ID
             if (wait.ParentWaitId.HasValue && idMap.TryGetValue(wait.ParentWaitId.Value, out var newParentId))
             {

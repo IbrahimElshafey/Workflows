@@ -95,7 +95,7 @@ namespace Workflows.Runner.ExpressionTransformers
 
             protected override Expression VisitConstant(ConstantExpression node)
             {
-                if (node.Value == _instance)
+                if (node.Value != null && node.Type.IsAssignableFrom(_instance.GetType()) && node.Type == _instance.GetType())
                     return _instanceReplacement;
 
                 if (node.Type.IsClass && node.Type.GetCustomAttribute<CompilerGeneratedAttribute>() != null)

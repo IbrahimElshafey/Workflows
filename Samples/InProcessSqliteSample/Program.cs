@@ -34,18 +34,22 @@ namespace InProcessSqliteSample
         public static async Task Main(string[] args)
         {
             Console.Title = "Workflows In-Process SQLite Sample Console";
-            
-            // SQLite database filename
-            const string DbFileName = "sample_workflows.db";
+
+            // SQLite database filename — stored in a persistent folder outside the build output
+            var dbFolder = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "InProcessSqliteSample");
+            Directory.CreateDirectory(dbFolder);
+            var dbPath = Path.Combine(dbFolder, "sample_workflows.db");
 
             Console.WriteLine("==================================================================");
             Console.WriteLine("       Workflows Engine - In-Process SQLite Interactive Sample     ");
             Console.WriteLine("==================================================================");
-            Console.WriteLine($"Using database file: '{DbFileName}' (persistent)\n");
+            Console.WriteLine($"Using database file: '{dbPath}' (persistent)\n");
 
             // 1. Build and configure DI services
             var services = new ServiceCollection();
-            
+
             // Standard runner and shared dependencies
             services.AddWorkflowsShared();
             services.AddWorkflowsRunner();
@@ -56,7 +60,7 @@ namespace InProcessSqliteSample
             services.AddTransient<ShipOrderHandler>();
 
             // Setup in-process host with SQLite provider
-            services.AddWorkflowsInProcessHost($"Data Source={DbFileName}");
+            services.AddWorkflowsInProcessHost($"Data Source={dbPath}");
 
             // Configure Console transport for command routing in addition to defaults
             services.AddSingleton<ConsoleMessageTransport>();
@@ -67,7 +71,7 @@ namespace InProcessSqliteSample
             {
                 var routingBuilder = new TransportRoutingBuilder();
                 routingBuilder.UseDefault<InProcessMessageTransport, InProcessMessageSubscriber>();
-                
+
                 // Orchestrator runner requests go to the runner
                 routingBuilder.ForMessage<StartWorkflowRequest>()
                     .Use<InProcessMessageTransport, InProcessMessageSubscriber>("in-process-runner");
@@ -94,7 +98,7 @@ namespace InProcessSqliteSample
             using (var scope = _serviceProvider.CreateScope())
             {
                 var builder = scope.ServiceProvider.GetRequiredService<IWorkflowBuilder>();
-                
+
                 // Register our OrderProcessingWorkflow
                 builder.RegisterWorkflow<OrderProcessingWorkflow>("OrderWorkflow", "1.0");
 
@@ -111,7 +115,7 @@ namespace InProcessSqliteSample
 
                 // Build and persist definitions to the SQLite database so the orchestrator can validate them
                 var definitionRepository = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
-                
+
                 // Extract package using reflection since it is private/internal
                 var packageField = builder.GetType().GetField("registrationPackage", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 if (packageField == null)
@@ -137,9 +141,9 @@ namespace InProcessSqliteSample
             {
                 var dbContext = scope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
                 var activeInstances = await dbContext.WorkflowInstances.ToListAsync();
-                
+
                 var restoredNotifications = new List<CommandDispatchNotification>();
-                
+
                 void CollectCommandWaitsLocal(WaitInfrastructureDto wait, List<CommandWaitDto> list)
                 {
                     if (wait == null) return;
@@ -163,7 +167,7 @@ namespace InProcessSqliteSample
                     {
                         CollectCommandWaitsLocal(wait, commandWaits);
                     }
-                    
+
                     foreach (var cw in commandWaits)
                     {
                         if (cw.Status == WaitStatus.Waiting && cw.ExecutionMode == CommandExecutionMode.Deferred)
@@ -177,7 +181,7 @@ namespace InProcessSqliteSample
                         }
                     }
                 }
-                
+
                 lock (ConsoleMessageTransport.DispatchedCommands)
                 {
                     ConsoleMessageTransport.DispatchedCommands.Clear();
@@ -283,13 +287,13 @@ namespace InProcessSqliteSample
 
                 // Query DB index tables for waits (TPC: each type has its own table)
                 var signalWaitsForInst = await db.SignalWaits.AsNoTracking()
-                    .Where(w => w.WorkflowInstanceId == inst.Id)
+                    .Where(w => w.WorkflowInstanceId == inst.Id && w.Status == 0)
                     .ToListAsync<WorkflowWaitEntity>();
                 var commandWaitsForInst = await db.CommandWaits.AsNoTracking()
-                    .Where(w => w.WorkflowInstanceId == inst.Id)
+                    .Where(w => w.WorkflowInstanceId == inst.Id && w.Status == 0)
                     .ToListAsync<WorkflowWaitEntity>();
                 var timeWaitsForInst = await db.TimeWaits.AsNoTracking()
-                    .Where(w => w.WorkflowInstanceId == inst.Id)
+                    .Where(w => w.WorkflowInstanceId == inst.Id && w.Status == 0)
                     .ToListAsync<WorkflowWaitEntity>();
                 var waits = signalWaitsForInst
                     .Concat(commandWaitsForInst)
@@ -571,7 +575,7 @@ namespace InProcessSqliteSample
                 {
                     DispatchedCommands.Add(notification);
                 }
-                
+
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine($"\n[Notification] Intercepted Deferred Command!");
                 Console.WriteLine($"  HandlerKey: {notification.HandlerKey}");
