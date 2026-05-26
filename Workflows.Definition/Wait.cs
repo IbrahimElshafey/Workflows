@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Workflows.Primitives;
 
@@ -50,6 +51,7 @@ namespace Workflows.Definition
                 ? val 
                 : null;
         internal Delegate CancelAction { get; set; }
+        internal string? CancelActionKey { get; set; }
 
         public WorkflowContainer WorkflowContainer { get; set; }
 
@@ -59,16 +61,24 @@ namespace Workflows.Definition
             return this;
         }
 
-        public Wait OnCanceled(Func<ValueTask> cancelAction)
+        public Wait OnCanceled(
+            Func<ValueTask> cancelAction,
+            [CallerMemberName] string callerName = "",
+            [CallerArgumentExpression(nameof(cancelAction))] string? expression = default)
         {
             CancelAction = cancelAction;
+            CancelActionKey = Helpers.WorkflowHashCalculator.CalculateHash(expression, callerName, "Cancel_" + (WaitName ?? string.Empty));
             return this;
         }
 
-        public Wait OnCanceled<TState>(Func<TState, ValueTask> cancelAction)
+        public Wait OnCanceled<TState>(
+            Func<TState, ValueTask> cancelAction,
+            [CallerMemberName] string callerName = "",
+            [CallerArgumentExpression(nameof(cancelAction))] string? expression = default)
         {
             var invoker = new StatefulCancelActionInvoker<TState>(this, cancelAction);
             CancelAction = (Func<ValueTask>)invoker.Invoke;
+            CancelActionKey = Helpers.WorkflowHashCalculator.CalculateHash(expression, callerName, "Cancel_" + (WaitName ?? string.Empty));
             return this;
         }
 
