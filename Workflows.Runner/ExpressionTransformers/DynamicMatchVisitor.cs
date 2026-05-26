@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Text.Json;
 using Workflows.Shared;
 
@@ -9,12 +10,21 @@ namespace Workflows.Runner.ExpressionTransformers
 {
     internal class DynamicMatchVisitor : ExpressionVisitor
     {
-        private readonly LambdaExpression _originalLambda;
+        private readonly LambdaExpression _typedLambda;
         private bool _isUnsupportedNodeFound;
+        private bool _hasOrOperator;
         private readonly HashSet<Expression> _partialNodes = new();
         private static readonly ConstantExpression UnknownNode = Expression.Constant("__UNKNOWN__");
 
-        public LambdaExpression TypedResult { get; private set; }
+        private ParameterExpression _signalParam;
+        private ParameterExpression _stateParam;
+        private ParameterExpression _instanceParam;
+
+        private ParameterExpression _jsonSignalParam;
+        private ParameterExpression _jsonStateParam;
+        private ParameterExpression _jsonInstanceParam;
+
+        public LambdaExpression TypedResult => _typedLambda;
 
         public Expression<Func<JsonElement, JsonElement, JsonElement, bool>> Result { get; private set; }
 
@@ -24,481 +34,326 @@ namespace Workflows.Runner.ExpressionTransformers
 
         public bool IsExactMatchFullMatch { get; private set; } = true;
 
-        public DynamicMatchVisitor(LambdaExpression originalLambda)
-        { _originalLambda = originalLambda ?? throw new ArgumentNullException(nameof(originalLambda)); }
-
-        private void MarkPartial(Expression node)
+        public DynamicMatchVisitor(LambdaExpression typedLambda)
         {
-            if(node != null)
-                _partialNodes.Add(node);
+            _typedLambda = typedLambda ?? throw new ArgumentNullException(nameof(typedLambda));
         }
-
-        private bool IsPartial(Expression node) => node != null && _partialNodes.Contains(node);
 
         public void Build()
         {
-            // PASS 1: Walk the original typed tree and safely prune unsupported logic
-            var safeTypedBody = Visit(_originalLambda.Body);
+            // Lock onto the exact generic parameters from the upstream normalization phase
+            _signalParam = _typedLambda.Parameters.Count > 0 ? _typedLambda.Parameters[0] : null;
+            _stateParam = _typedLambda.Parameters.Count > 1 ? _typedLambda.Parameters[1] : null;
+            _instanceParam = _typedLambda.Parameters.Count > 2 ? _typedLambda.Parameters[2] : null;
 
-            // CRITICAL: Return null if the tree couldn't be saved or collapsed safely
-            if(safeTypedBody == UnknownNode || safeTypedBody == null || _isUnsupportedNodeFound)
+            // Orchestrator Tier 1.5 JSON Target signatures
+            _jsonSignalParam = Expression.Parameter(typeof(JsonElement), "signalData");
+            _jsonStateParam = Expression.Parameter(typeof(JsonElement), "stateData");
+            _jsonInstanceParam = Expression.Parameter(typeof(JsonElement), "instanceData");
+
+            var visitedBody = Visit(_typedLambda.Body);
+
+            if (_isUnsupportedNodeFound || visitedBody == UnknownNode)
             {
                 Result = null;
-                TypedResult = null;
                 IsExactMatchFullMatch = false;
+                PotentialExactMatchPairs.Clear();
                 return;
             }
 
-            TypedResult = Expression.Lambda(safeTypedBody, _originalLambda.Parameters);
-
-            // PASS 2: Translate the perfectly safe POCO tree into a JsonElement execution tree
-            var jsonTranslator = new JsonTranslationVisitor(_originalLambda.Parameters);
-            var jsonBody = jsonTranslator.Visit(safeTypedBody);
+            if (_hasOrOperator || PotentialExactMatchPairs.Count == 0)
+            {
+                PotentialExactMatchPairs.Clear();
+                IsExactMatchFullMatch = false;
+            }
 
             Result = Expression.Lambda<Func<JsonElement, JsonElement, JsonElement, bool>>(
-                jsonBody,
-                jsonTranslator.JsonSignal,
-                jsonTranslator.JsonState,
-                jsonTranslator.JsonInstance);
-
-            // PASS 3: Collect exact match pairs from the safe typed body
-            var collector = new ExactMatchCollector(_originalLambda.Parameters[0]);
-            collector.Visit(safeTypedBody);
-            PotentialExactMatchPairs = collector.Pairs;
-            IsExactMatchFullMatch = collector.IsFullMatch;
+                visitedBody,
+                _jsonSignalParam,
+                _jsonStateParam,
+                _jsonInstanceParam
+            );
         }
-
-        // --- Pass 1: Pruning Logic (Operates on strongly-typed POCO tree) ---
 
         protected override Expression VisitBinary(BinaryExpression node)
         {
-            var left = Visit(node.Left);
-            var right = Visit(node.Right);
-
-            if(left == UnknownNode && right == UnknownNode)
-                return UnknownNode;
-
-            if(left == UnknownNode || right == UnknownNode)
+            if (node.NodeType == ExpressionType.Equal)
             {
-                if(node.NodeType == ExpressionType.AndAlso)
+                var leftIsSignal = IsRootedInParameter(node.Left, _signalParam);
+                var rightIsSignal = IsRootedInParameter(node.Right, _signalParam);
+
+                if (leftIsSignal && !ContainsParameter(node.Right, _signalParam))
                 {
-                    var kept = left == UnknownNode ? right : left;
-                    MarkPartial(kept);
-                    return kept;
+                    var signalExpr = UnwrapConvert(node.Left) as MemberExpression;
+                    if (signalExpr != null && IsSupportedExactMatchType(signalExpr.Type))
+                    {
+                        PotentialExactMatchPairs.Add((GetPath(signalExpr), UnwrapConvert(node.Right), signalExpr.Type));
+                    }
+                    else
+                    {
+                        IsExactMatchFullMatch = false;
+                    }
                 }
-                _isUnsupportedNodeFound = true;
-                return UnknownNode;
+                else if (rightIsSignal && !ContainsParameter(node.Left, _signalParam))
+                {
+                    var signalExpr = UnwrapConvert(node.Right) as MemberExpression;
+                    if (signalExpr != null && IsSupportedExactMatchType(signalExpr.Type))
+                    {
+                        PotentialExactMatchPairs.Add((GetPath(signalExpr), UnwrapConvert(node.Left), signalExpr.Type));
+                    }
+                    else
+                    {
+                        IsExactMatchFullMatch = false;
+                    }
+                }
+                else
+                {
+                    IsExactMatchFullMatch = false;
+                }
+            }
+            else if (node.NodeType == ExpressionType.OrElse)
+            {
+                IsExactMatchFullMatch = false;
+                _hasOrOperator = true;
+            }
+            else if (node.NodeType != ExpressionType.AndAlso)
+            {
+                IsExactMatchFullMatch = false;
             }
 
-            var updated = node.Update(left, node.Conversion, right);
-            if(IsPartial(left) || IsPartial(right))
-                MarkPartial(updated);
-            return updated;
-        }
+            var visitedLeft = Visit(node.Left);
+            var visitedRight = Visit(node.Right);
 
-        protected override Expression VisitUnary(UnaryExpression node)
-        {
-            var operand = Visit(node.Operand);
-            if(operand == UnknownNode)
-                return UnknownNode;
-
-            // Negation on a tainted partial node risks False Negatives. Abort.
-            if(node.NodeType == ExpressionType.Not && IsPartial(operand))
+            if (visitedLeft == UnknownNode || visitedRight == UnknownNode)
             {
                 _isUnsupportedNodeFound = true;
                 return UnknownNode;
             }
 
-            var updated = node.Update(operand);
-            if(IsPartial(operand))
-                MarkPartial(updated);
-            return updated;
+            if (node.NodeType == ExpressionType.Equal)
+            {
+                var method = typeof(object).GetMethod(nameof(object.Equals), new[] { typeof(object), typeof(object) });
+                var convertedLeft = Expression.Convert(visitedLeft, typeof(object));
+                var convertedRight = Expression.Convert(visitedRight, typeof(object));
+                return Expression.Call(method, convertedLeft, convertedRight);
+            }
+
+            return Expression.MakeBinary(node.NodeType, visitedLeft, visitedRight);
         }
 
         protected override Expression VisitMethodCall(MethodCallExpression node)
         {
-            // Only .Equals() is native. Everything else (like DbCheck()) triggers Unknown.
-            if(node.Method.Name == "Equals" && node.Arguments.Count == 1 && node.Object != null)
+            if (node.Method.Name == "Equals" && node.Object != null && node.Arguments.Count == 1)
             {
-                var obj = Visit(node.Object);
-                var arg = Visit(node.Arguments[0]);
+                var leftIsSignal = IsRootedInParameter(node.Object, _signalParam);
+                var rightIsSignal = IsRootedInParameter(node.Arguments[0], _signalParam);
 
-                if(obj == UnknownNode || arg == UnknownNode)
+                if (leftIsSignal && !ContainsParameter(node.Arguments[0], _signalParam))
+                {
+                    var signalExpr = UnwrapConvert(node.Object) as MemberExpression;
+                    if (signalExpr != null && IsSupportedExactMatchType(signalExpr.Type))
+                    {
+                        PotentialExactMatchPairs.Add((GetPath(signalExpr), UnwrapConvert(node.Arguments[0]), signalExpr.Type));
+                    }
+                    else
+                    {
+                        IsExactMatchFullMatch = false;
+                    }
+                }
+                else if (rightIsSignal && !ContainsParameter(node.Object, _signalParam))
+                {
+                    var signalExpr = UnwrapConvert(node.Arguments[0]) as MemberExpression;
+                    if (signalExpr != null && IsSupportedExactMatchType(signalExpr.Type))
+                    {
+                        PotentialExactMatchPairs.Add((GetPath(signalExpr), UnwrapConvert(node.Object), signalExpr.Type));
+                    }
+                    else
+                    {
+                        IsExactMatchFullMatch = false;
+                    }
+                }
+                else
+                {
+                    IsExactMatchFullMatch = false;
+                }
+
+                var visitedObject = Visit(node.Object);
+                var visitedArg = Visit(node.Arguments[0]);
+
+                if (visitedObject == UnknownNode || visitedArg == UnknownNode)
+                {
+                    _isUnsupportedNodeFound = true;
                     return UnknownNode;
+                }
 
-                var updated = node.Update(obj, new[] { arg });
-                if(IsPartial(obj) || IsPartial(arg))
-                    MarkPartial(updated);
-                return updated;
+                var method = typeof(object).GetMethod(nameof(object.Equals), new[] { typeof(object), typeof(object) });
+                return Expression.Call(method, Expression.Convert(visitedObject, typeof(object)), Expression.Convert(visitedArg, typeof(object)));
             }
-
-            if(node.Method.DeclaringType == typeof(string) &&
-                node.Method.Name == "Equals" &&
-                node.Method.IsStatic &&
-                node.Arguments.Count == 2)
+            else if (node.Method.Name == "Equals" && node.Method.IsStatic && node.Arguments.Count == 2 && node.Method.DeclaringType == typeof(string))
             {
-                var arg0 = Visit(node.Arguments[0]);
-                var arg1 = Visit(node.Arguments[1]);
+                var firstArg = node.Arguments[0];
+                var secondArg = node.Arguments[1];
 
-                if(arg0 == UnknownNode || arg1 == UnknownNode)
+                var leftIsSignal = IsRootedInParameter(firstArg, _signalParam);
+                var rightIsSignal = IsRootedInParameter(secondArg, _signalParam);
+
+                if (leftIsSignal && !ContainsParameter(secondArg, _signalParam))
+                {
+                    var signalExpr = UnwrapConvert(firstArg) as MemberExpression;
+                    if (signalExpr != null && IsSupportedExactMatchType(signalExpr.Type))
+                    {
+                        PotentialExactMatchPairs.Add((GetPath(signalExpr), UnwrapConvert(secondArg), signalExpr.Type));
+                    }
+                    else
+                    {
+                        IsExactMatchFullMatch = false;
+                    }
+                }
+                else if (rightIsSignal && !ContainsParameter(firstArg, _signalParam))
+                {
+                    var signalExpr = UnwrapConvert(secondArg) as MemberExpression;
+                    if (signalExpr != null && IsSupportedExactMatchType(signalExpr.Type))
+                    {
+                        PotentialExactMatchPairs.Add((GetPath(signalExpr), UnwrapConvert(firstArg), signalExpr.Type));
+                    }
+                    else
+                    {
+                        IsExactMatchFullMatch = false;
+                    }
+                }
+                else
+                {
+                    IsExactMatchFullMatch = false;
+                }
+
+                var visitedLeft = Visit(firstArg);
+                var visitedRight = Visit(secondArg);
+
+                if (visitedLeft == UnknownNode || visitedRight == UnknownNode)
+                {
+                    _isUnsupportedNodeFound = true;
                     return UnknownNode;
+                }
 
-                var updated = node.Update(null, new[] { arg0, arg1 });
-                if(IsPartial(arg0) || IsPartial(arg1))
-                    MarkPartial(updated);
-                return updated;
+                var method = typeof(object).GetMethod(nameof(object.Equals), new[] { typeof(object), typeof(object) });
+                return Expression.Call(method, Expression.Convert(visitedLeft, typeof(object)), Expression.Convert(visitedRight, typeof(object)));
             }
 
             _isUnsupportedNodeFound = true;
+            IsExactMatchFullMatch = false;
             return UnknownNode;
         }
 
         protected override Expression VisitMember(MemberExpression node)
         {
-            var root = GetRoot(node);
-            if (root is ParameterExpression p && _originalLambda.Parameters.Contains(p))
+            var parentType = node.Expression?.Type;
+            if (parentType != null)
             {
-                if (!IsValidPath(node))
+                var underlyingType = Nullable.GetUnderlyingType(parentType) ?? parentType;
+                if (underlyingType.IsPrimitive || 
+                    underlyingType == typeof(string) || 
+                    underlyingType == typeof(decimal) || 
+                    underlyingType == typeof(DateTime) || 
+                    underlyingType == typeof(TimeSpan) || 
+                    underlyingType.IsEnum)
                 {
                     _isUnsupportedNodeFound = true;
                     return UnknownNode;
                 }
             }
+
+            var root = GetRoot(node);
+
+            if (root == _signalParam) return BuildJsonGet(_jsonSignalParam, GetPath(node), node.Type);
+            if (root == _stateParam) return BuildJsonGet(_jsonStateParam, GetPath(node), node.Type);
+            if (root == _instanceParam) return BuildJsonGet(_jsonInstanceParam, GetPath(node), node.Type);
+
             return base.VisitMember(node);
         }
 
-        private static Expression UnwrapConvert(Expression node)
+        private Expression BuildJsonGet(ParameterExpression jsonParam, string path, Type targetType)
         {
-            while (node is UnaryExpression ue &&
-                (ue.NodeType == ExpressionType.Convert || ue.NodeType == ExpressionType.ConvertChecked))
-            {
-                node = ue.Operand;
-            }
-            return node;
+            var method = typeof(Workflows.Shared.JsonElementExtensions)
+                .GetMethod(nameof(Workflows.Shared.JsonElementExtensions.Get))
+                .MakeGenericMethod(targetType);
+
+            return Expression.Call(method, jsonParam, Expression.Constant(path));
         }
 
-        private static Expression GetRoot(Expression node)
+        private static ParameterExpression GetRoot(Expression node)
         {
-            node = UnwrapConvert(node);
-            while (node is MemberExpression me)
+            while (node is MemberExpression memberExpr)
             {
-                node = UnwrapConvert(me.Expression!);
+                node = memberExpr.Expression;
+                node = UnwrapConvert(node);
             }
-            return node;
+            return node as ParameterExpression;
         }
 
-        private static bool IsValidPath(MemberExpression node)
+        private static string GetPath(MemberExpression node)
         {
-            Expression? current = node.Expression;
-            while (current != null)
+            var parts = new List<string>();
+            Expression current = node;
+
+            while (current is MemberExpression me)
             {
+                parts.Add(me.Member.Name);
+                current = me.Expression;
                 current = UnwrapConvert(current);
-                if (IsRepresentableInJson(current.Type))
-                {
-                    return false;
-                }
-                if (current is MemberExpression me)
-                {
-                    current = me.Expression;
-                }
-                else
-                {
-                    break;
-                }
             }
-            return true;
+
+            parts.Reverse();
+            return string.Join(".", parts);
         }
 
-        private static bool IsRepresentableInJson(Type type)
+        private static bool IsRootedInParameter(Expression node, ParameterExpression target)
         {
-            var underlyingType = Nullable.GetUnderlyingType(type) ?? type;
-            var types = new[]
-            {
-                typeof(bool),
-                typeof(byte),
-                typeof(sbyte),
-                typeof(char),
-                typeof(decimal),
-                typeof(double),
-                typeof(float),
-                typeof(int),
-                typeof(uint),
-                typeof(nint),
-                typeof(nuint),
-                typeof(short),
-                typeof(ushort),
-                typeof(long),
-                typeof(ulong),
-                typeof(string),
-                typeof(Guid),
-                typeof(DateTime),
-                typeof(TimeSpan)
-            };
-            return types.Contains(underlyingType) || underlyingType.IsEnum;
+            if (target == null || node == null) return false;
+            node = UnwrapConvert(node);
+            return node is MemberExpression me && GetRoot(me) == target;
         }
 
-        private static bool IsRepresentableInSql(Type type)
+        private static Expression UnwrapConvert(Expression expr)
         {
-            var underlyingType = Nullable.GetUnderlyingType(type) ?? type;
-            var types = new[]
+            while (expr is UnaryExpression unary && (expr.NodeType == ExpressionType.Convert || expr.NodeType == ExpressionType.ConvertChecked))
             {
-                typeof(bool),
-                typeof(byte),
-                typeof(sbyte),
-                typeof(char),
-                typeof(decimal),
-                typeof(double),
-                typeof(float),
-                typeof(int),
-                typeof(uint),
-                typeof(nint),
-                typeof(nuint),
-                typeof(short),
-                typeof(ushort),
-                typeof(long),
-                typeof(ulong),
-                typeof(string),
-                typeof(Guid)
-            };
-            return types.Contains(underlyingType) || underlyingType.IsEnum;
+                expr = unary.Operand;
+            }
+            return expr;
         }
 
-        // --- Pass 2: The Internal JSON Mapper ---
-        private class JsonTranslationVisitor : ExpressionVisitor
+        private bool ContainsParameter(Expression node, ParameterExpression target)
         {
-            public ParameterExpression JsonSignal { get; } = Expression.Parameter(typeof(JsonElement), "signalData");
-
-            public ParameterExpression JsonState { get; } = Expression.Parameter(typeof(JsonElement), "stateData");
-
-            public ParameterExpression JsonInstance
-            {
-                get;
-            } = Expression.Parameter(typeof(JsonElement), "workflowInstance");
-
-            private readonly IReadOnlyList<ParameterExpression> _originalParams;
-
-            public JsonTranslationVisitor(IReadOnlyList<ParameterExpression> originalParams)
-            { _originalParams = originalParams; }
-
-            protected override Expression VisitMember(MemberExpression node)
-            {
-                var root = GetRoot(node);
-                if(root is ParameterExpression p)
-                {
-                    ParameterExpression target = null;
-                    if(_originalParams.Count > 0 && p == _originalParams[0])
-                        target = JsonSignal;
-                    else if(_originalParams.Count > 1 && p == _originalParams[1])
-                        target = JsonState;
-                    else if(_originalParams.Count > 2 && p == _originalParams[2])
-                        target = JsonInstance;
-
-                    if(target != null)
-                    {
-                        var path = GetPath(node);
-                        var method = typeof(JsonElementExtensions).GetMethods()
-                            .First(x => x.Name == "Get" && x.IsGenericMethod)
-                            .MakeGenericMethod(node.Type);
-
-                        return Expression.Call(method, target, Expression.Constant(path));
-                    }
-                }
-                return base.VisitMember(node);
-            }
-
-            protected override Expression VisitMethodCall(MethodCallExpression node)
-            {
-                // JsonElement doesn't have .Equals(), so map it mathematically to ==
-                if(node.Method.Name == "Equals" && node.Arguments.Count == 1 && node.Object != null)
-                {
-                    var left = Visit(node.Object);
-                    var right = Visit(node.Arguments[0]);
-                    return Expression.Equal(left, right);
-                }
-                if(node.Method.DeclaringType == typeof(string) &&
-                    node.Method.Name == "Equals" &&
-                    node.Method.IsStatic &&
-                    node.Arguments.Count == 2)
-                {
-                    var left = Visit(node.Arguments[0]);
-                    var right = Visit(node.Arguments[1]);
-                    return Expression.Equal(left, right);
-                }
-                return base.VisitMethodCall(node);
-            }
-
-            private static Expression GetRoot(Expression node)
-            {
-                while(node is MemberExpression me)
-                    node = me.Expression;
-                return node;
-            }
-
-            private static string GetPath(MemberExpression node)
-            {
-                var path = new List<string>();
-                while(node != null)
-                {
-                    path.Add(node.Member.Name);
-                    node = node.Expression as MemberExpression;
-                }
-                path.Reverse();
-                return string.Join(".", path);
-            }
+            if (target == null) return false;
+            var checker = new ParameterReferenceChecker(target);
+            checker.Visit(node);
+            return checker.Found;
         }
 
-        private sealed class ExactMatchCollector : ExpressionVisitor
+        private static bool IsSupportedExactMatchType(Type type)
         {
-            private readonly ParameterExpression _signalParam;
+            if (type == null) return false;
+            type = Nullable.GetUnderlyingType(type) ?? type;
+            return type.IsPrimitive || 
+                   type == typeof(string) || 
+                   type == typeof(decimal) || 
+                   type.IsEnum;
+        }
 
-            public List<(string SignalPath, Expression OtherSide, Type PropertyType)> Pairs { get; } = new();
+        private sealed class ParameterReferenceChecker : ExpressionVisitor
+        {
+            private readonly ParameterExpression _target;
+            public bool Found { get; private set; }
 
-            public bool IsFullMatch { get; private set; } = true;
-
-            public ExactMatchCollector(ParameterExpression signalParam) { _signalParam = signalParam; }
-
-            public override Expression Visit(Expression node)
+            public ParameterReferenceChecker(ParameterExpression target)
             {
-                if(node == null)
-                    return null;
-
-                if(node is BinaryExpression bin)
-                {
-                    if(bin.NodeType != ExpressionType.AndAlso && bin.NodeType != ExpressionType.Equal)
-                    {
-                        IsFullMatch = false;
-                    }
-                } else if(node is UnaryExpression unary)
-                {
-                    if(unary.NodeType != ExpressionType.Not &&
-                        unary.NodeType != ExpressionType.Convert &&
-                        unary.NodeType != ExpressionType.ConvertChecked)
-                    {
-                        IsFullMatch = false;
-                    }
-                } else if(node is MethodCallExpression)
-                {
-                    // Will be handled in VisitMethodCall. If not valid equals, it sets IsFullMatch = false.
-                } else if(node is LambdaExpression)
-                {
-                    // Lambda is allowed container
-                } else
-                {
-                    IsFullMatch = false;
-                }
-
-                return base.Visit(node);
+                _target = target;
             }
 
-            protected override Expression VisitBinary(BinaryExpression node)
+            protected override Expression VisitParameter(ParameterExpression node)
             {
-                if(node.NodeType == ExpressionType.Equal)
-                {
-                    if(TryExtractEqualityPair(node.Left, node.Right))
-                    {
-                        return node;
-                    }
-                }
-
-                if(node.NodeType != ExpressionType.AndAlso)
-                {
-                    IsFullMatch = false;
-                    return node;
-                }
-
-                return base.VisitBinary(node);
-            }
-
-            protected override Expression VisitMethodCall(MethodCallExpression node)
-            {
-                bool isHandled = false;
-
-                if(node.Method.DeclaringType == typeof(string) &&
-                    node.Method.Name == nameof(string.Equals) &&
-                    node.Method.IsStatic &&
-                    node.Arguments.Count == 2)
-                {
-                    isHandled = TryExtractEqualityPair(node.Arguments[0], node.Arguments[1]);
-                } else if(node.Method.Name == nameof(string.Equals) && node.Object != null && node.Arguments.Count == 1)
-                {
-                    isHandled = TryExtractEqualityPair(node.Object, node.Arguments[0]);
-                }
-
-                if(isHandled)
-                {
-                    return node;
-                }
-
-                IsFullMatch = false;
-                return base.VisitMethodCall(node);
-            }
-
-            private bool TryExtractEqualityPair(Expression exprA, Expression exprB)
-            {
-                var unwrappedA = UnwrapConvert(exprA);
-                var unwrappedB = UnwrapConvert(exprB);
-
-                if(unwrappedA is MemberExpression memberA &&
-                    IsValidPath(memberA) &&
-                    IsRootedInParameter(memberA, _signalParam) &&
-                    !ContainsParameter(unwrappedB))
-                {
-                    if(IsRepresentableInSql(memberA.Type) && IsRepresentableInSql(unwrappedB.Type))
-                    {
-                        Pairs.Add((GetPath(memberA), exprB, memberA.Type));
-                        return true;
-                    }
-                }
-                if(unwrappedB is MemberExpression memberB &&
-                    IsValidPath(memberB) &&
-                    IsRootedInParameter(memberB, _signalParam) &&
-                    !ContainsParameter(unwrappedA))
-                {
-                    if(IsRepresentableInSql(memberB.Type) && IsRepresentableInSql(unwrappedA.Type))
-                    {
-                        Pairs.Add((GetPath(memberB), exprA, memberB.Type));
-                        return true;
-                    }
-                }
-
-                return false;
-            }
-
-            private static bool IsRootedInParameter(MemberExpression node, ParameterExpression target)
-            { return GetRoot(node) == target; }
-
-            private bool ContainsParameter(Expression node)
-            {
-                var checker = new ParameterReferenceChecker(_signalParam);
-                checker.Visit(node);
-                return checker.Found;
-            }
-
-            private static string GetPath(MemberExpression node)
-            {
-                var parts = new List<string>();
-                Expression? current = node;
-
-                while(current is MemberExpression me)
-                {
-                    parts.Add(me.Member.Name);
-                    current = UnwrapConvert(me.Expression!);
-                }
-
-                parts.Reverse();
-                return string.Join('.', parts);
-            }
-
-            private sealed class ParameterReferenceChecker(ParameterExpression target) : ExpressionVisitor
-            {
-                public bool Found { get; private set; }
-
-                protected override Expression VisitParameter(ParameterExpression node)
-                {
-                    if(node == target)
-                        Found = true;
-                    return base.VisitParameter(node);
-                }
+                if (node == _target) Found = true;
+                return base.VisitParameter(node);
             }
         }
     }

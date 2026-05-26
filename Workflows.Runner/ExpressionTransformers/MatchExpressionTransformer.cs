@@ -17,9 +17,12 @@ namespace Workflows.Runner.ExpressionTransformers
         {
             if (matchExpression == null)
                 throw new ArgumentNullException(nameof(matchExpression));
+            // Step 3: Normalize the original expression ONLY for the Runner (Tier 3 execution)
+            var matchExpressionNormalized = new MatchExpressionNormalizer().Normalize(matchExpression, workflowInstance);
+            var normalizedExpression = matchExpressionNormalized.NormalizedExpression;
 
             // Step 1: Analyze for Tier 1.5 (RAM Filter) directly using the ORIGINAL unnormalized expression
-            var dynamicVisitor = new DynamicMatchVisitor(matchExpression);
+            var dynamicVisitor = new DynamicMatchVisitor(matchExpressionNormalized.NormalizedExpressionTyped);
             dynamicVisitor.Build();
 
             // Step 2: Analyze for Tier 1 (SQL Exact Match Extraction) using the Clean TypedResult
@@ -28,9 +31,7 @@ namespace Workflows.Runner.ExpressionTransformers
                 dynamicVisitor.IsFullMatch && dynamicVisitor.IsExactMatchFullMatch,
                 dynamicVisitor.PotentialExactMatchPairs);
 
-            // Step 3: Normalize the original expression ONLY for the Runner (Tier 3 execution)
-            var matchExpressionNormalizer = new MatchExpressionNormalizer();
-            var normalizedExpression = matchExpressionNormalizer.Normalize(matchExpression, workflowInstance);
+           
 
             // Step 4: Build & Return Result
             return new MatchTransformationResult
