@@ -37,7 +37,7 @@ namespace Workflows.Runner.Pipeline.Processors
             _matchExpressionTransformer = matchExpressionTransformer ?? throw new ArgumentNullException(nameof(matchExpressionTransformer));
 
             // Initialize processors (stateless, can be reused)
-            _signalWaitProcessor = new SignalWaitProcessor(_mapper, _matchExpressionTransformer);
+            _signalWaitProcessor = new SignalWaitProcessor(_mapper);
             _timeWaitProcessor = new TimeWaitProcessor(_mapper);
             _immediateCommandProcessor = new ImmediateCommandProcessor(_commandHandlerFactory);
             _deferredCommandProcessor = new DeferredCommandProcessor(_mapper);

@@ -16,12 +16,10 @@ namespace Workflows.Runner.Pipeline.Processors
     internal class SignalWaitProcessor : WorkflowWaitProcessor
     {
         private readonly Mapper _mapper;
-        private readonly MatchExpressionTransformer _matchExpressionTransformer;
 
-        public SignalWaitProcessor(Mapper mapper, MatchExpressionTransformer matchExpressionTransformer)
+        public SignalWaitProcessor(Mapper mapper)
         {
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
-            _matchExpressionTransformer = matchExpressionTransformer ?? throw new ArgumentNullException(nameof(matchExpressionTransformer));
         }
 
         public override Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
@@ -37,38 +35,6 @@ namespace Workflows.Runner.Pipeline.Processors
             if (signalWaitDto == null)
             {
                 throw new InvalidOperationException("Failed to map SignalWait to SignalWaitDto.");
-            }
-
-            // Extract and transform MatchExpression structures if present
-            if (signalWait.MatchExpression != null && !string.IsNullOrEmpty(signalWaitDto.TemplateHashKey))
-            {
-                var hashKey = signalWaitDto.TemplateHashKey;
-                if (!Matchers.SignalWaitMatcher.SignalCache.ContainsKey(hashKey))
-                {
-                    var transformResult = _matchExpressionTransformer.Transform(signalWait.MatchExpression, context.WorkflowInstance);
-
-                    Func<object, object, string[]> compiledInstanceExpr = null;
-                    if (transformResult.InstanceExactMatchExpression != null)
-                    {
-                        var compiler = new ExpressionCompiler();
-                        compiledInstanceExpr = compiler.CompiledInstanceExactMatchExpression(transformResult.InstanceExactMatchExpression);
-                    }
-
-                    Func<object, object, object, bool> compiledMatch = null;
-                    if (transformResult.MatchExpression != null)
-                    {
-                        var compiler = new ExpressionCompiler();
-                        compiledMatch = compiler.CompiledMatchExpression(transformResult.MatchExpression);
-                    }
-
-                    var record = new SignalTemplateCacheRecord
-                    {
-                        CompiledMatchDelegate = compiledMatch,
-                        CompiledInstanceExactMatchExpression = compiledInstanceExpr
-                    };
-
-                    Matchers.SignalWaitMatcher.SignalCache.TryAdd(hashKey, record);
-                }
             }
 
             // Save ExplicitState to WorkflowStateObject.WaitStatesObjects

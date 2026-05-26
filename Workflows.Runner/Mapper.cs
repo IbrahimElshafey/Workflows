@@ -147,7 +147,8 @@ namespace Workflows.Runner
             if(signalWait == null)
                 throw new ArgumentNullException(nameof(signalWait));
 
-            var serializedMatch = _expressionSerializer.Serialize(signalWait.MatchExpression);
+            // Always serialize callbacks — they belong to the template regardless of whether
+            // there is a match expression. Doing this here ensures they are available for DB persist.
             var afterMatchAction = _delegateSerializer.Serialize(signalWait.AfterMatchAction);
             var cancelAction = _delegateSerializer.Serialize(signalWait.CancelAction);
 
@@ -157,15 +158,11 @@ namespace Workflows.Runner
 
             if (signalWait.MatchExpression != null)
             {
-                // Generate a robust template hash key using normalized expression tree to avoid collisions
-                var normalizer = new MatchExpressionNormalizer();
-                var normalizedExpr = normalizer.Normalize(signalWait.MatchExpression, signalWait.WorkflowContainer);
-                var expressionStr = normalizedExpr.ToString();
-
                 string hashStr;
                 using (var sha256 = System.Security.Cryptography.SHA256.Create())
                 {
-                    var hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(expressionStr));
+                    var uinqueExpressionPart = $"{signalWait.MatchExpressionAsText}{signalWait.CallerName}";
+                    var hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(uinqueExpressionPart));
                     hashStr = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
                 }
                 templateHashKey = $"{signalWait.SignalIdentifier}:{hashStr}";
@@ -178,7 +175,7 @@ namespace Workflows.Runner
                     // Transform expression structure since it is a cache miss
                     transformResult = _matchExpressionTransformer.Transform(signalWait.MatchExpression, signalWait.WorkflowContainer);
 
-                    // Save template to SQLite DB cache
+                    // Save template to SQLite DB cache (expressions + callbacks)
                     if (_templateRepository != null)
                     {
                         var templateDto = new TemplateCacheRecordDto
@@ -191,7 +188,9 @@ namespace Workflows.Runner
                             InstanceExactMatchExpressionJson = (transformResult.SignalExactMatchPaths == null || transformResult.SignalExactMatchPaths.Count == 0)
                                  ? null
                                  : (transformResult.InstanceExactMatchExpression != null ? _expressionSerializer.Serialize(transformResult.InstanceExactMatchExpression) as string : null),
-                            NormalizedMatchExpressionJson = transformResult.MatchExpression != null ? _expressionSerializer.Serialize(transformResult.MatchExpression) as string : null
+                            NormalizedMatchExpressionJson = transformResult.MatchExpression != null ? _expressionSerializer.Serialize(transformResult.MatchExpression) as string : null,
+                            AfterMatchAction = afterMatchAction,
+                            CancelAction = cancelAction
                         };
                         _templateRepository.SaveTemplate(templateDto);
                     }
@@ -202,36 +201,19 @@ namespace Workflows.Runner
                 templateHashKey = $"{signalWait.SignalIdentifier}:";
             }
 
+
+            // Build DTO — instance-specific data including callbacks.
+            // Template-level data (expressions, match paths) is in the template cache.
             var dto = new SignalWaitDto
             {
                 SignalIdentifier = signalWait.SignalIdentifier,
-                MatchExpression = serializedMatch,
-                MatchExpressionAsText = signalWait.MatchExpressionAsText,
+                TemplateHashKey = templateHashKey,
                 AfterMatchAction = afterMatchAction,
                 CancelAction = cancelAction,
                 CancelTokens = signalWait.CancelTokens,
-                TemplateHashKey = templateHashKey
             };
 
-            if (dbCached != null)
-            {
-                dto.SignalExactMatchPaths = System.Text.Json.JsonSerializer.Deserialize<List<string>>(dbCached.SignalExactMatchPathsJson) ?? new List<string>();
-                dto.IsExactMatchFullMatch = dbCached.IsExactMatchFullMatch;
-                dto.IsGenericMatchFullMatch = dbCached.IsGenericMatchFullMatch;
-                dto.GenericMatchExpression = dbCached.GenericMatchExpressionJson;
-            }
-            else
-            {
-                dto.SignalExactMatchPaths = transformResult?.SignalExactMatchPaths ?? new List<string>();
-                dto.IsExactMatchFullMatch = transformResult?.IsExactMatchFullMatch ?? false;
-                dto.IsGenericMatchFullMatch = transformResult?.IsGenericMatchFullMatch ?? false;
-
-                if (transformResult?.GenericMatchExpression != null)
-                {
-                    dto.GenericMatchExpression = _expressionSerializer.Serialize(transformResult.GenericMatchExpression) as string;
-                }
-            }
-
+            // Compute instance-specific ExactMatchPart (evaluated against current workflow state)
             LambdaExpression? instanceExactMatchExpr = null;
             if (dbCached != null)
             {
@@ -258,49 +240,73 @@ namespace Workflows.Runner
                 }
             }
 
-            // Also populate in-memory SignalCache if missing
-            if (signalWait.MatchExpression != null && !string.IsNullOrEmpty(templateHashKey) && !Pipeline.Matchers.SignalWaitMatcher.SignalCache.ContainsKey(templateHashKey))
+            // Populate in-memory SignalCache (expressions + callbacks) for this templateHashKey.
+            // This runs for ALL signals — even those without a MatchExpression — so that
+            // AfterMatchAction callbacks are always available to SignalWaitMatcher.
+            if (!string.IsNullOrEmpty(templateHashKey))
             {
                 LambdaExpression? normalizedExprToCache = null;
                 LambdaExpression? instanceExprToCache = null;
 
-                if (dbCached != null)
+                if (signalWait.MatchExpression != null)
                 {
-                    if (dbCached.NormalizedMatchExpressionJson != null)
+                    if (dbCached != null)
                     {
-                        normalizedExprToCache = _expressionSerializer.Deserialize(dbCached.NormalizedMatchExpressionJson);
+                        if (dbCached.NormalizedMatchExpressionJson != null)
+                        {
+                            normalizedExprToCache = _expressionSerializer.Deserialize(dbCached.NormalizedMatchExpressionJson);
+                        }
+                        if (dbCached.InstanceExactMatchExpressionJson != null)
+                        {
+                            instanceExprToCache = _expressionSerializer.Deserialize(dbCached.InstanceExactMatchExpressionJson);
+                        }
                     }
-                    if (dbCached.InstanceExactMatchExpressionJson != null)
+                    else
                     {
-                        instanceExprToCache = _expressionSerializer.Deserialize(dbCached.InstanceExactMatchExpressionJson);
+                        normalizedExprToCache = transformResult?.MatchExpression;
+                        instanceExprToCache = (transformResult?.SignalExactMatchPaths == null || transformResult.SignalExactMatchPaths.Count == 0)
+                            ? null
+                            : transformResult?.InstanceExactMatchExpression;
                     }
                 }
-                else
-                {
-                    normalizedExprToCache = transformResult?.MatchExpression;
-                    instanceExprToCache = (transformResult?.SignalExactMatchPaths == null || transformResult.SignalExactMatchPaths.Count == 0)
-                        ? null
-                        : transformResult?.InstanceExactMatchExpression;
-                }
+
+                // Resolve the serialized afterMatchAction for the cache record
+                var serializedAfterMatch = dbCached?.AfterMatchAction ?? afterMatchAction;
+
+                Func<object, object, object, bool>? compiledDelegate = null;
+                Func<object, object, string[]>? compiledInstanceExpr = null;
 
                 if (normalizedExprToCache != null)
                 {
                     var compiler = new ExpressionCompiler();
-                    var compiled = compiler.CompiledMatchExpression(normalizedExprToCache);
-                    Func<object, object, string[]>? compiledInstanceExpr = null;
+                    compiledDelegate = compiler.CompiledMatchExpression(normalizedExprToCache);
                     if (instanceExprToCache != null)
                     {
                         compiledInstanceExpr = compiler.CompiledInstanceExactMatchExpression(instanceExprToCache);
                     }
+                }
 
-                    var record = new Cache.SignalTemplateCacheRecord
-                    {
-                        CompiledMatchDelegate = compiled,
-                        CompiledInstanceExactMatchExpression = compiledInstanceExpr
-                    };
-                    Pipeline.Matchers.SignalWaitMatcher.SignalCache.TryAdd(templateHashKey, record);
+                var record = Pipeline.Matchers.SignalWaitMatcher.SignalCache.GetOrAdd(templateHashKey, _ => new Cache.SignalTemplateCacheRecord
+                {
+                    CompiledMatchDelegate = compiledDelegate,
+                    CompiledInstanceExactMatchExpression = compiledInstanceExpr,
+                    AfterMatchAction = serializedAfterMatch
+                });
+
+                // Always keep AfterMatchAction up to date in case the record was created without it
+                if (record.AfterMatchAction == null && serializedAfterMatch != null)
+                {
+                    record.AfterMatchAction = serializedAfterMatch;
+                }
+                // Ensure compiled delegates are set if the record was created without them
+                if (record.CompiledMatchDelegate == null && compiledDelegate != null)
+                {
+                    record.CompiledMatchDelegate = compiledDelegate;
+                    record.CompiledInstanceExactMatchExpression = compiledInstanceExpr;
                 }
             }
+
+
 
             CopyBase(signalWait, dto);
             return dto;

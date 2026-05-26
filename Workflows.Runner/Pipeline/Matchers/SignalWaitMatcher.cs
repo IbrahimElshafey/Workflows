@@ -92,11 +92,13 @@ namespace Workflows.Runner.Pipeline.Matchers
                 }
             }
 
-            // Execute AfterMatchAction if present
-            if (!string.IsNullOrWhiteSpace(signalWaitDto.AfterMatchAction))
+            // Execute AfterMatchAction — stored on the DTO (instance-specific, captures closure state)
+            var afterMatchAction = signalWaitDto.AfterMatchAction;
+            if (!string.IsNullOrWhiteSpace(afterMatchAction))
             {
-                ExecuteAfterMatchAction(signalWaitDto.AfterMatchAction, signal.Data, explicitState);
+                ExecuteAfterMatchAction(afterMatchAction, signal.Data, explicitState);
             }
+
 
             // Mark this wait as completed
             signalWaitDto.Status = WaitStatus.Completed;
@@ -144,33 +146,33 @@ namespace Workflows.Runner.Pipeline.Matchers
                     }
                 }
 
-                if (dto.MatchExpression != null)
+                // No template found in DB or memory cache — expression unavailable.
+                // This should not happen in normal operation; the Mapper always populates the cache first.
+            }
+
+            return null;
+        }
+
+        private string? GetAfterMatchAction(string? hashKey)
+        {
+            if (string.IsNullOrEmpty(hashKey)) return null;
+
+            // Check in-memory cache first
+            if (SignalCache.TryGetValue(hashKey, out var cached) && cached?.AfterMatchAction != null)
+            {
+                return cached.AfterMatchAction;
+            }
+
+            // Fall back to DB template
+            if (_templateRepository != null)
+            {
+                var dbTemplate = _templateRepository.GetTemplate(hashKey);
+                if (dbTemplate?.AfterMatchAction != null)
                 {
-                    var matchExpr = _expressionSerializer.Deserialize(dto.MatchExpression);
-                    var compiler = new ExpressionCompiler();
-                    Func<object, object, object, bool> compiled;
-                    Func<object, object, string[]>? compiledInstanceExpr = null;
-
-                    if (matchExpr is Expression<Func<object, object, object, bool>> normalizedExpr)
-                    {
-                        compiled = compiler.CompiledMatchExpression(normalizedExpr);
-                    }
-                    else
-                    {
-                        var transformResult = _matchExpressionTransformer.Transform(matchExpr, _context.WorkflowInstance);
-                        compiled = compiler.CompiledMatchExpression(transformResult.MatchExpression);
-
-                        if (transformResult.InstanceExactMatchExpression != null)
-                        {
-                            compiledInstanceExpr = compiler.CompiledInstanceExactMatchExpression(transformResult.InstanceExactMatchExpression);
-                        }
-                    }
-
+                    // Warm the memory cache entry
                     var record = SignalCache.GetOrAdd(hashKey, _ => new SignalTemplateCacheRecord());
-                    record.CompiledMatchDelegate = compiled;
-                    record.CompiledInstanceExactMatchExpression = compiledInstanceExpr;
-
-                    return compiled;
+                    record.AfterMatchAction = dbTemplate.AfterMatchAction;
+                    return dbTemplate.AfterMatchAction;
                 }
             }
 
