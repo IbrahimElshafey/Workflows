@@ -3,61 +3,42 @@ using System.Collections.Generic;
 namespace Workflows.Abstraction.DTOs.Waits
 {
     /// <summary>
-    /// DTO for SignalWait that stores signal matching and callback configuration.
+    /// DTO for SignalWait that stores only instance-specific signal data.
+    /// Template-level data (expressions, match paths, flags) is stored separately
+    /// in the template cache and referenced via TemplateHashKey.
     /// Inherits from WaitInfrastructureDto to maintain compatibility with persistence infrastructure.
     /// </summary>
     public class SignalWaitDto : WaitInfrastructureDto
     {
-        /// <summary>
-        /// Serialized match expression for filtering incoming signals.
-        /// </summary>
-        public object MatchExpression { get; set; }
-        public object MatchExpressionAsText { get; set; }
-
-        /// <summary>
-        /// Hash of the match expression for optimization and deduplication.
-        /// </summary>
-        public string? TemplateHashKey { get; set; }
-
-        /// <summary>
-        /// Match expression rewritten against generic object (e.g., JObject).
-        /// </summary>
-        public string GenericMatchExpression { get; set; }
-
-        /// <summary>
-        /// Whether the generic match expression covers the full match.
-        /// </summary>
-        public bool IsGenericMatchFullMatch { get; internal set; }
-
-        /// <summary>
-        /// Serialized callback to execute after successful match.
-        /// </summary>
-        public string AfterMatchAction { get; set; }
-
-        /// <summary>
-        /// Serialized callback to execute if this wait is cancelled.
-        /// </summary>
-        public string CancelAction { get; set; }
-
         /// <summary>
         /// Unique identifier for the signal being awaited.
         /// </summary>
         public string SignalIdentifier { get; set; }
 
         /// <summary>
-        /// Exact match part of the filter expression.
+        /// Hash key referencing the match expression template in the template cache.
+        /// Used to look up expressions and exact-match metadata without
+        /// re-serializing them on every wait instance.
+        /// </summary>
+        public string? TemplateHashKey { get; set; }
+
+        /// <summary>
+        /// Instance-specific exact match part — the evaluated key/value pairs extracted
+        /// from the current workflow state at mapping time. Used for fast DB-level filtering.
         /// </summary>
         public string ExactMatchPart { get; internal set; }
 
         /// <summary>
-        /// Whether the exact match covers the full match.
+        /// Serialized callback to execute after successful match.
+        /// Instance-specific because the delegate captures per-instance closure state.
         /// </summary>
-        public bool IsExactMatchFullMatch { get; internal set; }
+        public string AfterMatchAction { get; set; }
 
         /// <summary>
-        /// Paths used for exact matching against signal properties.
+        /// Serialized callback to execute if this wait is cancelled.
+        /// Instance-specific because the delegate captures per-instance closure state.
         /// </summary>
-        public List<string> SignalExactMatchPaths { get; internal set; }
+        public string CancelAction { get; set; }
 
         /// <summary>
         /// Indicates if this is a first wait used for auto-instantiation.

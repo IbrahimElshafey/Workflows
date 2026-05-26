@@ -18,5 +18,17 @@ namespace Workflows.Abstraction.Persistence
         public string? GenericMatchExpressionJson { get; set; }
         public string? InstanceExactMatchExpressionJson { get; set; }
         public string? NormalizedMatchExpressionJson { get; set; }
+
+        /// <summary>
+        /// Serialized callback to execute after successful match.
+        /// Stored in the template because it is the same for all waits sharing this expression.
+        /// </summary>
+        public string? AfterMatchAction { get; set; }
+
+        /// <summary>
+        /// Serialized callback to execute if this wait is cancelled.
+        /// Stored in the template because it is the same for all waits sharing this expression.
+        /// </summary>
+        public string? CancelAction { get; set; }
     }
 }
