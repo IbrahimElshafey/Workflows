@@ -31,7 +31,6 @@ namespace Workflows.Runner
         public WorkflowBuilder(JSchemaGenerator schemaGenerator)
         {
             _schemaGenerator = schemaGenerator;
-            global::Workflows.Abstraction.Runner.WorkflowRegistryLocator.Current = this;
         }
 
         public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine)> Workflows => _workflows;
@@ -136,6 +135,7 @@ namespace Workflows.Runner
 
             // 4. Correctly assign the container type AND the extracted state machine type
             _workflows[name] = (workflowType, stateMachineType);
+            global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows[name] = (workflowType, stateMachineType);
 
             registrationPackage.Workflows.Add(new WorkflowDefinition
             {

@@ -46,8 +46,7 @@ namespace Workflows.Shared.Serialization
             {
                 if (!string.IsNullOrEmpty(stateObj.WorkflowType))
                 {
-                    var registry = WorkflowRegistryLocator.Current;
-                    if (registry != null && registry.Workflows.TryGetValue(stateObj.WorkflowType, out var tuple))
+                    if (global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows.TryGetValue(stateObj.WorkflowType, out var tuple))
                     {
                         containerType = tuple.WorkflowContainer;
                     }
@@ -87,12 +86,11 @@ namespace Workflows.Shared.Serialization
                     if (prop.Name == "root")
                     {
                         Type? stateMachineType = null;
-                        var registry = WorkflowRegistryLocator.Current;
                         if (!string.IsNullOrEmpty(stateObj.WorkflowType))
                         {
                             if (string.IsNullOrEmpty(stateObj.SubWorkflowMethod))
                             {
-                                if (registry != null && registry.Workflows.TryGetValue(stateObj.WorkflowType, out var tuple))
+                                if (global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows.TryGetValue(stateObj.WorkflowType, out var tuple))
                                 {
                                     stateMachineType = tuple.WorkflowStateMachine;
                                 }
@@ -101,7 +99,7 @@ namespace Workflows.Shared.Serialization
                             {
                                 // Resolve sub-workflow method
                                 MethodInfo? methodInfo = null;
-                                if (registry != null && registry.Workflows.TryGetValue(stateObj.WorkflowType, out var tuple))
+                                if (global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows.TryGetValue(stateObj.WorkflowType, out var tuple))
                                 {
                                     methodInfo = tuple.WorkflowContainer.GetMethod(
                                         stateObj.SubWorkflowMethod,

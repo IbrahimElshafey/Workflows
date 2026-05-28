@@ -157,42 +157,7 @@ namespace Workflows.Runner.Pipeline.Matchers
                 {
                     var method = Helpers.MethodResolver.ResolveMethod(path);
                     if (method == null) return null;
-
-                    var instanceParam = Expression.Parameter(typeof(object), "instance");
-                    var resultParam = Expression.Parameter(typeof(object), "result");
-                    var stateParam = Expression.Parameter(typeof(object), "state");
-
-                    var parameters = method.GetParameters();
-                    Expression call;
-
-                    var targetExpr = method.IsStatic ? null : Expression.Convert(instanceParam, method.DeclaringType);
-
-                    if (parameters.Length == 0)
-                    {
-                        call = Expression.Call(targetExpr, method);
-                    }
-                    else if (parameters.Length == 1)
-                    {
-                        call = Expression.Call(targetExpr, method, Expression.Convert(resultParam, parameters[0].ParameterType));
-                    }
-                    else if (parameters.Length == 2)
-                    {
-                        var convertStateMethod = typeof(StateConverter).GetMethod(
-                            nameof(StateConverter.ConvertState),
-                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                        call = Expression.Call(targetExpr, method,
-                            Expression.Convert(resultParam, parameters[0].ParameterType),
-                            Expression.Convert(
-                                Expression.Call(convertStateMethod!, stateParam, Expression.Constant(parameters[1].ParameterType)),
-                                parameters[1].ParameterType));
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Unsupported OnResultAction method signature: {method}");
-                    }
-
-                    var lambda = Expression.Lambda<Action<object, object, object>>(call, instanceParam, resultParam, stateParam);
-                    return lambda.CompileFast();
+                    return Helpers.MethodResolver.BuildMethodInvoker(method);
                 });
 
                 action?.Invoke(_context.WorkflowInstance, result, explicitState);

@@ -259,7 +259,7 @@ namespace Workflows.Runner.Pipeline.Matchers
                 {
                     var method = Helpers.MethodResolver.ResolveMethod(path);
                     if (method == null) return null;
-                    return BuildMethodInvoker(method);
+                    return Helpers.MethodResolver.BuildMethodInvoker(method);
                 });
 
                 action?.Invoke(_context.WorkflowInstance, signalData, explicitState);
@@ -356,43 +356,6 @@ namespace Workflows.Runner.Pipeline.Matchers
                              .CompileFast();
         }
 
-        /// <summary>Builds an <c>Action&lt;object,object,object&gt;</c> invoker from a <see cref="System.Reflection.MethodInfo"/> (legacy path).</summary>
-        private static Action<object, object, object> BuildMethodInvoker(System.Reflection.MethodInfo method)
-        {
-            var instanceParam = Expression.Parameter(typeof(object), "instance");
-            var signalParam   = Expression.Parameter(typeof(object), "signal");
-            var stateParam    = Expression.Parameter(typeof(object), "state");
 
-            var parameters = method.GetParameters();
-            Expression? targetExpr = method.IsStatic ? null : Expression.Convert(instanceParam, method.DeclaringType!);
-
-            Expression call;
-            if (parameters.Length == 0)
-            {
-                call = Expression.Call(targetExpr, method);
-            }
-            else if (parameters.Length == 1)
-            {
-                call = Expression.Call(targetExpr, method, Expression.Convert(signalParam, parameters[0].ParameterType));
-            }
-            else if (parameters.Length == 2)
-            {
-                var convertStateMethod = typeof(StateConverter).GetMethod(
-                    nameof(StateConverter.ConvertState),
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                call = Expression.Call(targetExpr, method,
-                    Expression.Convert(signalParam, parameters[0].ParameterType),
-                    Expression.Convert(
-                        Expression.Call(convertStateMethod!, stateParam, Expression.Constant(parameters[1].ParameterType)),
-                        parameters[1].ParameterType));
-            }
-            else
-            {
-                throw new InvalidOperationException($"Unsupported AfterMatchAction method signature: {method}");
-            }
-
-            return Expression.Lambda<Action<object, object, object>>(call, instanceParam, signalParam, stateParam)
-                             .CompileFast();
-        }
     }
 }

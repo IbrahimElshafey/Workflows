@@ -1,9 +1,11 @@
 # Feature Gap Analysis: Planned vs. Unimplemented & Unplanned Must-Haves
 
-1. I want serialization to skip default values and `Array.Empty` instances to not show in JSON output.
 6. If `IsGenericMatchFullMatch == true` or `IsExactMatchFullMatch == true`, the orchestrator should also evaluate the parent group match when its type is `WaitAll`. It should also change the wait status to `Matched`.
 * Review method `FindInstancesWaitingForSignalAsync`
 * Link standard logs that happen when a specific workflow instance runs to this specific workflow instance.
+* **Workflow Attribute Validation**: Ensure every workflow container has a `[Workflow(Name = "...", Version = "...")]` attribute to prevent configuration mismatch at runtime.
+To test:
+*  We only serialize state machine genrated class public fields except <>1__state, <>2__curren and <>4__this
 * A signal should not trigger multiple workflow instances of the same type simultaneously. However, if the first selected instance returns Unmatched after the runner completes the full evaluation, the system should sequentially evaluate the next candidate instance, and continue this process until a match is found or no instances remain.
 
 ---

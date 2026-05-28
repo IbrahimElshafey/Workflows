@@ -23,15 +23,20 @@
     <None Include="$(MSBuildThisFileDirectory)Development\Reflection Bottleneck Fix.md" />
     <None Include="$(MSBuildThisFileDirectory)Development\State Management Implementation.md" />
     <None Include="$(MSBuildThisFileDirectory)Development\Workflow DTO Refactoring.md" />
-    <None Include="$(MSBuildThisFileDirectory)Roadmap\Deterministic Callback Registry to Eliminate.md" />
+    <None Include="$(MSBuildThisFileDirectory)Archive\Deterministic Callback Registry to Eliminate.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Proactive Look-Ahead Timer Checking.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Engine_Performance_&amp;_Scaling.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Feature_Gap_Analysis.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\UI_Administration_Features.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Upcoming_Implementation_Tasks.md" />
     <None Include="$(MSBuildThisFileDirectory)Archive\Versioning-old.md" />
-    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning - How to implement.md" />
-    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning.md" />
+    <None Include="$(MSBuildThisFileDirectory)Archive\Versioning - How to implement.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Summary.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Workflow Logic.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Workflows_Versioning_Design.docx" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\" />
   </ItemGroup>
 </Project>

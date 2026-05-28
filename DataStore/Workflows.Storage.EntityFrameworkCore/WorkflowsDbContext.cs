@@ -29,14 +29,6 @@ namespace Workflows.Storage.EntityFrameworkCore
 
         public WorkflowsDbContext(DbContextOptions<WorkflowsDbContext> options, IServiceProvider? serviceProvider) : base(options)
         {
-            if (serviceProvider != null)
-            {
-                var registry = (Workflows.Abstraction.Runner.IWorkflowRegistry?)serviceProvider.GetService(typeof(Workflows.Abstraction.Runner.IWorkflowRegistry));
-                if (registry != null)
-                {
-                    Workflows.Abstraction.Runner.WorkflowRegistryLocator.Current = registry;
-                }
-            }
         }
 
         internal static readonly JsonSerializerSettings PolymorphicSerializerSettings = new JsonSerializerSettings

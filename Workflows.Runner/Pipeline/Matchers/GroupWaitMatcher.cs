@@ -162,6 +162,33 @@ namespace Workflows.Runner.Pipeline.Matchers
 
                 var parameters = method.GetParameters();
                 
+                var declaringType = method.DeclaringType;
+                if (target == null && !method.IsStatic && declaringType != null && !typeof(WorkflowContainer).IsAssignableFrom(declaringType))
+                {
+                    return (instance, state) =>
+                    {
+                        var targetObj = System.Runtime.Serialization.FormatterServices.GetUninitializedObject(declaringType);
+                        var containerField = System.Attribute.IsDefined(declaringType, typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute))
+                            || declaringType.Name.Contains("<")
+                            ? System.Linq.Enumerable.FirstOrDefault(declaringType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance),
+                                f => typeof(WorkflowContainer).IsAssignableFrom(f.FieldType))
+                            : null;
+
+                        if (containerField != null)
+                        {
+                            containerField.SetValue(targetObj, instance);
+                        }
+
+                        var args = new object[parameters.Length];
+                        if (parameters.Length > 0)
+                        {
+                            args[0] = StateConverter.ConvertState(state, parameters[0].ParameterType);
+                        }
+
+                        return (bool)method.Invoke(targetObj, args)!;
+                    };
+                }
+
                 Expression targetExpr;
                 if (method.IsStatic)
                 {

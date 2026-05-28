@@ -1,0 +1,11 @@
+using System;
+using System.Collections.Concurrent;
+
+namespace Workflows.Definition.Registration
+{
+    public static class WorkflowDefinitionRegistry
+    {
+        // Key => Workflow Name, Value => (WorkflowContainer Type, StateMachine Type)
+        public static ConcurrentDictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine)> Workflows { get; } = new();
+    }
+}
