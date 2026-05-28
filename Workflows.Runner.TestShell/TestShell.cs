@@ -84,6 +84,13 @@ namespace Workflows.TestShell
             });
         }
 
+        public WorkflowTestShell RegisterWorkflow<TWorkflow>() where TWorkflow : WorkflowContainer
+        {
+            var builder = _serviceProvider.GetRequiredService<IWorkflowBuilder>();
+            builder.RegisterWorkflow<TWorkflow>();
+            return this;
+        }
+
         public WorkflowTestShell RegisterWorkflow<TWorkflow>(string name, string version) where TWorkflow : WorkflowContainer
         {
             var builder = _serviceProvider.GetRequiredService<IWorkflowBuilder>();

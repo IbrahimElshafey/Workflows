@@ -82,6 +82,16 @@ namespace Workflows.Runner
             return this;
         }
 
+        public IWorkflowBuilder RegisterWorkflow<WorkflowClass>() where WorkflowClass : WorkflowContainer
+        {
+            var attribute = typeof(WorkflowClass).GetCustomAttribute<WorkflowAttribute>();
+            if (attribute == null)
+            {
+                throw new InvalidOperationException($"The workflow class '{typeof(WorkflowClass).Name}' is not decorated with [WorkflowAttribute]. Please provide name and version explicitly or add the attribute.");
+            }
+            return RegisterWorkflow<WorkflowClass>(attribute.Name, attribute.Version);
+        }
+
         public IWorkflowBuilder RegisterWorkflow<WorkflowClass>(string name, string version) where WorkflowClass : WorkflowContainer
         {
             Type workflowType = typeof(WorkflowClass);

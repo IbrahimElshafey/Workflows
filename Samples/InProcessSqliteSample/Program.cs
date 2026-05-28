@@ -34,13 +34,7 @@ namespace InProcessSqliteSample
         public static async Task Main(string[] args)
         {
             Console.Title = "Workflows In-Process SQLite Sample Console";
-
-            // SQLite database filename — stored in a persistent folder outside the build output
-            var dbFolder = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "InProcessSqliteSample");
-            Directory.CreateDirectory(dbFolder);
-            var dbPath = Path.Combine(dbFolder, "sample_workflows.db");
+            var dbPath = ".\\sample_workflows.db";
 
             Console.WriteLine("==================================================================");
             Console.WriteLine("       Workflows Engine - In-Process SQLite Interactive Sample     ");
@@ -99,8 +93,8 @@ namespace InProcessSqliteSample
             {
                 var builder = scope.ServiceProvider.GetRequiredService<IWorkflowBuilder>();
 
-                // Register our OrderProcessingWorkflow
-                builder.RegisterWorkflow<OrderProcessingWorkflow>("OrderWorkflow", "1.0");
+                // Register our OrderProcessingWorkflow using WorkflowAttribute
+                builder.RegisterWorkflow<OrderProcessingWorkflow>();
 
                 // Register signals used in OrderProcessingWorkflow:
                 //   - OrderReceived: GENERIC first wait (no MatchIf — any instance accepts it)

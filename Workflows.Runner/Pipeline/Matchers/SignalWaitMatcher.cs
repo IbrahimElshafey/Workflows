@@ -253,7 +253,7 @@ namespace Workflows.Runner.Pipeline.Matchers
             // Fallback: the process restarted and the in-memory CallbackRegistry is empty.
             // Look up the mapping in the SQLite template repository.
             var methodPath = GetAfterMatchAction(templateHashKey);
-            if (!string.IsNullOrWhiteSpace(methodPath))
+            if (!string.IsNullOrWhiteSpace(methodPath) && methodPath.Contains("."))
             {
                 var action = _compiledActions.GetOrAdd(methodPath, path =>
                 {

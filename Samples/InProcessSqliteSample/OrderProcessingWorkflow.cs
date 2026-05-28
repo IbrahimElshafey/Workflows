@@ -9,6 +9,7 @@ namespace InProcessSqliteSample
     // Workflow Definition
     // ---------------------------------------------------------
 
+    [Workflow("OrderWorkflow", "1.0")]
     public sealed class OrderProcessingWorkflow : WorkflowContainer
     {
         // Domain state — populated by the first generic signal, NOT from StartWorkflowAsync input.

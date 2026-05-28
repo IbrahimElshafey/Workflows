@@ -306,7 +306,7 @@ namespace Workflows.Runner
                                  ? null
                                  : (transformResult.InstanceExactMatchExpression != null ? _expressionSerializer.Serialize(transformResult.InstanceExactMatchExpression) as string : null),
                             NormalizedMatchExpressionJson = transformResult.MatchExpression != null ? _expressionSerializer.Serialize(transformResult.MatchExpression) as string : null,
-                            AfterMatchAction = GetFullMethodName(signalWait.AfterMatchAction),
+                            AfterMatchAction = templateHashKey,
                             CancelAction = null
                         };
                         _templateRepository.SaveTemplate(templateDto);
@@ -321,7 +321,7 @@ namespace Workflows.Runner
                     var templateDto = new TemplateCacheRecordDto
                     {
                         TemplateHashKey = templateHashKey,
-                        AfterMatchAction = GetFullMethodName(signalWait.AfterMatchAction),
+                        AfterMatchAction = templateHashKey,
                         CancelAction = null
                     };
                     _templateRepository.SaveTemplate(templateDto);

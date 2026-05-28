@@ -11,6 +11,8 @@ namespace Workflows.Definition.Registration
             string name,
             string version) where WorkflowClass : WorkflowContainer;
 
+        IWorkflowBuilder RegisterWorkflow<WorkflowClass>() where WorkflowClass : WorkflowContainer;
+
         IWorkflowBuilder RegisterSignal<TSignal>(string signalIdentifier);
 
         IWorkflowBuilder RegisterCommand<TCommand, TResult>(string commandIdentifier, TimeSpan timeout = default, CommandExecutionMode mode = CommandExecutionMode.Immediate);
