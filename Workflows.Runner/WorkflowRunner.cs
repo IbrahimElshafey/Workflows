@@ -91,7 +91,7 @@ namespace Workflows.Runner
                 return new AsyncResult(
                     Guid.NewGuid(),
                     null,
-                    "Rejected",
+                    "Unmatched",
                     "Matching failed or partial match.",
                     DateTime.UtcNow);
             }

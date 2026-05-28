@@ -381,6 +381,70 @@ namespace Workflows.Runner.Tests
 
             connection.Close();
         }
+
+        [Fact]
+        public async Task ProcessSignal_WithMultipleCandidateInstances_ShouldEvaluateSequentially_AndStopOnFirstMatch()
+        {
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            using var provider = CreateServiceProvider(dbName, out var connection);
+            
+            // Register workflow
+            var registry = provider.GetRequiredService<IWorkflowBuilder>();
+            registry.RegisterWorkflow<DynamicThresholdWorkflow>("ThresholdWorkflow", "1.0");
+            registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
+
+            var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
+            var package = (BulkRegistrationPackage)packageField!.GetValue(registry)!;
+
+            using (var scope = provider.CreateScope())
+            {
+                var defRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
+                await defRepo.SyncDefinitionsAsync(package);
+            }
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+            var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+
+            // Start Instance 1 (high threshold = 1000)
+            var id1 = await orchestrator.StartWorkflowAsync("ThresholdWorkflow", "1.0", new { Threshold = 1000 });
+            
+            // Start Instance 2 (low threshold = 100)
+            var id2 = await orchestrator.StartWorkflowAsync("ThresholdWorkflow", "1.0", new { Threshold = 100 });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Act - Send signal (Amount = 500)
+            // Amount = 500 <= 1000 (Instance 1 mismatch)
+            // Amount = 500 > 100   (Instance 2 match)
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "OrderReceived",
+                Data = new OrderReceivedSignal { OrderId = "ORD-SEQ-TEST", Amount = 500 }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Assert
+            // Instance 1 should still be running (did not match)
+            var state1 = await workflowStore.GetInstanceStateAsync(id1);
+            state1.Should().NotBeNull();
+            state1!.Status.Should().Be(WorkflowInstanceStatus.Running);
+            var instance1 = state1.StateObject.Instance as DynamicThresholdWorkflow;
+            instance1.Should().NotBeNull();
+            instance1!.Completed.Should().BeFalse();
+
+            // Instance 2 should be completed (matched)
+            var state2 = await workflowStore.GetInstanceStateAsync(id2);
+            state2.Should().NotBeNull();
+            state2!.Status.Should().Be(WorkflowInstanceStatus.Completed);
+            var instance2 = state2.StateObject.Instance as DynamicThresholdWorkflow;
+            instance2.Should().NotBeNull();
+            instance2!.Completed.Should().BeTrue();
+
+            connection.Close();
+        }
         
     }
 
@@ -409,6 +473,23 @@ namespace Workflows.Runner.Tests
                 .AfterMatch(signal =>
                 {
                     this.ReceivedStatus = signal.Status;
+                    this.Completed = true;
+                });
+        }
+    }
+
+    public sealed class DynamicThresholdWorkflow : WorkflowContainer
+    {
+        public bool Completed { get; set; }
+        public int Threshold { get; set; }
+
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "ThresholdWait")
+                .WithState(Threshold)
+                .MatchIf((signal, limit) => signal.Amount > limit)
+                .AfterMatch(signal =>
+                {
                     this.Completed = true;
                 });
         }

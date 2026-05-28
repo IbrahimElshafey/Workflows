@@ -165,72 +165,102 @@ namespace Workflows.Orchestrator
 
             var signalDataJson = signalDto.Data != null ? Newtonsoft.Json.JsonConvert.SerializeObject(signalDto.Data, new Newtonsoft.Json.Converters.StringEnumConverter()) : string.Empty;
             var instanceIds = await _workflowStore.FindInstancesWaitingForSignalAsync(signalDto.SignalIdentifier, signalDataJson);
+
+            // Group candidate states by WorkflowType to evaluate them sequentially per workflow type
+            var statesByWorkflowType = new Dictionary<string, List<WorkflowStateDto>>();
             foreach (var instanceId in instanceIds)
             {
                 var state = await _workflowStore.GetInstanceStateAsync(instanceId);
                 if (state == null) continue;
 
-                var triggeringWait = WaitFinder.FindWaitingRecordForSignal(state.Waits, signalDto.SignalIdentifier);
-                if (triggeringWait == null) continue;
-
-                if (triggeringWait is SignalWaitDto signalWait && !_signalPreFilter.IsMatch(signalWait, signalDto, state))
+                var wfType = state.WorkflowType ?? string.Empty;
+                if (!statesByWorkflowType.TryGetValue(wfType, out var list))
                 {
-                    continue; // Tier 1.5 filter: Skip invoking runner
+                    list = new List<WorkflowStateDto>();
+                    statesByWorkflowType[wfType] = list;
                 }
+                list.Add(state);
+            }
 
-                var isFirstWait = triggeringWait is SignalWaitDto sw && sw.IsFirstWait;
-
-                WorkflowStateDto runState = state;
-                Guid triggeringWaitId = triggeringWait.Id;
-
-                if (isFirstWait)
+            foreach (var group in statesByWorkflowType)
+            {
+                // Order candidate states so that those waiting on a first wait (templates/prototypes)
+                // are evaluated LAST, allowing existing active instances of the same workflow type
+                // to match and consume the signal first.
+                var sortedStates = group.Value.OrderBy(state =>
                 {
-                    // Clone the immutable state and update all IDs
-                    runState = _workflowCloner.CloneStateWithNewIds(state, out var newTriggeringWaitId, triggeringWait.Id);
-                    triggeringWaitId = newTriggeringWaitId;
-                }
+                    var triggeringWait = WaitFinder.FindWaitingRecordForSignal(state.Waits, signalDto.SignalIdentifier);
+                    return (triggeringWait is SignalWaitDto sw && sw.IsFirstWait) ? 1 : 0;
+                }).ToList();
 
-                var triggeringWaitInRunState = WaitFinder.FindWaitById(runState.Waits, triggeringWaitId);
-                if (triggeringWaitInRunState is SignalWaitDto signalWaitInRunState && !string.IsNullOrEmpty(signalWaitInRunState.TemplateHashKey))
+                foreach (var state in sortedStates)
                 {
-                    var template = _templateRepository?.GetTemplate(signalWaitInRunState.TemplateHashKey);
-                    if (template != null && (template.IsGenericMatchFullMatch || template.IsExactMatchFullMatch))
+                    var triggeringWait = WaitFinder.FindWaitingRecordForSignal(state.Waits, signalDto.SignalIdentifier);
+                    if (triggeringWait == null) continue;
+
+                    if (triggeringWait is SignalWaitDto signalWait && !_signalPreFilter.IsMatch(signalWait, signalDto, state))
                     {
-                        signalWaitInRunState.Status = WaitStatus.Matched;
-                        if (signalWaitInRunState.ParentWaitId.HasValue)
+                        continue; // Tier 1.5 filter: Skip invoking runner
+                    }
+
+                    var isFirstWait = triggeringWait is SignalWaitDto sw && sw.IsFirstWait;
+
+                    WorkflowStateDto runState = state;
+                    Guid triggeringWaitId = triggeringWait.Id;
+
+                    if (isFirstWait)
+                    {
+                        // Clone the immutable state and update all IDs
+                        runState = _workflowCloner.CloneStateWithNewIds(state, out var newTriggeringWaitId, triggeringWait.Id);
+                        triggeringWaitId = newTriggeringWaitId;
+                    }
+
+                    var triggeringWaitInRunState = WaitFinder.FindWaitById(runState.Waits, triggeringWaitId);
+                    if (triggeringWaitInRunState is SignalWaitDto signalWaitInRunState && !string.IsNullOrEmpty(signalWaitInRunState.TemplateHashKey))
+                    {
+                        var template = _templateRepository?.GetTemplate(signalWaitInRunState.TemplateHashKey);
+                        if (template != null && (template.IsGenericMatchFullMatch || template.IsExactMatchFullMatch))
                         {
-                            var parentWait = WaitFinder.FindWaitById(runState.Waits, signalWaitInRunState.ParentWaitId.Value);
-                            if (parentWait is GroupWaitDto parentGroup && parentGroup.WaitType == WaitType.GroupWaitAll)
+                            signalWaitInRunState.Status = WaitStatus.Matched;
+                            if (signalWaitInRunState.ParentWaitId.HasValue)
                             {
-                                bool allCompletedOrMatched = true;
-                                if (parentGroup.ChildWaits != null)
+                                var parentWait = WaitFinder.FindWaitById(runState.Waits, signalWaitInRunState.ParentWaitId.Value);
+                                if (parentWait is GroupWaitDto parentGroup && parentGroup.WaitType == WaitType.GroupWaitAll)
                                 {
-                                    foreach (var child in parentGroup.ChildWaits)
+                                    bool allCompletedOrMatched = true;
+                                    if (parentGroup.ChildWaits != null)
                                     {
-                                        if (child.Status != WaitStatus.Completed && child.Status != WaitStatus.Matched)
+                                        foreach (var child in parentGroup.ChildWaits)
                                         {
-                                            allCompletedOrMatched = false;
-                                            break;
+                                            if (child.Status != WaitStatus.Completed && child.Status != WaitStatus.Matched)
+                                            {
+                                                allCompletedOrMatched = false;
+                                                break;
+                                            }
                                         }
                                     }
-                                }
-                                if (allCompletedOrMatched)
-                                {
-                                    parentGroup.Status = WaitStatus.Matched;
+                                    if (allCompletedOrMatched)
+                                    {
+                                        parentGroup.Status = WaitStatus.Matched;
+                                    }
                                 }
                             }
                         }
                     }
+
+                    var request = new WorkflowExecutionRequest
+                    {
+                        TriggeringWaitId = triggeringWaitId,
+                        WorkflowState = runState,
+                        Signal = signalDto
+                    };
+
+                    var runResult = await _runner.RunWorkflowAsync(request);
+                    if (runResult != null && runResult.Status != "Unmatched")
+                    {
+                        break; // Stop evaluating further candidate instances for this workflow type
+                    }
                 }
-
-                var request = new WorkflowExecutionRequest
-                {
-                    TriggeringWaitId = triggeringWaitId,
-                    WorkflowState = runState,
-                    Signal = signalDto
-                };
-
-                await _runner.RunWorkflowAsync(request);
             }
         }
 
