@@ -54,7 +54,7 @@ namespace Workflows.Runner.Tests
                     Status = 1, // Running
                     WorkflowType = "TestWorkflow",
                     Created = DateTime.UtcNow,
-                    StateObject = new WorkflowStateObject { StateIndex = 0 }
+                    StateObject = new WorkflowStateObject { WorkflowType = "TestWorkflow", StateIndex = 0 }
                 };
                 context.WorkflowInstances.Add(instance);
                 await context.SaveChangesAsync();

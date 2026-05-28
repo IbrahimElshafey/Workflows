@@ -23,20 +23,38 @@ namespace Workflows.Storage.EntityFrameworkCore
         public DbSet<CommandDefinitionEntity> CommandDefinitions { get; set; }
         public DbSet<TemplateCacheEntity> TemplateCache { get; set; }
 
-        public WorkflowsDbContext(DbContextOptions<WorkflowsDbContext> options) : base(options)
+        public WorkflowsDbContext(DbContextOptions<WorkflowsDbContext> options) : this(options, null)
         {
+        }
+
+        public WorkflowsDbContext(DbContextOptions<WorkflowsDbContext> options, IServiceProvider? serviceProvider) : base(options)
+        {
+            if (serviceProvider != null)
+            {
+                var registry = (Workflows.Abstraction.Runner.IWorkflowRegistry?)serviceProvider.GetService(typeof(Workflows.Abstraction.Runner.IWorkflowRegistry));
+                if (registry != null)
+                {
+                    Workflows.Abstraction.Runner.WorkflowRegistryLocator.Current = registry;
+                }
+            }
         }
 
         internal static readonly JsonSerializerSettings PolymorphicSerializerSettings = new JsonSerializerSettings
         {
-            TypeNameHandling = TypeNameHandling.All,
+            TypeNameHandling = TypeNameHandling.None,
             NullValueHandling = NullValueHandling.Ignore,
             Formatting = Formatting.None,
             ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor,
             ObjectCreationHandling = ObjectCreationHandling.Replace,
             ContractResolver = new PrivateSetterContractResolver(),
             PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-            Converters = { new Newtonsoft.Json.Converters.StringEnumConverter(), new ObjectIntConverter() }
+            Converters = { 
+                new Newtonsoft.Json.Converters.StringEnumConverter(), 
+                new ObjectIntConverter(),
+                new Workflows.Shared.Serialization.WaitDtoJsonConverter(),
+                new Workflows.Shared.Serialization.WorkflowStateObjectJsonConverter(),
+                new Workflows.Shared.Serialization.DefinitionWaitJsonConverter()
+            }
         };
 
         private class PrivateSetterContractResolver : Newtonsoft.Json.Serialization.DefaultContractResolver
@@ -117,34 +135,24 @@ namespace Workflows.Storage.EntityFrameworkCore
                 c => JsonConvert.DeserializeObject<List<WaitInfrastructureDto>>(JsonConvert.SerializeObject(c, PolymorphicSerializerSettings), PolymorphicSerializerSettings) ?? new List<WaitInfrastructureDto>()
             );
 
+            var stateObjectComparer = new ValueComparer<WorkflowStateObject>(
+                (c1, c2) => JsonConvert.SerializeObject(c1, PolymorphicSerializerSettings) == JsonConvert.SerializeObject(c2, PolymorphicSerializerSettings),
+                c => c == null ? 0 : JsonConvert.SerializeObject(c, PolymorphicSerializerSettings).GetHashCode(),
+                c => JsonConvert.DeserializeObject<WorkflowStateObject>(JsonConvert.SerializeObject(c, PolymorphicSerializerSettings), PolymorphicSerializerSettings) ?? new WorkflowStateObject()
+            );
+
             // WorkflowInstance configuration
             modelBuilder.Entity<WorkflowInstance>(entity =>
             {
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.ConcurrencyToken).IsConcurrencyToken();
 
-                entity.OwnsOne(x => x.StateObject, cb =>
-                {
-                    cb.ToJson();
-
-                    cb.Property(p => p.Instance)
+                entity.Property(e => e.StateObject)
                       .HasConversion(
                           v => JsonConvert.SerializeObject(v, PolymorphicSerializerSettings),
-                          v => JsonConvert.DeserializeObject(v, PolymorphicSerializerSettings)
+                          v => JsonConvert.DeserializeObject<WorkflowStateObject>(v, PolymorphicSerializerSettings) ?? new WorkflowStateObject(),
+                          stateObjectComparer
                       );
-
-                    cb.Property(p => p.StateMachinesObjects)
-                      .HasConversion(
-                          v => JsonConvert.SerializeObject(v, PolymorphicSerializerSettings),
-                          v => JsonConvert.DeserializeObject<Dictionary<string, object>>(v, PolymorphicSerializerSettings) ?? new Dictionary<string, object>()
-                      );
-
-                    cb.Property(p => p.WaitStatesObjects)
-                      .HasConversion(
-                          v => JsonConvert.SerializeObject(v, PolymorphicSerializerSettings),
-                          v => JsonConvert.DeserializeObject<Dictionary<Guid, object>>(v, PolymorphicSerializerSettings) ?? new Dictionary<Guid, object>()
-                      );
-                });
 
                 entity.Property(e => e.CancellationHistory)
                       .HasConversion(

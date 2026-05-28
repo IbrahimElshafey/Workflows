@@ -81,6 +81,11 @@ namespace Workflows.Orchestrator
             if (obj == null) return default;
             if (obj is JsonElement je) return je;
             if (obj is JsonDocument jd) return jd.RootElement;
+            if (obj is Newtonsoft.Json.Linq.JToken jToken)
+            {
+                var jsonStr = jToken.ToString(Newtonsoft.Json.Formatting.None);
+                return JsonSerializer.Deserialize<JsonElement>(jsonStr, _jsonSerializerOptions);
+            }
             return JsonSerializer.SerializeToElement(obj, _jsonSerializerOptions);
         }
     }

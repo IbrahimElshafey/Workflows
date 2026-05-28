@@ -48,6 +48,8 @@ namespace Workflows.Runner
                 // 5. Build full WorkflowStateObject — copy all existing entries (sub-workflows etc.), update root
                 var newState = new WorkflowStateObject
                 {
+                    WorkflowType = previousState.WorkflowType,
+                    SubWorkflowMethod = previousState.SubWorkflowMethod,
                     StateIndex = newStateObj.StateIndex,
                     Instance = newStateObj.Instance,
                     StateMachinesObjects = new Dictionary<string, object>(previousState.StateMachinesObjects),

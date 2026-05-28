@@ -31,6 +31,7 @@ namespace Workflows.Runner
         public WorkflowBuilder(JSchemaGenerator schemaGenerator)
         {
             _schemaGenerator = schemaGenerator;
+            global::Workflows.Abstraction.Runner.WorkflowRegistryLocator.Current = this;
         }
 
         public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine)> Workflows => _workflows;

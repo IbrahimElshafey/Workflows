@@ -64,7 +64,11 @@ namespace Workflows.Runner.Pipeline
             // Create or reuse workflow instance
             if (state.StateObject == null)
             {
-                state.StateObject = new WorkflowStateObject();
+                state.StateObject = new WorkflowStateObject { WorkflowType = state.WorkflowType };
+            }
+            else
+            {
+                state.StateObject.WorkflowType = state.WorkflowType;
             }
             var workflowInstance = (state.StateObject.Instance as Definition.WorkflowContainer)
                 ?? _hydrator.CreateInstance(workflowTypes.WorkflowContainer);
@@ -287,6 +291,7 @@ namespace Workflows.Runner.Pipeline
                 Status = Abstraction.Enums.WorkflowInstanceStatus.New,
                 StateObject = new WorkflowStateObject
                 {
+                    WorkflowType = workflowName,
                     Instance = workflowInstance,
                     StateIndex = -1,
                     StateMachinesObjects = new Dictionary<string, object>(),

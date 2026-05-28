@@ -9,6 +9,28 @@ namespace Workflows.Shared.Serialization
 {
     public class JsonObjectSerializer : IObjectSerializer
     {
+        private readonly IServiceProvider? _serviceProvider;
+
+        public JsonObjectSerializer() : this(null)
+        {
+        }
+
+        public JsonObjectSerializer(IServiceProvider? serviceProvider)
+        {
+            _serviceProvider = serviceProvider;
+        }
+
+        private void SetRegistryContext()
+        {
+            if (_serviceProvider != null)
+            {
+                var registry = (Workflows.Abstraction.Runner.IWorkflowRegistry?)_serviceProvider.GetService(typeof(Workflows.Abstraction.Runner.IWorkflowRegistry));
+                if (registry != null)
+                {
+                    Workflows.Abstraction.Runner.WorkflowRegistryLocator.Current = registry;
+                }
+            }
+        }
         private static readonly JsonSerializerSettings StandardSettings = new JsonSerializerSettings
         {
             TypeNameHandling = TypeNameHandling.None,
@@ -20,14 +42,20 @@ namespace Workflows.Shared.Serialization
 
         private static readonly JsonSerializerSettings StateSettings = new JsonSerializerSettings
         {
-            TypeNameHandling = TypeNameHandling.All,
+            TypeNameHandling = TypeNameHandling.None,
             NullValueHandling = NullValueHandling.Ignore,
             Formatting = Formatting.None,
             ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor,
             ObjectCreationHandling = ObjectCreationHandling.Replace,
             ContractResolver = new PrivateSetterContractResolver(),
             PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-            Converters = { new Newtonsoft.Json.Converters.StringEnumConverter(), new ObjectIntConverter() }
+            Converters = { 
+                new Newtonsoft.Json.Converters.StringEnumConverter(), 
+                new ObjectIntConverter(),
+                new WaitDtoJsonConverter(),
+                new WorkflowStateObjectJsonConverter(),
+                new DefinitionWaitJsonConverter()
+            }
         };
 
         public class PrivateSetterContractResolver : Newtonsoft.Json.Serialization.DefaultContractResolver
@@ -103,6 +131,7 @@ namespace Workflows.Shared.Serialization
             var serialized = serializedObj as string ?? serializedObj.ToString();
             if (string.IsNullOrEmpty(serialized)) return default;
 
+            SetRegistryContext();
             return JsonConvert.DeserializeObject<T>(serialized, GetSettings(scope));
         }
 
@@ -112,12 +141,14 @@ namespace Workflows.Shared.Serialization
             var serialized = serializedObj as string ?? serializedObj.ToString();
             if (string.IsNullOrEmpty(serialized)) return null;
 
+            SetRegistryContext();
             return JsonConvert.DeserializeObject(serialized, type, GetSettings(scope));
         }
 
         public object Serialize(object obj, SerializationScope scope = SerializationScope.Standard)
         {
             if (obj == null) return null;
+            SetRegistryContext();
             return JsonConvert.SerializeObject(obj, GetSettings(scope));
         }
     }

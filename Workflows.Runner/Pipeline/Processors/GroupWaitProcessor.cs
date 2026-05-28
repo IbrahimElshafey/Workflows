@@ -93,7 +93,11 @@ namespace Workflows.Runner.Pipeline.Processors
                         subWorkflowDto.ChildWaits = new List<WaitInfrastructureDto>();
                         
                         var childKey = subWorkflowDto.StateMachineObjectId.ToString();
-                        var childState = new WorkflowStateObject();
+                        var childState = new WorkflowStateObject
+                        {
+                            WorkflowType = context.WorkflowState.WorkflowType,
+                            SubWorkflowMethod = subWorkflowDto.CallerName
+                        };
                         
                         bool subWorkflowCompleted = false;
                         var subWorkflowStream = subWorkflow.Runner;

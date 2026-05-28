@@ -72,6 +72,10 @@ namespace Workflows.Runner.Tests.Infrastructure
             List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto>? waits = null)
             where TWorkflow : WorkflowContainer
         {
+            if (stateObject != null)
+            {
+                stateObject.WorkflowType ??= workflowType;
+            }
             return new WorkflowExecutionRequest
             {
                 TriggeringWaitId = triggeringWaitId,
@@ -81,6 +85,7 @@ namespace Workflows.Runner.Tests.Infrastructure
                     WorkflowType = workflowType,
                     StateObject = stateObject ?? new WorkflowStateObject
                     {
+                        WorkflowType = workflowType,
                         StateIndex = -1,
                         Instance = Activator.CreateInstance<TWorkflow>(),
                         StateMachinesObjects = new Dictionary<string, object>(),

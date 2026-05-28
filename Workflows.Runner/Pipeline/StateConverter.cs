@@ -12,6 +12,16 @@ namespace Workflows.Runner.Pipeline
             var sourceType = state.GetType();
             if (targetType.IsAssignableFrom(sourceType)) return state;
 
+            if (state is Newtonsoft.Json.Linq.JToken jToken)
+            {
+                return jToken.ToObject(targetType);
+            }
+
+            if (state is System.Collections.IDictionary dict && !typeof(System.Collections.IDictionary).IsAssignableFrom(targetType))
+            {
+                return Newtonsoft.Json.Linq.JObject.FromObject(dict).ToObject(targetType);
+            }
+
             // Handle numeric conversions specifically
             if (IsNumericType(sourceType) && IsNumericType(targetType))
             {

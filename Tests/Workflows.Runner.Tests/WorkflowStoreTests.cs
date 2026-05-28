@@ -332,6 +332,7 @@ namespace Workflows.Runner.Tests
                 Created = DateTime.UtcNow,
                 StateObject = new WorkflowStateObject
                 {
+                    WorkflowType = "TestDeduplicationWorkflow",
                     Instance = instanceData,
                     StateIndex = 0
                 },
@@ -356,6 +357,7 @@ namespace Workflows.Runner.Tests
                 Created = DateTime.UtcNow,
                 StateObject = new WorkflowStateObject
                 {
+                    WorkflowType = "TestDeduplicationWorkflow",
                     Instance = new TestWorkflowInstance { Value = "unique-test-value" },
                     StateIndex = 0
                 },
@@ -389,6 +391,65 @@ namespace Workflows.Runner.Tests
             {
                 var count = await context.WorkflowInstances.CountAsync(w => w.WorkflowType == "TestDeduplicationWorkflow");
                 count.Should().Be(1);
+            }
+        }
+
+        [Fact]
+        public async Task PersistedJson_ShouldHaveZeroTypeProperties()
+        {
+            // Arrange
+            var serializer = new Infrastructure.TestObjectSerializer();
+            var instId = Guid.NewGuid();
+            var instanceData = new TestWorkflowInstance { Value = "type-free-test-value" };
+
+            var state = new WorkflowStateDto
+            {
+                Id = instId,
+                WorkflowType = "TestTypeFreeWorkflow",
+                Status = WorkflowInstanceStatus.Running,
+                Created = DateTime.UtcNow,
+                StateObject = new WorkflowStateObject
+                {
+                    WorkflowType = "TestTypeFreeWorkflow",
+                    Instance = instanceData,
+                    StateIndex = 12
+                },
+                Waits = new List<WaitInfrastructureDto>
+                {
+                    new SignalWaitDto
+                    {
+                        Id = Guid.NewGuid(),
+                        Status = WaitStatus.Waiting,
+                        SignalIdentifier = "TestSignal",
+                        IsPersisted = false
+                    }
+                }
+            };
+
+            using (var context = new WorkflowsDbContext(_options))
+            {
+                var store = new WorkflowStore(context, serializer);
+                await store.SaveContextSyncAsync(state, Enumerable.Empty<Guid>());
+            }
+
+            // Act & Assert: Query db directly to verify no "$type" name handling was stored
+            using (var context = new WorkflowsDbContext(_options))
+            {
+                var dbInstance = await context.WorkflowInstances.FirstOrDefaultAsync(wi => wi.Id == instId);
+                dbInstance.Should().NotBeNull();
+
+                // Serialize the instance from the database using a simple serializer to inspect the raw DB representation
+                var rawStateObjectJson = Newtonsoft.Json.JsonConvert.SerializeObject(dbInstance!.StateObject);
+                var rawWaitsJson = Newtonsoft.Json.JsonConvert.SerializeObject(dbInstance.Waits);
+
+                rawStateObjectJson.Should().NotContain("\"$type\"");
+                rawWaitsJson.Should().NotContain("\"$type\"");
+
+                // Also make sure we can load/deserialize it back successfully
+                var store = new WorkflowStore(context, serializer);
+                var loadedState = await store.GetInstanceStateAsync(instId);
+                loadedState.Should().NotBeNull();
+                loadedState.StateObject.StateIndex.Should().Be(12);
             }
         }
 

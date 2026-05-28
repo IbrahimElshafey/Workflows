@@ -31,7 +31,7 @@ namespace Workflows.Definition
         internal HashSet<string> CancelTokens { get; set; } = new HashSet<string>();
         internal string WaitName { get; set; }
 
-        internal WaitType WaitType { get; set; }
+        public WaitType WaitType { get; set; }
 
         internal string CallerFilePath { get; private set; }
 
@@ -54,6 +54,8 @@ namespace Workflows.Definition
         internal string? CancelActionKey { get; set; }
 
         public WorkflowContainer WorkflowContainer { get; set; }
+
+        public bool ShouldSerializeWorkflowContainer() => false;
 
         public Wait WithState<TState>(TState state)
         {

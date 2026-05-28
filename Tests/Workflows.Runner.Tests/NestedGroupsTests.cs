@@ -25,6 +25,7 @@ namespace Workflows.Runner.Tests
             var workflowInstance = new NestedGroupsTestWorkflow();
             var stateMachine = new WorkflowStateObject
             {
+                WorkflowType = "NestedGroupsTest",
                 StateIndex = -1,
                 Instance = workflowInstance,
                 StateMachinesObjects = new Dictionary<string, object>(),

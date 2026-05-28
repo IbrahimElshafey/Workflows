@@ -100,6 +100,10 @@ namespace Workflows.Runner.Helpers
             var stateFieldsToHydrate = fields.Where(IsLocalField).ToList();
             if (stateFieldsToHydrate.Any())
             {
+                var convertStateMethod = typeof(Workflows.Runner.Pipeline.StateConverter).GetMethod(
+                    nameof(Workflows.Runner.Pipeline.StateConverter.ConvertState),
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
                 var variableAssignments = new List<Expression>();
 
                 foreach (var f in stateFieldsToHydrate)
@@ -109,7 +113,10 @@ namespace Workflows.Runner.Helpers
                     localVariables.Add(outVar);
 
                     var tryGetCall = Expression.Call(stateParam, dictTryGetValueMethod, Expression.Constant(cleanName), outVar);
-                    var assignField = Expression.Assign(Expression.Field(typedEnumerator, f), Expression.Convert(outVar, f.FieldType));
+                    var convertedVal = Expression.Convert(
+                        Expression.Call(convertStateMethod!, outVar, Expression.Constant(f.FieldType)),
+                        f.FieldType);
+                    var assignField = Expression.Assign(Expression.Field(typedEnumerator, f), convertedVal);
 
                     variableAssignments.Add(Expression.IfThen(tryGetCall, assignField));
                 }

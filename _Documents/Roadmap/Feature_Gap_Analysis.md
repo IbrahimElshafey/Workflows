@@ -4,7 +4,8 @@
 6. If `IsGenericMatchFullMatch == true` or `IsExactMatchFullMatch == true`, the orchestrator should also evaluate the parent group match when its type is `WaitAll`. It should also change the wait status to `Matched`.
 * Review method `FindInstancesWaitingForSignalAsync`
 * Link standard logs that happen when a specific workflow instance runs to this specific workflow instance.
-* Signal should not trigger same workflow instance twice
+* A signal should not trigger multiple workflow instances of the same type simultaneously. However, if the first selected instance returns Unmatched after the runner completes the full evaluation, the system should sequentially evaluate the next candidate instance, and continue this process until a match is found or no instances remain.
+
 ---
 
 ## 1. Planned but Unimplemented (or Partially Implemented) Features

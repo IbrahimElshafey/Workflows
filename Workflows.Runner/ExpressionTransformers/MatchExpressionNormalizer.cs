@@ -42,10 +42,16 @@ namespace Workflows.Runner.ExpressionTransformers
             var objState = Expression.Parameter(typeof(object), "state");
             var objInst = Expression.Parameter(typeof(object), "instance");
 
+            var convertStateMethod = typeof(Workflows.Runner.Pipeline.StateConverter).GetMethod(
+                nameof(Workflows.Runner.Pipeline.StateConverter.ConvertState),
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
             var blockScope = Expression.Block(
                 variables: new[] { typedSig, typedState, typedInst },
                 Expression.Assign(typedSig, Expression.Convert(objSig, sigType)),
-                Expression.Assign(typedState, Expression.Convert(objState, stateType)),
+                Expression.Assign(typedState, Expression.Convert(
+                    Expression.Call(convertStateMethod!, objState, Expression.Constant(stateType)),
+                    stateType)),
                 Expression.Assign(typedInst, Expression.Convert(objInst, instType)),
                 typedBody // Re-use the clean body we already built!
             );

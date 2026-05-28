@@ -217,7 +217,8 @@ namespace Workflows.TestShell
             context.TriggeringWaitId = waitDto.Id;
             context.WorkflowState = _currentState ?? new WorkflowStateDto 
             { 
-                StateObject = new WorkflowStateObject() 
+                WorkflowType = _currentState?.WorkflowType,
+                StateObject = new WorkflowStateObject { WorkflowType = _currentState?.WorkflowType } 
             };
             context.WorkflowInstance = _currentState?.StateObject?.Instance as WorkflowContainer;
 
@@ -237,7 +238,8 @@ namespace Workflows.TestShell
             context.TriggeringWaitId = waitDto.Id;
             context.WorkflowState = _currentState ?? new WorkflowStateDto 
             { 
-                StateObject = new WorkflowStateObject() 
+                WorkflowType = _currentState?.WorkflowType,
+                StateObject = new WorkflowStateObject { WorkflowType = _currentState?.WorkflowType } 
             };
             context.WorkflowInstance = _currentState?.StateObject?.Instance as WorkflowContainer;
 

@@ -48,7 +48,11 @@ namespace Workflows.Runner.Pipeline.Processors
             var childKey = subWorkflowDto.StateMachineObjectId.ToString();
 
             // Create a new state object for the child workflow
-            var childState = new Workflows.Abstraction.DTOs.WorkflowStateObject();
+            var childState = new Workflows.Abstraction.DTOs.WorkflowStateObject
+            {
+                WorkflowType = context.WorkflowState.WorkflowType,
+                SubWorkflowMethod = subWorkflowDto.CallerName
+            };
             
             bool subWorkflowCompleted = false;
             var subWorkflowStream = subWorkflowWait.Runner;
