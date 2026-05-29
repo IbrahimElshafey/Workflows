@@ -273,7 +273,7 @@ namespace Workflows.Storage.EntityFrameworkCore
             }
         }
 
-        public async Task<WorkflowDefinition> GetDefinitionAsync(string workflowName, string version)
+        public async Task<WorkflowDefinition> GetDefinitionAsync(string workflowName, int version)
         {
             var db = await _dbContext.WorkflowDefinitions.FindAsync(workflowName, version);
             if (db == null) return null;
