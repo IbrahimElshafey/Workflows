@@ -252,7 +252,7 @@ namespace InProcessSqliteSample
             var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
 
             // Start with empty input — domain state comes from the first generic signal
-            var instanceId = await orchestrator.StartWorkflowAsync("OrderWorkflow", "1.0", new { });
+            var instanceId = await orchestrator.StartWorkflowAsync("OrderWorkflow", 1, new { });
 
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine($"Workflow Instance created and is now waiting for 'OrderReceived' signal!");
