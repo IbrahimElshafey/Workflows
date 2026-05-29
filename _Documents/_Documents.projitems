@@ -24,6 +24,7 @@
     <None Include="$(MSBuildThisFileDirectory)Development\State Management Implementation.md" />
     <None Include="$(MSBuildThisFileDirectory)Development\Workflow DTO Refactoring.md" />
     <None Include="$(MSBuildThisFileDirectory)Archive\Deterministic Callback Registry to Eliminate.md" />
+    <None Include="$(MSBuildThisFileDirectory)README.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Proactive Look-Ahead Timer Checking.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Engine_Performance_&amp;_Scaling.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Feature_Gap_Analysis.md" />
@@ -32,11 +33,19 @@
     <None Include="$(MSBuildThisFileDirectory)Archive\Versioning-old.md" />
     <None Include="$(MSBuildThisFileDirectory)Archive\Versioning - How to implement.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Summary.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Why Both SxS and Migration.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Workflow Logic.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Workflow Migration.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Workflows_Versioning_Design.docx" />
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\" />
+    <Content Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\version-manifest.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\OrderWorkflowMigration_20260529.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\FulfillmentWorkflowMigration_20260529.cs" />
   </ItemGroup>
 </Project>
