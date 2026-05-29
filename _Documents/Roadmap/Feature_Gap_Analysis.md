@@ -1,6 +1,5 @@
 # Feature Gap Analysis: Planned vs. Unimplemented & Unplanned Must-Haves
-* Wait name is mandatory and unique within a workflow. If a wait is defined without a name or with a duplicate name, the system should throw a descriptive exception during workflow registration or execution, the analyzer should also catch this at compile time.
-* Sub workflow can't be used oustside of it's parent workflow container, if it does, the system should throw a descriptive exception during workflow registration or execution, the analyzer should also catch this at compile time, we could force it to be private method, we may need to add a new attribute to mark sub workflow method, e.g. [SubWorkflow]
+
 * If `IsGenericMatchFullMatch == true` or `IsExactMatchFullMatch == true`, the orchestrator should also evaluate the parent group match when its type is `WaitAll`. It should also change the wait status to `Matched`.
 * Review method `FindInstancesWaitingForSignalAsync`
 * Link standard logs that happen when a specific workflow instance runs to this specific workflow instance.
