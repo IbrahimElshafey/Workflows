@@ -264,7 +264,7 @@ namespace Workflows.Orchestrator
             }
         }
 
-        public async Task<Guid> StartWorkflowAsync(string workflowName, string version, object input)
+        public async Task<Guid> StartWorkflowAsync(string workflowName, int version, object input)
         {
             if (string.IsNullOrEmpty(workflowName)) throw new ArgumentNullException(nameof(workflowName));
 
