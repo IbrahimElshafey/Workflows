@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace Workflows.Abstraction.DTOs.Registration
 {
@@ -10,10 +10,10 @@ namespace Workflows.Abstraction.DTOs.Registration
         public string WorkflowName { get; set; }
 
         /// <summary>
-        /// The specific version string (e.g., "1.2.0"). 
+        /// The specific version (e.g., 1). 
         /// Ensures instances run on the code they were started with.
         /// </summary>
-        public string Version { get; set; }
+        public int Version { get; set; }
 
         /// <summary>
         /// The .NET type name used by the Runner to instantiate the WorkflowContainer.

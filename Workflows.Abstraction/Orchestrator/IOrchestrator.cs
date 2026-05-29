@@ -20,6 +20,6 @@ namespace Workflows.Abstraction.Orchestrator
         /// <summary>
         /// Starts a brand new instance of a workflow.
         /// </summary>
-        Task<Guid> StartWorkflowAsync(string workflowName, string version, object input);
+        Task<Guid> StartWorkflowAsync(string workflowName, int version, object input);
     }
 }
