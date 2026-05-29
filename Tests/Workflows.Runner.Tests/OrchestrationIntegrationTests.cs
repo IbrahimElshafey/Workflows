@@ -79,9 +79,9 @@ namespace Workflows.Runner.Tests
         private async Task SyncDefinitions(ServiceProvider provider)
         {
             var registry = provider.GetRequiredService<IWorkflowBuilder>();
-            registry.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", "1.0");
-            registry.RegisterWorkflow<ShortDelayWorkflow>("ShortDelayWorkflow", "1.0");
-            registry.RegisterWorkflow<EnumMatchingWorkflow>("EnumMatchingWorkflow", "1.0");
+            registry.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", 1);
+            registry.RegisterWorkflow<ShortDelayWorkflow>("ShortDelayWorkflow", 1);
+            registry.RegisterWorkflow<EnumMatchingWorkflow>("EnumMatchingWorkflow", 1);
             registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
             registry.RegisterSignal<OrderReceivedSignal>("DummyOrderReceived");
             registry.RegisterSignal<PaymentConfirmedSignal>("Payment1");
@@ -115,7 +115,7 @@ namespace Workflows.Runner.Tests
             var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
 
             // Step 1: Start Workflow with reflection-mapped input
-            var instanceId = await orchestrator.StartWorkflowAsync("FirstWaitTest", "1.0", new { ResumeCount = 7 });
+            var instanceId = await orchestrator.StartWorkflowAsync("FirstWaitTest", 1, new { ResumeCount = 7 });
             instanceId.Should().NotBeEmpty();
 
             dbContext.ChangeTracker.Clear();
@@ -244,7 +244,7 @@ namespace Workflows.Runner.Tests
             try
             {
                 // Start the ShortDelayWorkflow
-                var instanceId = await orchestrator.StartWorkflowAsync("ShortDelayWorkflow", "1.0", null);
+                var instanceId = await orchestrator.StartWorkflowAsync("ShortDelayWorkflow", 1, null);
                 instanceId.Should().NotBeEmpty();
 
                 // Wait for the scheduler loop to process the 50ms timer wait and persist to DB
@@ -293,7 +293,7 @@ namespace Workflows.Runner.Tests
             var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
 
             // Start the EnumMatchingWorkflow
-            var instanceId = await orchestrator.StartWorkflowAsync("EnumMatchingWorkflow", "1.0", null);
+            var instanceId = await orchestrator.StartWorkflowAsync("EnumMatchingWorkflow", 1, null);
             instanceId.Should().NotBeEmpty();
 
             // Verify a wait is registered
@@ -340,7 +340,7 @@ namespace Workflows.Runner.Tests
             var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
 
             // Step 1: Start Workflow with minAmount = 1000 in FirstWaitAndResumeWorkflow
-            var instanceId = await orchestrator.StartWorkflowAsync("FirstWaitTest", "1.0", new { ResumeCount = 7 });
+            var instanceId = await orchestrator.StartWorkflowAsync("FirstWaitTest", 1, new { ResumeCount = 7 });
             instanceId.Should().NotBeEmpty();
 
             dbContext.ChangeTracker.Clear();
@@ -390,7 +390,7 @@ namespace Workflows.Runner.Tests
             
             // Register workflow
             var registry = provider.GetRequiredService<IWorkflowBuilder>();
-            registry.RegisterWorkflow<DynamicThresholdWorkflow>("ThresholdWorkflow", "1.0");
+            registry.RegisterWorkflow<DynamicThresholdWorkflow>("ThresholdWorkflow", 1);
             registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
 
             var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -408,10 +408,10 @@ namespace Workflows.Runner.Tests
             var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
 
             // Start Instance 1 (high threshold = 1000)
-            var id1 = await orchestrator.StartWorkflowAsync("ThresholdWorkflow", "1.0", new { Threshold = 1000 });
+            var id1 = await orchestrator.StartWorkflowAsync("ThresholdWorkflow", 1, new { Threshold = 1000 });
             
             // Start Instance 2 (low threshold = 100)
-            var id2 = await orchestrator.StartWorkflowAsync("ThresholdWorkflow", "1.0", new { Threshold = 100 });
+            var id2 = await orchestrator.StartWorkflowAsync("ThresholdWorkflow", 1, new { Threshold = 100 });
 
             dbContext.ChangeTracker.Clear();
 
@@ -448,6 +448,7 @@ namespace Workflows.Runner.Tests
         
     }
 
+    [Workflow("ShortDelayWorkflow", 1)]
     public sealed class ShortDelayWorkflow : WorkflowContainer
     {
         public static bool Completed { get; set; }
@@ -461,6 +462,7 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    [Workflow("EnumMatchingWorkflow", 1)]
     public sealed class EnumMatchingWorkflow : WorkflowContainer
     {
         public bool Completed { get; set; }
@@ -478,6 +480,7 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    [Workflow("ThresholdWorkflow", 1)]
     public sealed class DynamicThresholdWorkflow : WorkflowContainer
     {
         public bool Completed { get; set; }

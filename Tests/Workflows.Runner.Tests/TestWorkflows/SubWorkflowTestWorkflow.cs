@@ -3,6 +3,7 @@ using Workflows.Runner.Tests.TestData;
 
 namespace Workflows.Runner.Tests.TestWorkflows
 {
+    [Workflow("SubWorkflowTest", 1)]
     public sealed class SubWorkflowTestWorkflow : WorkflowContainer
     {
         public List<string> ExecutionLog { get; set; } = new();
@@ -37,6 +38,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
             ExecutionLog.Add("Parent: End");
         }
 
+        [SubWorkflow]
         private async IAsyncEnumerable<Wait> ProcessOrderSubWorkflow()
         {
             ExecutionLog.Add("SubWorkflow1: Start");
@@ -59,6 +61,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
             ExecutionLog.Add("SubWorkflow1: End");
         }
 
+        [SubWorkflow]
         private async IAsyncEnumerable<Wait> ShipmentSubWorkflow()
         {
             ExecutionLog.Add("SubWorkflow2: Start");

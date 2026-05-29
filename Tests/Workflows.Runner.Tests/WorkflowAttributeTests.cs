@@ -56,22 +56,21 @@ namespace Workflows.Runner.Tests
         }
 
         [Fact]
-        public void RegisterFromAssemblyContaining_ShouldRegisterWorkflows_WhenVersionPassed()
+        public void RegisterFromAssemblyContaining_ShouldThrowOnMissingAttribute_WhenVersionPassed()
         {
             // Arrange
             var builder = new WorkflowBuilder(new MockSchemaGenerator());
 
             // Act
-            // When version is passed, it falls back to type name for unannotated workflows
-            builder.RegisterFromAssemblyContaining<AnnotatedTestWorkflow>("3.0");
+            Action act = () => builder.RegisterFromAssemblyContaining<AnnotatedTestWorkflow>(3);
 
             // Assert
-            builder.Workflows.Should().ContainKey("AnnotatedWorkflow"); // Uses attribute name
-            builder.Workflows.Should().ContainKey("UnannotatedTestWorkflow"); // Falls back to class name
+            act.Should().Throw<InvalidOperationException>()
+                .WithMessage("*is missing [WorkflowAttribute]*");
         }
     }
 
-    [Workflow("AnnotatedWorkflow", "2.1")]
+    [Workflow("AnnotatedWorkflow", 2)]
     public sealed class AnnotatedTestWorkflow : WorkflowContainer
     {
         public override async IAsyncEnumerable<Wait> Run()

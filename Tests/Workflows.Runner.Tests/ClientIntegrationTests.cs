@@ -51,6 +51,7 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    [Workflow("ClientIntegrationWorkflow", 1)]
     public sealed class ClientIntegrationWorkflow : WorkflowContainer
     {
         public string CommandResponse { get; set; } = string.Empty;
@@ -178,7 +179,7 @@ namespace Workflows.Runner.Tests
                 var definitionRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
                 var builder = (WorkflowBuilder)scope.ServiceProvider.GetRequiredService<IWorkflowRegistry>();
                 
-                builder.RegisterWorkflow<ClientIntegrationWorkflow>("ClientIntegrationWorkflow", "1.0");
+                builder.RegisterWorkflow<ClientIntegrationWorkflow>("ClientIntegrationWorkflow", 1);
                 builder.RegisterCommand<TestCommand, TestResult>("test-handler", default!, CommandExecutionMode.Deferred);
 
                 // Extract package using reflection
@@ -206,7 +207,7 @@ namespace Workflows.Runner.Tests
             using (var scope = serverHost.Services.CreateScope())
             {
                 var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
-                workflowId = await orchestrator.StartWorkflowAsync("ClientIntegrationWorkflow", "1.0", new object());
+                workflowId = await orchestrator.StartWorkflowAsync("ClientIntegrationWorkflow", 1, new object());
             }
 
             // Give background executor thread time to execute the command loop
@@ -337,7 +338,7 @@ namespace Workflows.Runner.Tests
                 var definitionRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
                 var builder = (WorkflowBuilder)scope.ServiceProvider.GetRequiredService<IWorkflowRegistry>();
                 
-                builder.RegisterWorkflow<ClientIntegrationWorkflow>("ClientIntegrationWorkflow", "1.0");
+                builder.RegisterWorkflow<ClientIntegrationWorkflow>("ClientIntegrationWorkflow", 1);
                 builder.RegisterCommand<TestCommand, TestResult>("test-handler", default!, CommandExecutionMode.Deferred);
 
                 // Extract package using reflection
@@ -365,7 +366,7 @@ namespace Workflows.Runner.Tests
             using (var scope = serverHost.Services.CreateScope())
             {
                 var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
-                workflowId = await orchestrator.StartWorkflowAsync("ClientIntegrationWorkflow", "1.0", new object());
+                workflowId = await orchestrator.StartWorkflowAsync("ClientIntegrationWorkflow", 1, new object());
             }
 
             // Give background executor thread time to execute the command loop

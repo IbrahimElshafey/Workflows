@@ -48,7 +48,7 @@ namespace Workflows.Runner.Tests.ResumptionTests
         public bool Verified { get; set; }
     }
 
-    [Workflow("GroupWaitResumptionWorkflow", "1.0")]
+    [Workflow("GroupWaitResumptionWorkflow", 1)]
     public sealed class GroupWaitResumptionWorkflow : WorkflowContainer
     {
         public string OrderId { get; set; } = string.Empty;
@@ -120,7 +120,7 @@ namespace Workflows.Runner.Tests.ResumptionTests
         private async Task SyncDefinitions(ServiceProvider provider)
         {
             var registry = provider.GetRequiredService<IWorkflowBuilder>();
-            registry.RegisterWorkflow<GroupWaitResumptionWorkflow>("GroupWaitResumptionWorkflow", "1.0");
+            registry.RegisterWorkflow<GroupWaitResumptionWorkflow>("GroupWaitResumptionWorkflow", 1);
             registry.RegisterSignal<ResumptionOrderReceivedSignal>("OrderReceived");
             registry.RegisterSignal<ResumptionStockConfirmedSignal>("StockConfirmed");
             registry.RegisterSignal<ResumptionCustomerVerifiedSignal>("CustomerVerified");
@@ -156,7 +156,7 @@ namespace Workflows.Runner.Tests.ResumptionTests
                     using (var scope = provider1.CreateScope())
                     {
                         var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
-                        instanceId = await orchestrator.StartWorkflowAsync("GroupWaitResumptionWorkflow", "1.0", new { });
+                        instanceId = await orchestrator.StartWorkflowAsync("GroupWaitResumptionWorkflow", 1, new { });
 
                         await orchestrator.ProcessSignalAsync(new SignalDto
                         {

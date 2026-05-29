@@ -201,7 +201,7 @@ namespace TestWorkflows
             int number = 42;
             string text = ""hello"";
             List<string> list = new List<string>();
-            yield return WaitSignal<string>(""MySignal"");
+            yield return WaitSignal<string>(""MySignal"", ""WaitName"");
         }
     }
 }";
@@ -209,6 +209,187 @@ namespace TestWorkflows
             var diagnostics = await RunAnalyzerAsync(source);
             
             diagnostics.Where(d => d.Id == "WF004").Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task WF204_MissingWaitName_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitSignal<string>(""MySignal""); // name is omitted
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Should().ContainSingle(d => d.Id == "WF204");
+            diagnostics.First(d => d.Id == "WF204").GetMessage().Should().Contain("must specify a non-empty name");
+        }
+
+        [Fact]
+        public async Task WF205_DuplicateWaitName_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitSignal<string>(""MySignal1"", ""WaitA"");
+            yield return WaitSignal<string>(""MySignal2"", ""WaitA"");
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Should().ContainSingle(d => d.Id == "WF205");
+            diagnostics.First(d => d.Id == "WF205").GetMessage().Should().Contain("is already defined in workflow");
+        }
+
+        [Fact]
+        public async Task WF206_NonPrivateSubWorkflow_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitSubWorkflow(Child(), ""Child"");
+        }
+
+        [SubWorkflow]
+        public async IAsyncEnumerable<Wait> Child()
+        {
+            yield return WaitSignal<string>(""MySignal"", ""WaitName"");
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Should().ContainSingle(d => d.Id == "WF206");
+            diagnostics.First(d => d.Id == "WF206").GetMessage().Should().Contain("must be private");
+        }
+
+        [Fact]
+        public async Task WF207_SubWorkflowInNonWorkflowContainer_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    public class NonWorkflow
+    {
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> Child()
+        {
+            yield return null;
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Should().ContainSingle(d => d.Id == "WF207");
+            diagnostics.First(d => d.Id == "WF207").GetMessage().Should().Contain("does not inherit from WorkflowContainer");
+        }
+
+        [Fact]
+        public async Task WF208_SubWorkflowMissingAttribute_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitSubWorkflow(Child(), ""Child"");
+        }
+
+        private async IAsyncEnumerable<Wait> Child() // returns wait async enum, but missing [SubWorkflow]
+        {
+            yield return WaitSignal<string>(""MySignal"", ""WaitName"");
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Where(d => d.Id == "WF208").Should().HaveCount(2);
+            diagnostics.First(d => d.Id == "WF208").GetMessage().Should().Contain("must be decorated with [SubWorkflow]");
+        }
+
+        [Fact]
+        public async Task WF209_MissingWorkflowAttribute_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    public sealed class MissingAttributeWorkflow : WorkflowContainer
+    {
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitSignal<string>(""MySignal"", ""WaitName"");
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Should().ContainSingle(d => d.Id == "WF209");
+            diagnostics.First(d => d.Id == "WF209").GetMessage().Should().Contain("is missing [WorkflowAttribute]");
+        }
+
+        [Fact]
+        public async Task WF209_WorkflowAttributePresent_ShouldNotTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""MyWorkflow"", 1)]
+    public sealed class HasAttributeWorkflow : WorkflowContainer
+    {
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitSignal<string>(""MySignal"", ""WaitName"");
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Where(d => d.Id == "WF209").Should().BeEmpty();
         }
     }
 }

@@ -67,7 +67,7 @@ namespace Workflows.Runner.Tests
             using var provider = CreateServiceProvider(dbName, out var connection);
 
             var registry = provider.GetRequiredService<IWorkflowBuilder>();
-            registry.RegisterWorkflow<SignalFirstWaitWorkflow>("SignalFirstWaitWorkflow", "1.0");
+            registry.RegisterWorkflow<SignalFirstWaitWorkflow>("SignalFirstWaitWorkflow", 1);
             registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
 
             var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -113,7 +113,7 @@ namespace Workflows.Runner.Tests
             using var provider = CreateServiceProvider(dbName, out var connection);
 
             var registry = provider.GetRequiredService<IWorkflowBuilder>();
-            registry.RegisterWorkflow<InvalidFirstWaitWorkflow>("InvalidFirstWaitWorkflow", "1.0");
+            registry.RegisterWorkflow<InvalidFirstWaitWorkflow>("InvalidFirstWaitWorkflow", 1);
             registry.RegisterCommand<ProcessPaymentCommand, ProcessPaymentResult>("ProcessPayment", default, CommandExecutionMode.Deferred);
 
             var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -142,7 +142,7 @@ namespace Workflows.Runner.Tests
             using var provider = CreateServiceProvider(dbName, out var connection);
 
             var registry = provider.GetRequiredService<IWorkflowBuilder>();
-            registry.RegisterWorkflow<SignalFirstWaitWorkflow>("SignalFirstWaitWorkflow", "1.0");
+            registry.RegisterWorkflow<SignalFirstWaitWorkflow>("SignalFirstWaitWorkflow", 1);
             registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
 
             var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -204,6 +204,7 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    [Workflow("InvalidFirstWaitWorkflow", 1)]
     public sealed class InvalidFirstWaitWorkflow : WorkflowContainer
     {
         public override async IAsyncEnumerable<Wait> Run()
@@ -215,6 +216,7 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    [Workflow("SignalFirstWaitWorkflow", 1)]
     public sealed class SignalFirstWaitWorkflow : WorkflowContainer
     {
         public bool Completed { get; set; }

@@ -231,6 +231,7 @@ namespace Workflows.Runner.Tests
     /// A workflow whose sub-workflow has one immediate command wait only (active → runs and finishes without suspending),
     /// followed by a passive signal on the parent so the overall workflow does suspend.
     /// </summary>
+    [Workflow("ImmediateSubWorkflow", 1)]
     public sealed class ImmediateSubWorkflowTestWorkflow : WorkflowContainer
     {
         public override async IAsyncEnumerable<Wait> Run()
@@ -241,7 +242,8 @@ namespace Workflows.Runner.Tests
             yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "Final signal");
         }
 
-        public async IAsyncEnumerable<Wait> ImmediateChild()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> ImmediateChild()
         {
             // A single immediate (active) command wait — runs synchronously and completes.
             yield return ExecuteCommand<ReserveInventoryCommand, ReserveInventoryResult>(
@@ -251,6 +253,7 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    [Workflow("GroupOfSubWorkflows", 1)]
     public sealed class GroupOfSubWorkflowsTestWorkflow : WorkflowContainer
     {
         public List<string> ExecutionLog { get; set; } = new();
@@ -273,14 +276,16 @@ namespace Workflows.Runner.Tests
             ExecutionLog.Add("Parent: End");
         }
 
-        public async IAsyncEnumerable<Wait> Child1()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> Child1()
         {
             ExecutionLog.Add("Child1: Start");
             yield return WaitSignal<PaymentConfirmedSignal>("Payment1", "Child1 Payment");
             ExecutionLog.Add("Child1: End");
         }
 
-        public async IAsyncEnumerable<Wait> Child2()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> Child2()
         {
             ExecutionLog.Add("Child2: Start");
             yield return WaitSignal<PaymentConfirmedSignal>("Payment2", "Child2 Payment");
@@ -288,6 +293,7 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    [Workflow("SubWorkflowWithLocalVariables", 1)]
     public sealed class SubWorkflowWithLocalVariablesTestWorkflow : WorkflowContainer
     {
         public List<int> ExecutionLog { get; set; } = new();
@@ -298,7 +304,8 @@ namespace Workflows.Runner.Tests
             yield return WaitSignal<OrderReceivedSignal>("FinalSignal", "Final");
         }
 
-        public async IAsyncEnumerable<Wait> ChildWithVariables()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> ChildWithVariables()
         {
             int localCounter = 42;
             string localMessage = "hello";

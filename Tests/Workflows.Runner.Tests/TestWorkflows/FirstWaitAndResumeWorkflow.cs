@@ -8,6 +8,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     /// <summary>
     /// Test workflow for first wait and resume scenarios
     /// </summary>
+    [Workflow("FirstWaitTest", 1)]
     public sealed class FirstWaitAndResumeWorkflow : WorkflowContainer
     {
         public List<string> ExecutionLog { get; set; } = new();

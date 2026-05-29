@@ -23,7 +23,7 @@ namespace Workflows.Runner.Tests
         {
             // Arrange
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", "1.0")
+            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", 1)
                  .RegisterSignal<OrderReceivedSignal>("OrderReceived")
                  .RegisterSignal<PaymentConfirmedSignal>("Payment1")
                  .RegisterSignal<PaymentConfirmedSignal>("Payment2")
@@ -104,7 +104,7 @@ namespace Workflows.Runner.Tests
         {
             // Arrange
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<NestedGroupsTestWorkflow>("NestedGroupsTest", "1.0")
+            shell.RegisterWorkflow<NestedGroupsTestWorkflow>("NestedGroupsTest", 1)
                  .RegisterSignal<PaymentConfirmedSignal>("PaymentConfirmed")
                  .RegisterSignal<PaymentConfirmedSignal>("PaymentBackup")
                  .RegisterSignal<ShipmentSignal>("ShipmentReady")
@@ -150,7 +150,7 @@ namespace Workflows.Runner.Tests
         {
             // Arrange
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<SubWorkflowTestWorkflow>("SubWorkflowTest", "1.0")
+            shell.RegisterWorkflow<SubWorkflowTestWorkflow>("SubWorkflowTest", 1)
                  .RegisterSignal<OrderReceivedSignal>("OrderReceived")
                  .RegisterCommand<ReserveInventoryCommand, ReserveInventoryResult>("ReserveInventory")
                  .SetupCommandHandler<ReserveInventoryCommand, ReserveInventoryResult>("ReserveInventory",
@@ -180,7 +180,7 @@ namespace Workflows.Runner.Tests
         {
             // Arrange
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", "1.0")
+            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", 1)
                  .RegisterSignal<OrderReceivedSignal>("OrderReceived");
 
             // Act: Start workflow to generate a first wait DTO
@@ -212,7 +212,7 @@ namespace Workflows.Runner.Tests
         {
             // Arrange
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", "1.0")
+            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", 1)
                  .RegisterSignal<OrderReceivedSignal>("OrderReceived");
 
             // Act: Resolve internal services via ServiceProvider

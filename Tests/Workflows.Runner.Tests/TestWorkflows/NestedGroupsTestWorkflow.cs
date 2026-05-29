@@ -3,6 +3,7 @@ using Workflows.Runner.Tests.TestData;
 
 namespace Workflows.Runner.Tests.TestWorkflows
 {
+    [Workflow("NestedGroupsTest", 1)]
     public sealed class NestedGroupsTestWorkflow : WorkflowContainer
     {
         public List<string> ExecutionLog { get; set; } = new();
