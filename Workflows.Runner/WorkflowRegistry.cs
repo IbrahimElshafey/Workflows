@@ -87,14 +87,20 @@ namespace Workflows.Runner
             var attribute = typeof(WorkflowClass).GetCustomAttribute<WorkflowAttribute>();
             if (attribute == null)
             {
-                throw new InvalidOperationException($"The workflow class '{typeof(WorkflowClass).Name}' is not decorated with [WorkflowAttribute]. Please provide name and version explicitly or add the attribute.");
+                throw new InvalidOperationException($"The workflow class '{typeof(WorkflowClass).Name}' is not decorated with [WorkflowAttribute].");
             }
             return RegisterWorkflow<WorkflowClass>(attribute.Name, attribute.Version);
         }
 
-        public IWorkflowBuilder RegisterWorkflow<WorkflowClass>(string name, string version) where WorkflowClass : WorkflowContainer
+        public IWorkflowBuilder RegisterWorkflow<WorkflowClass>(string name, int version) where WorkflowClass : WorkflowContainer
         {
             Type workflowType = typeof(WorkflowClass);
+
+            var attribute = workflowType.GetCustomAttribute<WorkflowAttribute>();
+            if (attribute == null)
+            {
+                throw new InvalidOperationException($"The workflow class '{workflowType.Name}' is not decorated with [WorkflowAttribute].");
+            }
 
             // 1. Check that the workflow class is sealed
             if (!workflowType.IsSealed)
@@ -137,6 +143,12 @@ namespace Workflows.Runner
             _workflows[name] = (workflowType, stateMachineType);
             global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows[name] = (workflowType, stateMachineType);
 
+            // Validate sub-workflows (visibility and attribute)
+            ValidateWorkflowSubWorkflows(workflowType);
+
+            // Validate wait names
+            ValidateWorkflowWaits(workflowType);
+
             registrationPackage.Workflows.Add(new WorkflowDefinition
             {
                 WorkflowName = name,
@@ -147,6 +159,104 @@ namespace Workflows.Runner
             });
 
             return this;
+        }
+
+        private void ValidateWorkflowSubWorkflows(Type workflowType)
+        {
+            var methods = workflowType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+            foreach (var method in methods)
+            {
+                if (method.Name == nameof(WorkflowContainer.Run)) continue;
+
+                var hasSubWorkflowAttr = method.GetCustomAttribute<SubWorkflowAttribute>() != null;
+                var returnsWaitAsyncEnum = typeof(IAsyncEnumerable<Wait>).IsAssignableFrom(method.ReturnType);
+
+                if (hasSubWorkflowAttr || returnsWaitAsyncEnum)
+                {
+                    if (!hasSubWorkflowAttr)
+                    {
+                        throw new InvalidOperationException($"Method '{method.Name}' in workflow '{workflowType.Name}' returns IAsyncEnumerable<Wait> but is missing [SubWorkflow] attribute.");
+                    }
+                    if (!method.IsPrivate)
+                    {
+                        throw new InvalidOperationException($"Sub-workflow method '{method.Name}' in workflow '{workflowType.Name}' must be private to prevent usage outside of its parent workflow container.");
+                    }
+                }
+            }
+        }
+
+        private void ValidateWorkflowWaits(Type workflowType)
+        {
+            try
+            {
+                var container = (WorkflowContainer)Activator.CreateInstance(workflowType);
+                var enumerator = container.Run().GetAsyncEnumerator();
+                var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                var moveNextTask = Task.Run(async () =>
+                {
+                    var waits = new List<Wait>();
+                    while (await enumerator.MoveNextAsync())
+                    {
+                        waits.Add(enumerator.Current);
+                    }
+                    return waits;
+                });
+
+                if (moveNextTask.Wait(200))
+                {
+                    var waits = moveNextTask.Result;
+                    foreach (var wait in waits)
+                    {
+                        if (wait != null)
+                        {
+                            ValidateWaitRecursive(wait, seenNames, workflowType.Name);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                var inner = ex;
+                while (inner is TargetInvocationException || inner is AggregateException)
+                {
+                    inner = inner.InnerException;
+                }
+
+                if (inner is InvalidOperationException && inner.Message.Contains("Wait name"))
+                {
+                    throw inner;
+                }
+            }
+        }
+
+        private void ValidateWaitRecursive(Wait wait, HashSet<string> seenNames, string workflowName)
+        {
+            if (wait == null) return;
+
+            var name = wait.WaitName;
+            if (wait is CompensationWait compWait)
+            {
+                name = compWait.Token;
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new InvalidOperationException($"Wait name is mandatory. A wait of type '{wait.GetType().Name}' in workflow '{workflowName}' is defined without a name.");
+            }
+
+            if (!seenNames.Add(name))
+            {
+                throw new InvalidOperationException($"Wait name '{name}' is duplicate in workflow '{workflowName}'. Wait names must be unique within a workflow.");
+            }
+
+            if (wait.ChildWaits != null)
+            {
+                foreach (var child in wait.ChildWaits)
+                {
+                    ValidateWaitRecursive(child, seenNames, workflowName);
+                }
+            }
         }
 
         public IWorkflowBuilder SettingsSection(string settingsSection)

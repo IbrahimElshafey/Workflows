@@ -114,6 +114,8 @@ namespace Workflows.Runner
                     break;
                 }
 
+                ValidateExecutionWait(yieldedWait, _context.WorkflowState.Waits, _context.WorkflowState.WorkflowType);
+
                 _context.WorkflowState.StateObject = advancerResult.State;
 
                 // Check if this wait should be cancelled and skipped
@@ -162,6 +164,8 @@ namespace Workflows.Runner
                     break;
                 }
 
+                ValidateExecutionWait(yieldedWait, _context.WorkflowState.Waits, _context.WorkflowState.WorkflowType);
+
                 _context.WorkflowState.StateObject = advancerResult.State;
 
                 bool wasCancelled = await _cancelHandler.CheckAndSkipCancelledWaitAsync(yieldedWait, _context);
@@ -190,6 +194,74 @@ namespace Workflows.Runner
                 ConsumedWaitsIds = context.ConsumedWaitsIds
             };
             return await _resultSender.SendWorkflowRunResultAsync(runResult, response);
+        }
+
+        private void ValidateExecutionWait(
+            Definition.Wait yieldedWait,
+            List<Abstraction.DTOs.Waits.WaitInfrastructureDto> existingWaits,
+            string workflowType)
+        {
+            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (existingWaits != null)
+            {
+                foreach (var existing in existingWaits)
+                {
+                    CollectActiveWaitNames(existing, seenNames);
+                }
+            }
+
+            ValidateWaitTreeRecursive(yieldedWait, seenNames, workflowType);
+        }
+
+        private void CollectActiveWaitNames(
+            Abstraction.DTOs.Waits.WaitInfrastructureDto waitDto,
+            HashSet<string> seenNames)
+        {
+            if (waitDto == null) return;
+            if (!string.IsNullOrWhiteSpace(waitDto.WaitName))
+            {
+                seenNames.Add(waitDto.WaitName);
+            }
+            if (waitDto.ChildWaits != null)
+            {
+                foreach (var child in waitDto.ChildWaits)
+                {
+                    CollectActiveWaitNames(child, seenNames);
+                }
+            }
+        }
+
+        private void ValidateWaitTreeRecursive(
+            Definition.Wait wait,
+            HashSet<string> seenNames,
+            string workflowType)
+        {
+            if (wait == null) return;
+
+            var name = wait.WaitName;
+            if (wait is Definition.CompensationWait compWait)
+            {
+                name = compWait.Token;
+            }
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new InvalidOperationException($"Wait name is mandatory. A wait of type '{wait.GetType().Name}' in workflow '{workflowType}' is defined without a name.");
+            }
+
+            if (!seenNames.Add(name))
+            {
+                throw new InvalidOperationException($"Wait name '{name}' is duplicate in workflow '{workflowType}'. Wait names must be unique within a workflow.");
+            }
+
+            if (wait.ChildWaits != null)
+            {
+                foreach (var child in wait.ChildWaits)
+                {
+                    ValidateWaitTreeRecursive(child, seenNames, workflowType);
+                }
+            }
         }
     }
 }
