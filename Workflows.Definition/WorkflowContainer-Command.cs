@@ -39,6 +39,10 @@ namespace Workflows.Definition
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
+            if (string.IsNullOrWhiteSpace(compasenationToken))
+            {
+                throw new InvalidOperationException("Wait name is mandatory.");
+            }
             return new CompensationWait(
                 compasenationToken,
                 WaitType.Compensation,

@@ -14,6 +14,11 @@ namespace Workflows.Definition
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new InvalidOperationException("Wait name is mandatory.");
+            }
+
             var newSignalWait = new SignalWait<SignalData>(
                 signalIdentifier,
                 name,
@@ -34,6 +39,11 @@ namespace Workflows.Definition
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new InvalidOperationException("Wait name is mandatory.");
+            }
+
             if (passiveWaits.Any(x => x == null))
             {
                 throw new ArgumentNullException($"The group wait named [{name}] contains wait that is null.");
@@ -42,7 +52,7 @@ namespace Workflows.Definition
             var waits = passiveWaits.Cast<Wait>().ToArray();
 
             var group = new GroupWait(
-                name ?? $"#Wait Group `{inCodeLine}` by `{callerName}`",
+                name,
                 waits,
                 inCodeLine,
                 callerName,

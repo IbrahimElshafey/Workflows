@@ -10,7 +10,7 @@ namespace Workflows.Definition
             WaitType waitType,
             int inCodeLine,
             string callerName,
-            string callerFilePath) : base(waitType, null, inCodeLine, callerName, callerFilePath)
+            string callerFilePath) : base(waitType, token, inCodeLine, callerName, callerFilePath)
         {
             Token = token;
         }

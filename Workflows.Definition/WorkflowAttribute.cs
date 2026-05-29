@@ -9,9 +9,9 @@ namespace Workflows.Definition
     public sealed class WorkflowAttribute : Attribute
     {
         public string Name { get; }
-        public string Version { get; }
+        public int Version { get; }
 
-        public WorkflowAttribute(string name, string version = "1.0")
+        public WorkflowAttribute(string name, int version = 1)
         {
             if (string.IsNullOrWhiteSpace(name))
             {
@@ -19,7 +19,7 @@ namespace Workflows.Definition
             }
 
             Name = name;
-            Version = version ?? "1.0";
+            Version = version;
         }
     }
 }

@@ -12,13 +12,17 @@ namespace Workflows.Definition
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new InvalidOperationException("Wait name is mandatory.");
+            }
             if (untilTime < DateTime.UtcNow)
             {
                 throw new ArgumentException("Until date should be in the future", nameof(untilTime));
             }
             var timeToWait = untilTime - DateTime.UtcNow;
             TimeWait newTimeWait = new TimeWait(
-                name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
+                name,
                 timeToWait,
                 Guid.NewGuid().ToString(), inCodeLine, callerName, callerFilePath)
             {
@@ -34,12 +38,16 @@ namespace Workflows.Definition
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new InvalidOperationException("Wait name is mandatory.");
+            }
             if (timeToWait.TotalMilliseconds <= 0)
             {
                 throw new ArgumentException("Time to wait should be greater than 0", nameof(timeToWait));
             }
             return new TimeWait(
-                name ?? $"#Time Wait for `{timeToWait.TotalHours}` hours in `{callerName}`",
+                name,
                 timeToWait,
                 Guid.NewGuid().ToString(), inCodeLine, callerName, callerFilePath)
             {

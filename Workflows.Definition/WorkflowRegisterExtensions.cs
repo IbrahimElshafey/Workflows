@@ -14,7 +14,7 @@ namespace Workflows.Definition
 
             // 1. Find all workflows
             var workflowTypes = assembly.GetTypes()
-                .Where(t => t.IsSubclassOf(typeof(WorkflowContainer)) && !t.IsAbstract && t.IsSealed);
+                .Where(t => t.IsSubclassOf(typeof(WorkflowContainer)) && !t.IsAbstract && t.IsSealed && t.DeclaringType == null);
 
             foreach (var type in workflowTypes)
             {
@@ -37,21 +37,25 @@ namespace Workflows.Definition
 
         public static IWorkflowBuilder RegisterFromAssemblyContaining<T>(
             this IWorkflowBuilder register,
-            string version)
+            int version)
         {
             var assembly = typeof(T).Assembly;
 
             // 1. Find all workflows
             var workflowTypes = assembly.GetTypes()
-                .Where(t => t.IsSubclassOf(typeof(WorkflowContainer)) && !t.IsAbstract && t.IsSealed);
+                .Where(t => t.IsSubclassOf(typeof(WorkflowContainer)) && !t.IsAbstract && t.IsSealed && t.DeclaringType == null);
 
             foreach (var type in workflowTypes)
             {
                 var attribute = type.GetCustomAttribute<WorkflowAttribute>();
-                string name = attribute?.Name ?? type.Name;
-                string v = version ?? attribute?.Version ?? "1.0";
+                if (attribute == null)
+                {
+                    throw new InvalidOperationException($"Workflow '{type.Name}' in assembly '{assembly.FullName}' is missing [WorkflowAttribute]. All workflows must be decorated with [WorkflowAttribute].");
+                }
+                string name = attribute.Name;
+                int v = version;
 
-                // Use reflection to call the generic RegisterWorkflow<T>(string name, string version) method
+                // Use reflection to call the generic RegisterWorkflow<T>(string name, int version) method
                 var method = typeof(IWorkflowBuilder)
                     .GetMethods()
                     .First(m => m.Name == nameof(IWorkflowBuilder.RegisterWorkflow) && m.GetGenericArguments().Length == 1 && m.GetParameters().Length == 2)
