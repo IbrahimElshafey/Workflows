@@ -39,7 +39,7 @@ message CommandResultResponse {
 
 message StartWorkflowRequest {
   string workflow_name = 1;
-  string version = 2;
+  int32 version = 2;
   string json_input = 3;
 }
 
