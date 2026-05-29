@@ -3,6 +3,7 @@ using Workflows.Definition;
 
 namespace WorkflowSample
 {
+    [Workflow("StatePatternWorkflowSample", 1)]
     public sealed class StatePatternWorkflowSample : WorkflowContainer
     {
         public int CurrentOrderId { get; set; }
@@ -73,8 +74,8 @@ namespace WorkflowSample
 
             yield return WaitGroup(
                     [
-                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId),
-                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId)
+                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated", "WaitInventoryAllocated").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId),
+                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted", "WaitLabelPrinted").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId)
                     ],
                     "Stateful group wait")
                 .MatchIf(() => CurrentOrderId > 0);
@@ -96,6 +97,7 @@ namespace WorkflowSample
                 });
         }
 
+        [SubWorkflow]
         private async IAsyncEnumerable<Wait> ShippingSubWorkflow()
         {
             yield return WaitSignal<ShippingEvent>("OrderShipped", "Stateful shipping signal")

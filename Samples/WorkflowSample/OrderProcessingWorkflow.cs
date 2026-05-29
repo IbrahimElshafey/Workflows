@@ -1,9 +1,10 @@
-﻿using WorkflowSample.DataObject;
+using WorkflowSample.DataObject;
 using Workflows.Definition;
 
 namespace WorkflowSample
 {
     // --- The Workflow Definition ---
+    [Workflow("OrderProcessingWorkflow", 1)]
     public sealed class OrderProcessingWorkflow : WorkflowContainer
     {
         // 1. DOMAIN STATE: These are stable '<>4__this' properties.
@@ -50,11 +51,11 @@ namespace WorkflowSample
             // Explicitly passing CurrentOrderId into the child waits
             yield return WaitGroup(
                [
-                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated")
+                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated", "WaitInventoryAllocated")
                         .WithState(CurrentOrderId)
                         .MatchIf((shipping, targetId) => shipping.OrderId == targetId),
 
-                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted")
+                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted", "WaitLabelPrinted")
                         .WithState(CurrentOrderId)
                         .MatchIf((shipping, targetId) => shipping.OrderId == targetId)
                 ],
@@ -70,7 +71,8 @@ namespace WorkflowSample
         /// <summary>
         /// Sub-workflows also strictly follow the Explicit State Hand-off rule.
         /// </summary>
-        public async IAsyncEnumerable<Wait> ShippingSubWorkflow()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> ShippingSubWorkflow()
         {
             var marker = "test";
 

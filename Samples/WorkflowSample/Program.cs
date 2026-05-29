@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using WorkflowSample;
 using WorkflowSample.DataObject;
 using Workflows.Definition;
@@ -241,6 +241,7 @@ catch (Exception ex)
 Console.WriteLine("\n=== All DSL Tests Completed Successfully! ===");
 
 // Helper workflow for testing
+[Workflow("TestWorkflow", 1)]
 public sealed class TestWorkflow : WorkflowContainer
 {
     public override async IAsyncEnumerable<Wait> Run()
@@ -251,7 +252,7 @@ public sealed class TestWorkflow : WorkflowContainer
 
     public SignalWait<OrderReceivedEvent> CreateSignalWaitWithState()
     {
-        return (SignalWait<OrderReceivedEvent>)WaitSignal<OrderReceivedEvent>("OrderReceived", "Test")
+        return (SignalWait<OrderReceivedEvent>)WaitSignal<OrderReceivedEvent>("OrderReceived", "TestWithState")
             .WithState(1000)
             .MatchIf((order, minId) => order.OrderId > minId);
     }
@@ -269,7 +270,7 @@ public sealed class TestWorkflow : WorkflowContainer
     {
         return (CommandWait<ProcessPaymentCommand, ProcessPaymentResult>)
             ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
-                "ProcessPayment",
+                "ProcessPaymentStateful",
                 new ProcessPaymentCommand { OrderId = "123", Amount = 100 }
             )
             .WithState("customer@email.com");
@@ -277,7 +278,7 @@ public sealed class TestWorkflow : WorkflowContainer
 
     public SignalWait<OrderReceivedEvent> CreateSignalWaitWithAfterMatch()
     {
-        return (SignalWait<OrderReceivedEvent>)WaitSignal<OrderReceivedEvent>("OrderReceived", "Test")
+        return (SignalWait<OrderReceivedEvent>)WaitSignal<OrderReceivedEvent>("OrderReceived", "TestWithAfterMatch")
             .WithState(1000)
             .AfterMatch((order, minId) =>
             {
@@ -289,7 +290,7 @@ public sealed class TestWorkflow : WorkflowContainer
     {
         return (CommandWait<ProcessPaymentCommand, ProcessPaymentResult>)
             ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
-                "ProcessPayment",
+                "ProcessPaymentOnResult",
                 new ProcessPaymentCommand { OrderId = "123", Amount = 100 }
             )
             .WithState("customer@email.com")
@@ -301,7 +302,7 @@ public sealed class TestWorkflow : WorkflowContainer
 
     public SignalWait<OrderReceivedEvent> CreateSignalWithComplexState(OrderState state)
     {
-        return (SignalWait<OrderReceivedEvent>)WaitSignal<OrderReceivedEvent>("OrderReceived", "Test")
+        return (SignalWait<OrderReceivedEvent>)WaitSignal<OrderReceivedEvent>("OrderReceived", "TestWithComplexState")
             .WithState(state);
     }
 
@@ -319,7 +320,7 @@ public sealed class TestWorkflow : WorkflowContainer
 
     public SignalWait<OrderReceivedEvent> CreateWaitWithStatefulCancel()
     {
-        return (SignalWait<OrderReceivedEvent>)WaitSignal<OrderReceivedEvent>("OrderReceived", "Test")
+        return (SignalWait<OrderReceivedEvent>)WaitSignal<OrderReceivedEvent>("OrderReceived", "TestWithCancel")
             .WithState(999)
             .OnCanceled((state) =>
             {
@@ -330,7 +331,7 @@ public sealed class TestWorkflow : WorkflowContainer
 
     public SignalWait<OrderReceivedEvent> CreateChainedStatefulWait()
     {
-        return (SignalWait<OrderReceivedEvent>)WaitSignal<OrderReceivedEvent>("OrderReceived", "Test")
+        return (SignalWait<OrderReceivedEvent>)WaitSignal<OrderReceivedEvent>("OrderReceived", "TestWithChained")
             .WithState(500)
             .MatchIf((order, threshold) => order.OrderId > threshold)
             .AfterMatch((order, threshold) =>

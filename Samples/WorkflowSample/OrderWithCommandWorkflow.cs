@@ -6,6 +6,7 @@ namespace WorkflowSample
     /// <summary>
     /// Example workflow demonstrating the Command primitive usage.
     /// </summary>
+    [Workflow("OrderWithCommandWorkflow", 1)]
     public sealed class OrderWithCommandWorkflow : WorkflowContainer
     {
         public int CurrentOrderId { get; set; }
@@ -15,7 +16,7 @@ namespace WorkflowSample
         public override async IAsyncEnumerable<Wait> Run()
         {
             // Receive order details via signal
-            yield return WaitSignal<OrderReceivedEvent>("OrderReceived")
+            yield return WaitSignal<OrderReceivedEvent>("OrderReceived", "WaitOrderReceived")
                 .WithState(0)
                 .MatchIf((x, minOrderId) => x.OrderId > minOrderId)
                 .WithCancelToken("order-received-token")
