@@ -23,6 +23,12 @@ namespace Workflows.Analyzers
         public const string DiagnosticIdWF201 = "WF201";
         public const string DiagnosticIdWF202 = "WF202";
         public const string DiagnosticIdWF203 = "WF203";
+        public const string DiagnosticIdWF204 = "WF204";
+        public const string DiagnosticIdWF205 = "WF205";
+        public const string DiagnosticIdWF206 = "WF206";
+        public const string DiagnosticIdWF207 = "WF207";
+        public const string DiagnosticIdWF208 = "WF208";
+        public const string DiagnosticIdWF209 = "WF209";
 
         private static readonly DiagnosticDescriptor WF000 = new DiagnosticDescriptor(
             DiagnosticIdWF000,
@@ -113,8 +119,56 @@ namespace Workflows.Analyzers
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
+        private static readonly DiagnosticDescriptor WF204 = new DiagnosticDescriptor(
+            DiagnosticIdWF204,
+            "Missing Wait Name",
+            "Wait name is mandatory. Wait definition '{0}' must specify a non-empty name.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor WF205 = new DiagnosticDescriptor(
+            DiagnosticIdWF205,
+            "Duplicate Wait Name",
+            "Wait name '{0}' is already defined in workflow '{1}'. Wait names must be unique within a workflow.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor WF206 = new DiagnosticDescriptor(
+            DiagnosticIdWF206,
+            "Sub-Workflow Must Be Private",
+            "Sub-workflow method '{0}' must be private to prevent usage outside of its parent workflow container.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor WF207 = new DiagnosticDescriptor(
+            DiagnosticIdWF207,
+            "Sub-Workflow Attribute in Invalid Class",
+            "Sub-workflow method '{0}' is decorated with [SubWorkflow] but the containing class does not inherit from WorkflowContainer.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor WF208 = new DiagnosticDescriptor(
+            DiagnosticIdWF208,
+            "Sub-Workflow Missing Attribute",
+            "Sub-workflow method '{0}' must be decorated with [SubWorkflow] attribute.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor WF209 = new DiagnosticDescriptor(
+            DiagnosticIdWF209,
+            "Missing Workflow Attribute",
+            "Workflow container class '{0}' is missing [WorkflowAttribute]. Concrete workflow classes must have the attribute.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(
-            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203);
+            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209);
 
         public override void Initialize(AnalysisContext context)
         {
@@ -133,7 +187,8 @@ namespace Workflows.Analyzers
 
         private static void AnalyzeNamedType(SymbolAnalysisContext context)
         {
-            Rules.StructureRules.AnalyzeNamedType(context, WF201, WF202);
+            Rules.StructureRules.AnalyzeNamedType(context, WF201, WF202, WF209);
+            Rules.WaitRules.AnalyzeNamedType(context, WF204, WF205, WF206, WF207, WF208);
         }
 
         private static void AnalyzeAwaitForeach(SyntaxNodeAnalysisContext context)
