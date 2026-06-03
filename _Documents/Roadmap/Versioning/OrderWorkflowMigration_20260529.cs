@@ -39,7 +39,7 @@ namespace MyCompany.Workflows.Billing.Migrations
     /// RecreateWait, ScheduleCommand) are called directly on 'this' — identical
     /// syntax to authoring workflow code. _new only exposes .Instance for domain data.
     ///
-    /// Auto-generated skeleton by the build CLI; conflict stubs completed by developer.
+    /// Auto-generated skeleton by the Source Generator; conflict stubs completed by developer.
     /// </summary>
     public class OrderWorkflowMigration_20260529
         : WorkflowMigration<OrderWorkflowV1, OrderWorkflowV2>
@@ -133,7 +133,7 @@ namespace MyCompany.Workflows.Billing.Migrations
     }
 
     // =============================================================================
-    // Reference: typed state wrappers (auto-generated from version-manifest.json).
+    // Reference: typed state wrappers (auto-generated from the workflow schema).
     // These only carry the instance data — no DSL factory methods.
     // =============================================================================
 

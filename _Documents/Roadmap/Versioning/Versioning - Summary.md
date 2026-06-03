@@ -9,20 +9,19 @@ Instead of mixing infrastructure with business logic or polluting your code with
 * **The Workflow Project:** Contains the user's workflow files. To integrate seamlessly with the framework, this project must implement a strict registration interface (`IWorkflowRegister` / `IWorkflowBuilder`).
 * **Plugin Architecture:** This turns the user's project into a pluggable unit. The stateless `WorkflowRunner` treats these compiled versions as isolated plugins that can be discovered, swapped, and executed dynamically.
 
-### 2. Multi-Workflow Delta Archiving
+### 2. Multi-Workflow Source Generator Archiving
 
-When a developer introduces a breaking change to a workflow and increments its version, a custom build automation tool (`dotnet workflow build`) steps in to archive the code. Because a single project can contain multiple workflows, the tool handles changes with surgical precision:
+When a developer introduces a breaking change to a workflow and increments its version attribute, a custom Roslyn Source Generator steps in to automate the archiving. Because a single project can contain multiple workflows, the generator handles changes with surgical precision:
 
 * It uses Roslyn to scan the entire project and identify all workflow classes.
-* It programmatically snaps a copy of the project and isolates it into a version-suffixed folder (e.g., `/Archived/Billing_V1_0_0/`).
-* **Delta Cleanup:** To avoid unnecessary codebase bloat, the tool cross-references unchanged workflows against historical manifests and **actively strips out unmutated workflow classes from the copied code**, archiving only what is truly necessary.
-* It alters the archived `.csproj` file to inject a unique identity token (e.g., `<AssemblyName>MyCompany.Workflows.Billing.v1_0_0</AssemblyName>`), ensuring total type insulation.
+* Through an IDE Code Fix, it moves the changed workflow into a version-suffixed folder (e.g., `/Archived/Billing_V1_0_0/`) and sets its **Build Action to None**.
+* It alters the archived `.csproj` file (if necessary for ALC isolation) to inject a unique identity token (e.g., `<AssemblyName>MyCompany.Workflows.Billing.v1_0_0</AssemblyName>`), ensuring total type insulation.
 
-### 3. Graph Stability & Manifest Guardrails
+### 3. Graph Stability & Schema Guardrails
 
-To prevent developers from introducing silent runtime desynchronization errors to archived legacy code, each isolated version folder includes a strict contract called `version-manifest.json`.
+To prevent developers from introducing silent runtime desynchronization errors to archived legacy code, each isolated version folder includes a strict contract called `WorkflowName_Vxx_Schema.json`.
 
-During compilation, a validation hook (`dotnet workflow verify`) checks the code using Roslyn's Semantic Model. It analyzes the workflow's **Control Flow Graph (CFG)** to map its linear basic blocks, execution branches (`if/else`, loops), and chronological `yield return` checkpoint sequences. If the layout shifts or any underlying property type drifts from the recorded snapshot, the compilation safely halts with a fatal diagnostic error before deployment can happen.
+During compilation, a continuous Analyzer hook checks the archived code using Roslyn's Semantic Model. It analyzes the workflow's **Control Flow Graph (CFG)** to map its linear basic blocks, execution branches, and chronological `yield return` checkpoint sequences. If the layout shifts or any underlying property type drifts from the recorded schema, the IDE instantly surfaces a fatal diagnostic error.
 
 ### 4. Isolated Runtime Execution via ALC
 

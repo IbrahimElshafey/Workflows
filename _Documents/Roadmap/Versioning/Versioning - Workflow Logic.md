@@ -10,7 +10,7 @@ This enforces a strict graph-isomorphism validation gate, ensuring the topologic
 
 #### 1. Topological Graph Extraction Blueprint
 
-During the `dotnet workflow build` phase, the compiler breaks the workflow down into **Basic Blocks** (linear sequences of executable instructions with a single entry and exit point). The analyzer records this network of basic blocks as a structural map within `version-manifest.json`:
+During compilation, the Source Generator breaks the workflow down into **Basic Blocks** (linear sequences of executable instructions with a single entry and exit point). The generator records this network of basic blocks as a structural map within `WorkflowName_Vxx_Schema.json`:
 
 ```json
 {
@@ -56,7 +56,7 @@ To validate the payload details of each state suspension step, the analyzer inte
 
 #### 3. Execution Pass/Fail Validation Invariants
 
-When `dotnet workflow verify` executes, the analyzer constructs a live CFG graph of the current code and compares it directly against the stored JSON block map.
+During continuous compilation, the Analyzer constructs a live CFG graph of the archived code and compares it directly against the stored JSON block map.
 
 The change is classified as **Safe (Compilation Allowed)** if modifications are localized entirely inside the basic blocks without touching yield points:
 
@@ -66,7 +66,7 @@ The change is classified as **Safe (Compilation Allowed)** if modifications are 
 The change is classified as **Unsafe (Compilation Failed)** and emits a fatal diagnostic error if it violates graph stability:
 
 ```text
-error WF3002: Control Flow Graph (CFG) structural drift detected in 'InvoiceProcessingWorkflow.cs'. Live basic block layout or branching paths do not match the historical version-manifest.json file.
+error WF3002: Control Flow Graph (CFG) structural drift detected in 'InvoiceProcessingWorkflow.cs'. Live basic block layout or branching paths do not match the historical InvoiceProcessing_V1_Schema.json file.
 
 ```
 

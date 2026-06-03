@@ -15,7 +15,7 @@ When workflow definitions evolve, existing active instances must either run to c
 
 ## 2. Auto-Generation & Conflict Resolution Workflow
 
-To minimize developer overhead, the migration class is **auto-generated** by comparing the V1 and V2 manifests (`version-manifest.json`). The CLI detects differences in properties and control flow, producing a migration file complete with automated maps and warning comments for any structural conflicts.
+To minimize developer overhead, the migration class is **auto-generated** by comparing the V1 and V2 manifests (the generated workflow schemas). The Source Generator detects differences in properties and control flow, producing a migration file complete with automated maps and warning comments for any structural conflicts.
 
 ```
                   [V1 manifest] vs [V2 manifest]
@@ -34,7 +34,7 @@ To minimize developer overhead, the migration class is **auto-generated** by com
 
 ### 2.1 The Auto-Generated Draft (With Conflict Warnings)
 
-When the CLI detects a version increment, it creates a migration stub. Below is what the generator produces when it notices that:
+When the Source Generator detects a version increment, it creates a migration stub. Below is what the generator produces when it notices that:
 1. `OrderId` (V1) was renamed or replaced by `OrderNumber` (V2).
 2. `CustomerName` (V1) was deleted in V2.
 3. A new property `Amount` was added in V2.

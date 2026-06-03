@@ -39,7 +39,7 @@ namespace MyCompany.Workflows.Fulfillment.Migrations
     /// This gives direct access to WaitSignal<T>, WaitSubWorkflow, WaitGroup, WaitDelay, etc.
     /// — the same DSL used when writing workflow code, no wrapper or adapter needed.
     ///
-    /// Auto-generated skeleton by the build CLI; conflict stubs completed by developer.
+    /// Auto-generated skeleton by the Source Generator; conflict stubs completed by developer.
     /// </summary>
     public class FulfillmentWorkflowMigration_20260529
         : WorkflowMigration<FulfillmentWorkflowV1, FulfillmentWorkflowV2>
@@ -190,7 +190,7 @@ namespace MyCompany.Workflows.Fulfillment.Migrations
     }
 
     // =============================================================================
-    // Reference: typed state wrappers (auto-generated from version-manifest.json)
+    // Reference: typed state wrappers (auto-generated from the workflow schema)
     // These only carry the instance data — no DSL factory methods.
     // =============================================================================
 

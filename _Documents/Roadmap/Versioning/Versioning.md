@@ -108,11 +108,11 @@ Because legacy version projects reference your shared base primitives, you must 
 
 ---
 
-### 6. The Stability Guard Manifest Schema
+### 6. The Stability Guard Workflow Schema
 
-To prevent insecure or breaking modifications to legacy codebases during dependency resolution or manual conflict patching, each generated version folder contains a strict structural metadata snapshot named **`version-manifest.json`**.
+To prevent insecure or breaking modifications to legacy codebases during dependency resolution or manual conflict patching, each generated version folder contains a strict structural metadata snapshot named **`WorkflowName_Vxx_Schema.json`**.
 
-This manifest acts as a compile-time contract, mapping out the precise stable state-contract boundaries, property names, variable data types, and wait identifiers that the workflow version requires to remain valid:
+This schema acts as a compile-time contract, mapping out the precise stable state-contract boundaries, property names, variable data types, and wait identifiers that the workflow version requires to remain valid:
 
 ```json
 {
@@ -228,38 +228,33 @@ To guide developers in real-time, the platform integrates **Workflows.Analyzers*
 
 ---
 
-### 8. The Integrated CLI Tooling Specification
+### 8. The Source Generator Integration
 
-The custom automation tool (`dotnet workflow`) is distributed directly inside the **Runner Host package**, ensuring that local development workflows, compilation boundaries, and runner nodes share a completely unified dependency model.
+The versioning automation is driven directly by the .NET compiler via a custom **Roslyn Source Generator and Code Analyzer**, ensuring that local development workflows, compilation boundaries, and runner nodes share a completely unified dependency model without external CLI tools.
 
-#### The Core Execution Pipeline Commands
+#### The Core Execution Pipeline
 
-##### 1. `dotnet workflow build --release-version <x.y.z>`
+##### 1. Triggering Version Increments
 
-This command takes the active, verified workflow state and locks it securely into the project's flat version archive.
+This workflow is entirely IDE-driven:
 
-* **Syntax Scan (Roslyn-Driven Discovery):** The CLI walks through your repository root. Bypassing slow binary builds, it reads files using a fast Roslyn Token Scanner (`CSharpSyntaxTree.ParseText`) to instantly locate class signatures implementing `WorkflowContainer`. Only projects containing active workflow models are selected, leaving other code modules completely untouched.
-* **Directory Mirroring Automation:** The tool duplicates the active project's source tree natively into a version-suffixed repository directory path: `/Archived/Billing_V1_0_0/`.
-* **Assembly Script Modification:** It opens the newly generated `.csproj` file, programmatically inserting the hardcoded version suffix into the `<AssemblyName>` and `<RootNamespace>` tags.
-* **Contract Manifest Creation:** It serializes the stable property definitions and match layouts, outputting the initial `version-manifest.json` guard contract file into that subfolder.
-* **Database Synchronization Provisioning:** It outputs a direct SQL migration descriptor to update the Orchestrator's central routing records, connecting the workflow metadata type name to its physical storage folder.
+* **Syntax Scan (Roslyn-Driven Discovery):** The Analyzer constantly monitors class signatures implementing `WorkflowContainer`. When the developer changes the version attribute (e.g., `[WorkflowVersion("2.0.0")]`), the Analyzer flags a diagnostic warning: *"Version incremented. Archive previous version."*
+* **Code Fix Provider Action:** The developer applies the IDE Code Fix (lightbulb). The provider automates the structural changes.
+* **Directory Mirroring Automation:** The original `.cs` file is moved into a version-suffixed repository directory path: `/Archived/Billing_V1_0_0/` and its **Build Action** is set to **None**. This removes it from active compilation while preserving it as an audit trail.
+* **Contract Schema Creation:** The generator serializes the stable property definitions, CFG layouts, and wait states, outputting the `WorkflowName_Vxx_Schema.json` contract file into that subfolder.
+* **Migration Layout Generation:** The source generator reads the schema and dynamically emits a `WorkflowNameVxx_Layout.cs` class. This provides the strictly typed wrapper (`TOld`) needed for the migration API, ensuring perfect type alignment.
 
-##### 2. `dotnet workflow verify`
+##### 2. Continuous Verification
 
-This command serves as an un-bypassable verification gate, executed locally by developers before pushes and enforced as a validation runner step in your CI/CD pipelines.
+This verification acts as an un-bypassable gate, executed locally by developers as they type, and enforced during compilation in CI/CD pipelines.
 
-* **The Execution Mechanics:** The CLI sequentially scans each `/Archived/*` subfolder on the branch. It parses the local C# code and validates its parameters directly against the `version-manifest.json` contract file.
-* **Clickable IDE Feedback Loop:** If an incompatibility or compilation error is caught, the CLI emits a standard Microsoft MSBuild logger string directly to the terminal interface:
+* **The Execution Mechanics:** The Analyzer continuously parses the archived C# files (even if Build Action is None) and validates their structural integrity against the generated `WorkflowName_Vxx_Schema.json` contract file.
+* **Clickable IDE Feedback Loop:** If an incompatibility or compilation error is caught, the Analyzer emits a standard compiler diagnostic directly to the IDE Error List:
 ```text
-C:\Workspace\Billing\Archived\Billing_V1_0_0\InvoiceProcessingWorkflow.cs(45,12): error WF3001: Property 'InvoiceTotal' layout mismatch against schema contract in version-manifest.json.
-
+C:\Workspace\Billing\Archived\Billing_V1_0_0\InvoiceProcessingWorkflow.cs(45,12): error WF3001: Property 'InvoiceTotal' layout mismatch against schema contract in InvoiceProcessing_V1_Schema.json.
 ```
 
-
-
-```
-    Because this string matches standard compiler formatting rules, **the developer simply double-clicks the error line inside their Visual Studio Output Window.** The IDE automatically brings up the file, maps the cursor to the exact line, and provides full IntelliSense, type checking, and refactoring support on the branch. The developer applies the fix, saves, and commits the code directly to `main` without switching branches or managing separate environments.
-
+Because this is a native compiler diagnostic, **the developer simply double-clicks the error inside their Visual Studio Error List.** The IDE automatically brings up the file and maps the cursor to the exact line.
 ---
 
 ### 9. Heterogeneous Group Coordination Logic
