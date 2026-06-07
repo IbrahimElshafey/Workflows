@@ -538,9 +538,9 @@ namespace InProcessSqliteSample
                 Console.WriteLine($"CustomerEmail:     {orderWorkflow.CustomerEmail}");
                 Console.WriteLine($"Amount:            {orderWorkflow.Amount:C}");
                 Console.WriteLine($"PaymentAuthorized: {orderWorkflow.PaymentAuthorized}");
-                Console.WriteLine($"StockOk:           {orderWorkflow.StockOk}");
-                Console.WriteLine($"CustomerOk:        {orderWorkflow.CustomerOk}");
-                Console.WriteLine($"OrderShipped:      {orderWorkflow.OrderShipped}");
+                Console.WriteLine($"StockOk:           {orderWorkflow.State.StockOk}");
+                Console.WriteLine($"CustomerOk:        {orderWorkflow.State.CustomerOk}");
+                Console.WriteLine($"OrderShipped:      {orderWorkflow.State.OrderShipped}");
                 Console.WriteLine($"TrackingCode:      {orderWorkflow.TrackingCode}");
                 Console.WriteLine($"ErrorReason:       {orderWorkflow.ErrorReason}");
 

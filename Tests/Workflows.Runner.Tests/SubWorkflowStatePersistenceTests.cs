@@ -293,8 +293,14 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    public class SubWorkflowWithLocalVariablesState
+    {
+        public int localCounter { get; set; } = 42;
+        public string localMessage { get; set; } = "hello";
+    }
+
     [Workflow("SubWorkflowWithLocalVariables", 1)]
-    public sealed class SubWorkflowWithLocalVariablesTestWorkflow : WorkflowContainer
+    public sealed class SubWorkflowWithLocalVariablesTestWorkflow : WorkflowContainer<SubWorkflowWithLocalVariablesState>
     {
         public List<int> ExecutionLog { get; set; } = new();
 
@@ -307,13 +313,10 @@ namespace Workflows.Runner.Tests
         [SubWorkflow]
         private async IAsyncEnumerable<Wait> ChildWithVariables()
         {
-            int localCounter = 42;
-            string localMessage = "hello";
-
             yield return WaitSignal<PaymentConfirmedSignal>("Payment", "Payment Wait");
 
-            ExecutionLog.Add(localCounter);
-            if (localMessage == "hello")
+            ExecutionLog.Add(state.localCounter);
+            if (state.localMessage == "hello")
             {
                 ExecutionLog.Add(100);
             }

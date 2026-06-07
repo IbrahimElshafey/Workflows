@@ -5,7 +5,7 @@ namespace Workflows.Definition.Registration
 {
     public static class WorkflowDefinitionRegistry
     {
-        // Key => Workflow Name, Value => (WorkflowContainer Type, StateMachine Type)
-        public static ConcurrentDictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine)> Workflows { get; } = new();
+        // Key => Workflow Name, Value => (WorkflowContainer Type, StateMachine Type, StateType Type)
+        public static ConcurrentDictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType)> Workflows { get; } = new();
     }
 }

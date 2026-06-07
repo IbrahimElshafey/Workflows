@@ -32,7 +32,19 @@ namespace Workflows.Runner.Tests.Infrastructure
 
         public WorkflowTestBuilder RegisterWorkflow<TWorkflow>(string workflowType) where TWorkflow : WorkflowContainer
         {
-            _registry.Workflows[workflowType] = (typeof(TWorkflow), typeof(TWorkflow));
+            Type stateType = typeof(DefaultWorkflowState);
+            var baseType = typeof(TWorkflow).BaseType;
+            while (baseType != null)
+            {
+                if (baseType.IsGenericType && baseType.GetGenericTypeDefinition() == typeof(WorkflowContainer<>))
+                {
+                    stateType = baseType.GetGenericArguments()[0];
+                    break;
+                }
+                baseType = baseType.BaseType;
+            }
+
+            _registry.Workflows[workflowType] = (typeof(TWorkflow), typeof(TWorkflow), stateType);
             return this;
         }
 

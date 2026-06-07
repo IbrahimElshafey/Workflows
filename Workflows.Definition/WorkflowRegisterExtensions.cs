@@ -14,10 +14,15 @@ namespace Workflows.Definition
 
             // 1. Find all workflows
             var workflowTypes = assembly.GetTypes()
-                .Where(t => t.IsSubclassOf(typeof(WorkflowContainer)) && !t.IsAbstract && t.IsSealed && t.DeclaringType == null);
+                .Where(t => t.IsSubclassOf(typeof(WorkflowContainer)) && !t.IsAbstract && t.DeclaringType == null);
 
             foreach (var type in workflowTypes)
             {
+                if (!type.IsSealed)
+                {
+                    throw new InvalidOperationException($"Registration failed for '{type.Name}'. The workflow class must be marked as sealed.");
+                }
+
                 var attribute = type.GetCustomAttribute<WorkflowAttribute>();
                 if (attribute == null)
                 {
@@ -43,10 +48,15 @@ namespace Workflows.Definition
 
             // 1. Find all workflows
             var workflowTypes = assembly.GetTypes()
-                .Where(t => t.IsSubclassOf(typeof(WorkflowContainer)) && !t.IsAbstract && t.IsSealed && t.DeclaringType == null);
+                .Where(t => t.IsSubclassOf(typeof(WorkflowContainer)) && !t.IsAbstract && t.DeclaringType == null);
 
             foreach (var type in workflowTypes)
             {
+                if (!type.IsSealed)
+                {
+                    throw new InvalidOperationException($"Registration failed for '{type.Name}'. The workflow class must be marked as sealed.");
+                }
+
                 var attribute = type.GetCustomAttribute<WorkflowAttribute>();
                 if (attribute == null)
                 {

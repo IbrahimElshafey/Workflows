@@ -1,5 +1,7 @@
 using FluentAssertions;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CodeActions;
+using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using System;
@@ -390,6 +392,240 @@ namespace TestWorkflows
 
             var diagnostics = await RunAnalyzerAsync(source);
             diagnostics.Where(d => d.Id == "WF209").Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task WF_ERR_UNSAFE_STATE_ShouldTriggerDiagnostic_WhenLocalVariableAccessedAcrossWaitBoundary()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""MyWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            int localVal = 42;
+            yield return WaitSignal<string>(""MySignal"", ""WaitName"");
+            Console.WriteLine(localVal); // accessed across yield return
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Should().ContainSingle(d => d.Id == "WF_ERR_UNSAFE_STATE");
+        }
+
+        [Fact]
+        public async Task WF_ERR_UNSAFE_STATE_ShouldNotTriggerDiagnostic_WhenLocalVariableNotAccessedAcrossWaitBoundary()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""MyWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            int localVal = 42;
+            Console.WriteLine(localVal); // used before yield return
+            yield return WaitSignal<string>(""MySignal"", ""WaitName"");
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Where(d => d.Id == "WF_ERR_UNSAFE_STATE").Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task WF210_MissingRunMethod_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""MyWorkflow"", 1)]
+    public sealed class TestWorkflowWithoutRun : WorkflowContainer
+    {
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Should().ContainSingle(d => d.Id == "WF210");
+        }
+
+        [Fact]
+        public async Task WF210_RunMethodPresent_ShouldNotTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""MyWorkflow"", 1)]
+    public sealed class TestWorkflowWithRun : WorkflowContainer
+    {
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            yield break;
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Where(d => d.Id == "WF210").Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task WF210_StatefulWorkflow_RunMethodWithStateParameter_ShouldNotTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    public class MyState
+    {
+    }
+
+    [Workflow(""MyWorkflow"", 1)]
+    public sealed class TestWorkflowWithStateRun : WorkflowContainer<MyState>
+    {
+        public override async IAsyncEnumerable<Wait> Run(MyState state)
+        {
+            yield break;
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Where(d => d.Id == "WF210").Should().BeEmpty();
+        }
+
+        private async Task<string> ApplyCodeFixAsync(string source, string diagnosticId)
+        {
+            var syntaxTree = CSharpSyntaxTree.ParseText(source);
+            var references = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => MetadataReference.CreateFromFile(a.Location))
+                .Cast<MetadataReference>()
+                .ToList();
+
+            var workspace = new AdhocWorkspace();
+            var projectId = ProjectId.CreateNewId();
+            var documentId = DocumentId.CreateNewId(projectId);
+
+            var solution = workspace.CurrentSolution
+                .AddProject(projectId, "TestProject", "TestAssembly", LanguageNames.CSharp)
+                .AddMetadataReferences(projectId, references)
+                .AddDocument(documentId, "TestFile.cs", source);
+
+            var document = solution.GetDocument(documentId)!;
+            var compilation = await document.Project.GetCompilationAsync();
+            var compilationWithAnalyzers = compilation!.WithAnalyzers(
+                ImmutableArray.Create<DiagnosticAnalyzer>(new WorkflowAnalyzer()));
+
+            var diagnostics = await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
+            var targetDiag = diagnostics.FirstOrDefault(d => d.Id == diagnosticId);
+            if (targetDiag == null) return source;
+
+            var codeFixProvider = new WorkflowCodeFixProvider();
+            var actions = new List<CodeAction>();
+            var context = new CodeFixContext(document, targetDiag, (action, diag) => actions.Add(action), default);
+
+            await codeFixProvider.RegisterCodeFixesAsync(context);
+            if (actions.Count == 0) return source;
+
+            var fixAction = actions.First();
+            var operations = await fixAction.GetOperationsAsync(default);
+            var applyChangesOperation = operations.OfType<ApplyChangesOperation>().FirstOrDefault();
+            if (applyChangesOperation == null) return source;
+
+            var newDoc = applyChangesOperation.ChangedSolution.GetDocument(documentId)!;
+            var newRoot = await newDoc.GetSyntaxRootAsync();
+            return newRoot!.ToFullString();
+        }
+
+        [Fact]
+        public async Task UnsafeStateFix_WithoutExistingStateClass_ShouldCreateStateClassAndChangeInheritance()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""MyWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public override async IAsyncEnumerable<Wait> Run()
+        {
+            int localVal = 42;
+            yield return WaitSignal<string>(""MySignal"", ""WaitName"");
+            Console.WriteLine(localVal);
+        }
+    }
+}";
+
+            var fixedSource = await ApplyCodeFixAsync(source, "WF_ERR_UNSAFE_STATE");
+
+            fixedSource.Should().Contain("public class TestWorkflowState");
+            fixedSource.Should().Contain("public sealed class TestWorkflow : WorkflowContainer<TestWorkflowState>");
+            fixedSource.Should().Contain("state.localVal = 42;");
+            fixedSource.Should().Contain("Console.WriteLine(state.localVal);");
+            fixedSource.Should().NotContain("int localVal = 42;");
+        }
+
+        [Fact]
+        public async Task UnsafeStateFix_WithExistingStateClass_ShouldMoveVariableToStateClass()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    public class TestWorkflowState
+    {
+    }
+
+    [Workflow(""MyWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer<TestWorkflowState>
+    {
+        public override async IAsyncEnumerable<Wait> Run(TestWorkflowState state)
+        {
+            int localVal = 42;
+            yield return WaitSignal<string>(""MySignal"", ""WaitName"");
+            Console.WriteLine(localVal);
+        }
+    }
+}";
+
+            var fixedSource = await ApplyCodeFixAsync(source, "WF_ERR_UNSAFE_STATE");
+
+            fixedSource.Should().Contain("public class TestWorkflowState");
+            fixedSource.Should().Contain("public int localVal { get; set; }");
+            fixedSource.Should().Contain("state.localVal = 42;");
+            fixedSource.Should().Contain("Console.WriteLine(state.localVal);");
+            fixedSource.Should().NotContain("int localVal = 42;");
         }
     }
 }

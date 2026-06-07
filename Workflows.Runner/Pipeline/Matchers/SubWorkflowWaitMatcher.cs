@@ -164,7 +164,14 @@ namespace Workflows.Runner.Pipeline.Matchers
             var key = $"{containerType.FullName}:{methodName}";
             return _workflowInvokers.GetOrAdd(key, _ =>
             {
-                var method = containerType.GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                var method = containerType.GetMethod(
+                    methodName,
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    Type.EmptyTypes,
+                    null) ?? containerType.GetMethod(
+                    methodName,
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (method == null) return null;
 
                 var instanceParam = Expression.Parameter(typeof(object), "instance");

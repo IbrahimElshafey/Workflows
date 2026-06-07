@@ -167,8 +167,28 @@ namespace Workflows.Analyzers
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
 
+        public const string DiagnosticIdWFUnsafeState = "WF_ERR_UNSAFE_STATE";
+
+        private static readonly DiagnosticDescriptor WF_ERR_UNSAFE_STATE = new DiagnosticDescriptor(
+            DiagnosticIdWFUnsafeState,
+            "Local variable across wait boundary",
+            "Local variable '{0}' is accessed across a yield return boundary. Move this variable to the state POCO to ensure serialization safety.",
+            "Workflow.Safety",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        public const string DiagnosticIdWF210 = "WF210";
+
+        private static readonly DiagnosticDescriptor WF210 = new DiagnosticDescriptor(
+            DiagnosticIdWF210,
+            "Missing Run Method",
+            "Workflow container class '{0}' must implement a public/protected 'Run' method returning IAsyncEnumerable<Wait>.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(
-            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209);
+            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209, WF_ERR_UNSAFE_STATE, WF210);
 
         public override void Initialize(AnalysisContext context)
         {
@@ -183,11 +203,12 @@ namespace Workflows.Analyzers
             context.RegisterSyntaxNodeAction(AnalyzeMemberAccessExpression, SyntaxKind.SimpleMemberAccessExpression);
             context.RegisterSyntaxNodeAction(AnalyzeAssignmentExpression, SyntaxKind.SimpleAssignmentExpression);
             context.RegisterSyntaxNodeAction(AnalyzeIdentifierName, SyntaxKind.IdentifierName);
+            context.RegisterSyntaxNodeAction(AnalyzeMethodDeclaration, SyntaxKind.MethodDeclaration);
         }
 
         private static void AnalyzeNamedType(SymbolAnalysisContext context)
         {
-            Rules.StructureRules.AnalyzeNamedType(context, WF201, WF202, WF209);
+            Rules.StructureRules.AnalyzeNamedType(context, WF201, WF202, WF209, WF210);
             Rules.WaitRules.AnalyzeNamedType(context, WF204, WF205, WF206, WF207, WF208);
         }
 
@@ -248,6 +269,21 @@ namespace Workflows.Analyzers
             return false;
         }
 
+        internal static ITypeSymbol? GetWorkflowStateType(INamedTypeSymbol? typeSymbol)
+        {
+            while (typeSymbol != null)
+            {
+                if ((typeSymbol.Name == "WorkflowContainer" || typeSymbol.ToDisplayString().StartsWith("Workflows.Definition.WorkflowContainer")) && 
+                    typeSymbol.IsGenericType && 
+                    typeSymbol.TypeArguments.Length == 1)
+                {
+                    return typeSymbol.TypeArguments[0];
+                }
+                typeSymbol = typeSymbol.BaseType;
+            }
+            return null;
+        }
+
         internal static bool InheritsFromWait(ITypeSymbol? typeSymbol)
         {
             while (typeSymbol != null)
@@ -298,6 +334,90 @@ namespace Workflows.Analyzers
                 return true;
             }
             return false;
+        }
+
+        private static void AnalyzeMethodDeclaration(SyntaxNodeAnalysisContext context)
+        {
+            var methodDecl = (MethodDeclarationSyntax)context.Node;
+            var methodSymbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
+            if (methodSymbol == null) return;
+
+            if (IsWorkflowMethod(methodSymbol))
+            {
+                var localVariables = new List<VariableDeclaratorSyntax>();
+                var yieldReturns = new List<YieldStatementSyntax>();
+                var identifierUsages = new Dictionary<string, List<IdentifierNameSyntax>>();
+
+                var walker = new WorkflowMethodWalker(localVariables, yieldReturns, identifierUsages);
+                walker.Visit(methodDecl.Body);
+
+                foreach (var localVar in localVariables)
+                {
+                    var symbol = context.SemanticModel.GetDeclaredSymbol(localVar) as ILocalSymbol;
+                    if (symbol == null) continue;
+
+                    var name = symbol.Name;
+                    if (!identifierUsages.TryGetValue(name, out var usages)) continue;
+
+                    foreach (var yieldReturn in yieldReturns)
+                    {
+                        if (yieldReturn.SpanStart > localVar.SpanStart)
+                        {
+                            var unsafeUsage = usages.FirstOrDefault(u => u.SpanStart > yieldReturn.SpanStart && 
+                                !yieldReturn.Span.Contains(u.Span) &&
+                                SymbolEqualityComparer.Default.Equals(context.SemanticModel.GetSymbolInfo(u).Symbol, symbol));
+
+                            if (unsafeUsage != null)
+                            {
+                                var diagnostic = Diagnostic.Create(WF_ERR_UNSAFE_STATE, localVar.Identifier.GetLocation(), name);
+                                context.ReportDiagnostic(diagnostic);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private class WorkflowMethodWalker : CSharpSyntaxWalker
+        {
+            private readonly List<VariableDeclaratorSyntax> _localVariables;
+            private readonly List<YieldStatementSyntax> _yieldReturns;
+            private readonly Dictionary<string, List<IdentifierNameSyntax>> _identifierUsages;
+
+            public WorkflowMethodWalker(List<VariableDeclaratorSyntax> localVariables, List<YieldStatementSyntax> yieldReturns, Dictionary<string, List<IdentifierNameSyntax>> identifierUsages)
+            {
+                _localVariables = localVariables;
+                _yieldReturns = yieldReturns;
+                _identifierUsages = identifierUsages;
+            }
+
+            public override void VisitVariableDeclarator(VariableDeclaratorSyntax node)
+            {
+                _localVariables.Add(node);
+                base.VisitVariableDeclarator(node);
+            }
+
+            public override void VisitYieldStatement(YieldStatementSyntax node)
+            {
+                if (node.IsKind(SyntaxKind.YieldReturnStatement))
+                {
+                    _yieldReturns.Add(node);
+                }
+                base.VisitYieldStatement(node);
+            }
+
+            public override void VisitIdentifierName(IdentifierNameSyntax node)
+            {
+                var name = node.Identifier.ValueText;
+                if (!_identifierUsages.TryGetValue(name, out var list))
+                {
+                    list = new List<IdentifierNameSyntax>();
+                    _identifierUsages[name] = list;
+                }
+                list.Add(node);
+                base.VisitIdentifierName(node);
+            }
         }
     }
 }

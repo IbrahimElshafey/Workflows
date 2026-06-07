@@ -20,8 +20,8 @@ namespace Workflows.Runner
     internal class WorkflowBuilder : IWorkflowBuilder, IWorkflowRegistry
     {
         private readonly BulkRegistrationPackage registrationPackage = new BulkRegistrationPackage();
-        // Key=> Workflow Name, Value => Tuple of (WorkflowContainer Type, StateMachine Type)
-        private readonly Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine)> _workflows = new();
+        // Key=> Workflow Name, Value => Tuple of (WorkflowContainer Type, StateMachine Type, StateType Type)
+        private readonly Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType)> _workflows = new();
         // Key => Signal Identifier, Value => Signal Payload Type
         private readonly Dictionary<string, Type> _signals = new();
         // Key => Command Identifier, Value => Tuple of (Command Payload Type, Command Result Type)
@@ -33,7 +33,7 @@ namespace Workflows.Runner
             _schemaGenerator = schemaGenerator;
         }
 
-        public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine)> Workflows => _workflows;
+        public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType)> Workflows => _workflows;
 
         public Dictionary<string, Type> SignalTypes => _signals;
 
@@ -108,10 +108,12 @@ namespace Workflows.Runner
                 throw new InvalidOperationException($"Registration failed for '{name}'. The workflow class '{workflowType.Name}' must be sealed.");
             }
 
-            // 2. Locate the ExecuteWorkflowAsync method to get its compiler-generated state machine
             var methodInfo = workflowType.GetMethod(
                 nameof(WorkflowContainer.Run),
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null,
+                Type.EmptyTypes,
+                null);
 
             if (methodInfo == null)
             {
@@ -139,9 +141,22 @@ namespace Workflows.Runner
                 throw new InvalidOperationException($"Method 'ExecuteWorkflowAsync' on '{workflowType.Name}' must be an 'async' method.");
             }
 
-            // 4. Correctly assign the container type AND the extracted state machine type
-            _workflows[name] = (workflowType, stateMachineType);
-            global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows[name] = (workflowType, stateMachineType);
+            // 4. Resolve State Type
+            Type stateType = typeof(DefaultWorkflowState);
+            var baseType = workflowType.BaseType;
+            while (baseType != null)
+            {
+                if (baseType.IsGenericType && baseType.GetGenericTypeDefinition() == typeof(WorkflowContainer<>))
+                {
+                    stateType = baseType.GetGenericArguments()[0];
+                    break;
+                }
+                baseType = baseType.BaseType;
+            }
+
+            // 5. Correctly assign the container type, state machine type, and state type
+            _workflows[name] = (workflowType, stateMachineType, stateType);
+            global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows[name] = (workflowType, stateMachineType, stateType);
 
             // Validate sub-workflows (visibility and attribute)
             ValidateWorkflowSubWorkflows(workflowType);
@@ -154,6 +169,8 @@ namespace Workflows.Runner
                 WorkflowName = name,
                 Version = version,
                 WorkflowTypeName = workflowType.AssemblyQualifiedName,
+                StateTypeName = stateType.AssemblyQualifiedName,
+                StateTypeSchema = _schemaGenerator.Generate(stateType).ToString(),
                 RegisteredAt = DateTime.UtcNow,
                 WorkflowTypeSchema = _schemaGenerator.Generate(workflowType).ToString()
             });

@@ -74,6 +74,12 @@ namespace Workflows.Runner.Pipeline
                 ?? _hydrator.CreateInstance(workflowTypes.WorkflowContainer);
             state.StateObject.Instance = workflowInstance;
 
+            var stateType = workflowInstance.GetStateType();
+            if (stateType != null && workflowInstance.GetState() == null)
+            {
+                workflowInstance.SetState(Activator.CreateInstance(stateType));
+            }
+
             // Restore cancelled tokens from history
             if (state.CancellationHistory != null && state.CancellationHistory.Count > 0)
             {
@@ -262,7 +268,13 @@ namespace Workflows.Runner.Pipeline
             // Instantiate the workflow container
             var workflowInstance = _hydrator.CreateInstance(workflowTypes.WorkflowContainer);
 
-            // Copy public properties of the input object to the instantiated workflow container
+            var stateType = workflowInstance.GetStateType();
+            if (stateType != null && workflowInstance.GetState() == null)
+            {
+                workflowInstance.SetState(Activator.CreateInstance(stateType));
+            }
+
+            // Copy public properties of the input object to the instantiated workflow container and/or state POCO
             if (input != null)
             {
                 var inputType = input.GetType();
@@ -275,6 +287,22 @@ namespace Workflows.Runner.Pipeline
                     {
                         var value = inputProp.GetValue(input);
                         containerProp.SetValue(workflowInstance, value);
+                    }
+                }
+
+                var statePoco = workflowInstance.GetState();
+                if (statePoco != null)
+                {
+                    var statePocoType = statePoco.GetType();
+                    foreach (var inputProp in inputType.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                    {
+                        if (!inputProp.CanRead) continue;
+                        var stateProp = statePocoType.GetProperty(inputProp.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                        if (stateProp != null && stateProp.CanWrite)
+                        {
+                            var value = inputProp.GetValue(input);
+                            stateProp.SetValue(statePoco, value);
+                        }
                     }
                 }
             }

@@ -96,33 +96,6 @@ namespace Workflows.Runner.Helpers
                 ));
             }
 
-            // 3. Hydrate state machine variables
-            var stateFieldsToHydrate = fields.Where(IsLocalField).ToList();
-            if (stateFieldsToHydrate.Any())
-            {
-                var convertStateMethod = typeof(Workflows.Runner.Pipeline.StateConverter).GetMethod(
-                    nameof(Workflows.Runner.Pipeline.StateConverter.ConvertState),
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-
-                var variableAssignments = new List<Expression>();
-
-                foreach (var f in stateFieldsToHydrate)
-                {
-                    var cleanName = GetCleanFieldName(f.Name);
-                    var outVar = Expression.Variable(typeof(object), cleanName + "_out");
-                    localVariables.Add(outVar);
-
-                    var tryGetCall = Expression.Call(stateParam, dictTryGetValueMethod, Expression.Constant(cleanName), outVar);
-                    var convertedVal = Expression.Convert(
-                        Expression.Call(convertStateMethod!, outVar, Expression.Constant(f.FieldType)),
-                        f.FieldType);
-                    var assignField = Expression.Assign(Expression.Field(typedEnumerator, f), convertedVal);
-
-                    variableAssignments.Add(Expression.IfThen(tryGetCall, assignField));
-                }
-                assignments.Add(Expression.Block(variableAssignments));
-            }
-
             var block = Expression.Block(localVariables, assignments);
             var lambda = Expression.Lambda<Action<object, StateMachineObject>>(block, enumeratorParam, stateParam);
 
@@ -158,21 +131,6 @@ namespace Workflows.Runner.Helpers
                     Expression.Property(stateVar, nameof(StateMachineObject.Instance)),
                     Expression.Convert(Expression.Field(typedEnumerator, thisField), typeof(object))
                 ));
-            }
-
-            // 3. Extract variables
-            var dictAddMethod = typeof(Dictionary<string, object>).GetMethod("Add", new[] { typeof(string), typeof(object) });
-
-            var stateFieldsToDehydrate = fields.Where(IsLocalField).ToList();
-            foreach (var f in stateFieldsToDehydrate)
-            {
-                var cleanName = GetCleanFieldName(f.Name);
-                var fieldAccess = Expression.Field(typedEnumerator, f);
-                var castedField = Expression.Convert(fieldAccess, typeof(object));
-                var isNotNull = Expression.NotEqual(castedField, Expression.Constant(null, typeof(object)));
-
-                var addCall = Expression.Call(stateVar, dictAddMethod, Expression.Constant(cleanName), castedField);
-                assignments.Add(Expression.IfThen(isNotNull, addCall));
             }
 
             assignments.Add(stateVar); // Return value

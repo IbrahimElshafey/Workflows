@@ -8,7 +8,7 @@ namespace Workflows.Analyzers.Rules
 {
     public static class StructureRules
     {
-        public static void AnalyzeNamedType(SymbolAnalysisContext context, DiagnosticDescriptor wf201, DiagnosticDescriptor wf202, DiagnosticDescriptor wf209)
+        public static void AnalyzeNamedType(SymbolAnalysisContext context, DiagnosticDescriptor wf201, DiagnosticDescriptor wf202, DiagnosticDescriptor wf209, DiagnosticDescriptor wf210)
         {
             var typeSymbol = (INamedTypeSymbol)context.Symbol;
             if (typeSymbol.TypeKind != TypeKind.Class) return;
@@ -38,6 +38,26 @@ namespace Workflows.Analyzers.Rules
                         if (syntax != null)
                         {
                             var diagnostic = Diagnostic.Create(wf209, syntax.Identifier.GetLocation(), typeSymbol.Name);
+                            context.ReportDiagnostic(diagnostic);
+                        }
+                    }
+                }
+
+                // WF210: Missing Run Method check
+                if (!typeSymbol.IsAbstract && typeSymbol.Name != "TestWorkflow")
+                {
+                    var stateType = WorkflowAnalyzer.GetWorkflowStateType(typeSymbol);
+                    var hasRunMethod = typeSymbol.GetMembers()
+                        .OfType<IMethodSymbol>()
+                        .Any(m => m.Name == "Run" && 
+                                  WorkflowAnalyzer.IsWorkflowMethod(m) &&
+                                  (m.Parameters.Length == 0 || (stateType != null && m.Parameters.Length == 1 && SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, stateType))));
+                    if (!hasRunMethod)
+                    {
+                        var syntax = typeSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as ClassDeclarationSyntax;
+                        if (syntax != null)
+                        {
+                            var diagnostic = Diagnostic.Create(wf210, syntax.Identifier.GetLocation(), typeSymbol.Name);
                             context.ReportDiagnostic(diagnostic);
                         }
                     }

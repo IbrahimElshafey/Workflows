@@ -38,6 +38,11 @@ namespace Workflows.Runner.Pipeline
             {
                 var method = containerType.GetMethod(
                     methodName,
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    Type.EmptyTypes,
+                    null) ?? containerType.GetMethod(
+                    methodName,
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
                 if (method == null)

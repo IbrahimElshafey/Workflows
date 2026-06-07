@@ -20,6 +20,8 @@ namespace Workflows.Abstraction.DTOs.Registration
         /// </summary>
         public string WorkflowTypeName { get; set; }
         public string WorkflowTypeSchema { get; set; }
+        public string StateTypeName { get; set; }
+        public string StateTypeSchema { get; set; }
 
         /// <summary>
         /// The UTC timestamp when this version was registered.

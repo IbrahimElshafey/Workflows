@@ -5,15 +5,13 @@ namespace WorkflowSample
 {
     // --- The Workflow Definition ---
     [Workflow("OrderProcessingWorkflow", 1)]
-    public sealed class OrderProcessingWorkflow : WorkflowContainer
+    public sealed partial class OrderProcessingWorkflow : WorkflowContainer<OrderProcessingWorkflowState>
     {
-        // 1. DOMAIN STATE: These are stable '<>4__this' properties.
-        // They will be safely captured as the MachineState.Instance.
         public int CurrentOrderId { get; set; }
-        public string CurrentCustomer { get; set; }
+        public string CurrentCustomer { get; set; } = string.Empty;
         public int ProcessCount { get; set; }
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public override async IAsyncEnumerable<Wait> Run(OrderProcessingWorkflowState state)
         {
             // Initialize domain state
             ProcessCount = 10;
@@ -94,5 +92,9 @@ namespace WorkflowSample
             await Task.Delay(100);
             Console.WriteLine("After waiting for shipping event, doing some async work in the sub-workflow...");
         }
+    }
+
+    public class OrderProcessingWorkflowState
+    {
     }
 }

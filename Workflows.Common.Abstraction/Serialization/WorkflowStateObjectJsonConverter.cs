@@ -152,29 +152,6 @@ namespace Workflows.Shared.Serialization
                                     stateMachineObj.Instance = instVal.ToObject<object>(serializer);
                                 }
                             }
-
-                            var fields = stateMachineType?.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                            foreach (var fieldProp in propJson.Properties())
-                            {
-                                if (fieldProp.Name == "$state" || fieldProp.Name == "Instance" || fieldProp.Name == "$this" ||
-                                    fieldProp.Name == "$id" || fieldProp.Name == "$ref" || fieldProp.Name == "$type")
-                                {
-                                    continue;
-                                }
-
-                                var field = fields?.FirstOrDefault(f => GetCleanFieldName(f.Name) == fieldProp.Name);
-                                if (field != null)
-                                {
-                                    using (var subReader = fieldProp.Value.CreateReader())
-                                    {
-                                        stateMachineObj[fieldProp.Name] = ContractBypassingSerializer(serializer).Deserialize(subReader, field.FieldType);
-                                    }
-                                }
-                                else
-                                {
-                                    stateMachineObj[fieldProp.Name] = fieldProp.Value.ToObject<object>(serializer);
-                                }
-                            }
                         }
 
                         dict[prop.Name] = stateMachineObj;

@@ -10,7 +10,7 @@ namespace InProcessSqliteSample
     // ---------------------------------------------------------
 
     [Workflow("OrderWorkflow", 1)]
-    public sealed class OrderProcessingWorkflow : WorkflowContainer
+    public sealed partial class OrderProcessingWorkflow : WorkflowContainer<OrderWorkflowState>
     {
         // Domain state — populated by the first generic signal, NOT from StartWorkflowAsync input.
         // The workflow starts with NO state; the first wait is generic (no MatchIf).
@@ -25,19 +25,13 @@ namespace InProcessSqliteSample
         // Processing state — set by subsequent state-aware waits
         public bool PaymentAuthorized { get; set; }
 
-        public bool StockOk { get; set; }
-
-        public bool CustomerOk { get; set; }
-
-        public bool OrderShipped { get; set; }
-
         public string TrackingCode { get; set; } = string.Empty;
 
         public string ErrorReason { get; set; } = string.Empty;
 
         public List<string> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public override async IAsyncEnumerable<Wait> Run(OrderWorkflowState state)
         {
             ExecutionLog.Add("Workflow ready. Waiting for an order to be received.");
 
@@ -74,7 +68,7 @@ namespace InProcessSqliteSample
                     {
                         if(sig.Status == "Available")
                         {
-                            StockOk = true;
+                            State.StockOk = true;
                             ExecutionLog.Add("Stock confirmed available.");
                         } else
                         {
@@ -88,7 +82,7 @@ namespace InProcessSqliteSample
                 .AfterMatch(
                     sig =>
                     {
-                        CustomerOk = sig.Verified;
+                        State.CustomerOk = sig.Verified;
                         ExecutionLog.Add(
                             sig.Verified ? "Customer verification succeeded." : "Customer verification failed.");
                         if(!sig.Verified)
@@ -100,10 +94,10 @@ namespace InProcessSqliteSample
                 "ParallelVerification")
                 .MatchAll();
 
-            if(!StockOk || !CustomerOk)
+            if(!state.StockOk || !state.CustomerOk)
             {
                 ExecutionLog.Add(
-                    $"Aborting before payment — StockOk={StockOk}, CustomerOk={CustomerOk}. Reason: {ErrorReason}");
+                    $"Aborting before payment — StockOk={state.StockOk}, CustomerOk={state.CustomerOk}. Reason: {ErrorReason}");
                 yield break;
             }
 
@@ -143,7 +137,7 @@ namespace InProcessSqliteSample
                 .OnResult(
                     result =>
                     {
-                        OrderShipped = result.Success;
+                        State.OrderShipped = result.Success;
                         TrackingCode = result.TrackingNumber;
                         ExecutionLog.Add(
                             result.Success ? $"Order shipped. Tracking: {TrackingCode}" : "Shipping failed.");
@@ -153,5 +147,12 @@ namespace InProcessSqliteSample
 
             ExecutionLog.Add("Workflow completed successfully.");
         }
+    }
+
+    public class OrderWorkflowState
+    {
+        public bool StockOk { get; set; }
+        public bool CustomerOk { get; set; }
+        public bool OrderShipped { get; set; }
     }
 }
