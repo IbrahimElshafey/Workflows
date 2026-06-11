@@ -63,23 +63,23 @@ namespace Workflows.Runner.Tests
             var resumeResponse = builder.Client.SentResults.Last().Result;
             var resumedState = resumeResponse.UpdatedState;
 
-            // Assert - the resumed state should contain a sub-workflow entry in StateMachinesObjects
-            resumedState.StateObject.StateMachinesObjects
-                .Should().NotBeNull("StateMachinesObjects must be initialized");
+            // Assert - the resumed state should contain a sub-workflow entry in Locals
+            resumedState.StateObject.Locals
+                .Should().NotBeNull("Locals must be initialized");
 
             // The sub-workflow (ProcessOrderSubWorkflow) suspends on PaymentConfirmed signal.
-            // Its WorkflowStateObject must be stored in StateMachinesObjects.
-            var subWorkflowEntry = resumedState.StateObject.StateMachinesObjects
+            // Its WorkflowStateObject must be stored in Locals.
+            var subWorkflowEntry = resumedState.StateObject.Locals
                 .FirstOrDefault(kv => kv.Value is WorkflowStateObject);
 
             subWorkflowEntry.Should().NotBeNull(
-                "a suspended sub-workflow should have its full WorkflowStateObject in StateMachinesObjects");
+                "a suspended sub-workflow should have its full WorkflowStateObject in Locals");
 
             subWorkflowEntry.Value.Should().BeOfType<WorkflowStateObject>(
                 "sub-workflow state must be a full WorkflowStateObject, not a flat StateMachineObject");
 
             var childState = (WorkflowStateObject)subWorkflowEntry.Value;
-            childState.StateMachinesObjects.Should().ContainKey("root",
+            childState.Locals.Should().ContainKey("root",
                 "the child WorkflowStateObject must have its own root SM entry");
         }
 
@@ -104,11 +104,11 @@ namespace Workflows.Runner.Tests
             var state = response.UpdatedState;
 
             // Assert — no WorkflowStateObject entries should remain (the sub-workflow completed, not suspended)
-            var orphanedSubWorkflow = state.StateObject.StateMachinesObjects
+            var orphanedSubWorkflow = state.StateObject.Locals
                 .Any(kv => kv.Value is WorkflowStateObject);
 
             orphanedSubWorkflow.Should().BeFalse(
-                "completed sub-workflow state must be cleaned up from StateMachinesObjects");
+                "completed sub-workflow state must be cleaned up from Locals");
         }
 
         [Fact]
@@ -143,8 +143,8 @@ namespace Workflows.Runner.Tests
             child1Dto.ChildWaits.Should().ContainSingle(w => w is SignalWaitDto && ((SignalWaitDto)w).SignalIdentifier == "Payment1");
             child2Dto.ChildWaits.Should().ContainSingle(w => w is SignalWaitDto && ((SignalWaitDto)w).SignalIdentifier == "Payment2");
 
-            state.StateObject.StateMachinesObjects.Should().ContainKey(child1Dto.StateMachineObjectId.ToString());
-            state.StateObject.StateMachinesObjects.Should().ContainKey(child2Dto.StateMachineObjectId.ToString());
+            state.StateObject.Locals.Should().ContainKey(child1Dto.StateMachineObjectId.ToString());
+            state.StateObject.Locals.Should().ContainKey(child2Dto.StateMachineObjectId.ToString());
 
             // Resume Child1 Payment (Payment1)
             var resumeRequest1 = new WorkflowExecutionRequest
@@ -166,8 +166,8 @@ namespace Workflows.Runner.Tests
             var child1DtoAfter = groupWait1.ChildWaits.FirstOrDefault(w => w.Id == child1Dto.Id) as SubWorkflowWaitDto;
             child1DtoAfter.Status.Should().Be(WaitStatus.Completed);
             
-            state1.StateObject.StateMachinesObjects.Should().NotContainKey(child1Dto.StateMachineObjectId.ToString());
-            state1.StateObject.StateMachinesObjects.Should().ContainKey(child2Dto.StateMachineObjectId.ToString());
+            state1.StateObject.Locals.Should().NotContainKey(child1Dto.StateMachineObjectId.ToString());
+            state1.StateObject.Locals.Should().ContainKey(child2Dto.StateMachineObjectId.ToString());
 
             // Resume Child2 Payment (Payment2)
             var resumeRequest2 = new WorkflowExecutionRequest
@@ -183,7 +183,7 @@ namespace Workflows.Runner.Tests
 
             // Assert - Both completed, parent group completes, parent workflow advances to FinalSignal
             state2.Waits.Should().ContainSingle(w => w is SignalWaitDto && ((SignalWaitDto)w).SignalIdentifier == "FinalSignal");
-            state2.StateObject.StateMachinesObjects.Should().NotContainKey(child2Dto.StateMachineObjectId.ToString());
+            state2.StateObject.Locals.Should().NotContainKey(child2Dto.StateMachineObjectId.ToString());
         }
 
         [Fact]
@@ -234,7 +234,7 @@ namespace Workflows.Runner.Tests
     [Workflow("ImmediateSubWorkflow", 1)]
     public sealed class ImmediateSubWorkflowTestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSubWorkflow(ImmediateChild(), "ImmediateChild", "Runs to completion immediately");
 
@@ -258,7 +258,7 @@ namespace Workflows.Runner.Tests
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             ExecutionLog.Add("Parent: Start");
 
@@ -300,18 +300,18 @@ namespace Workflows.Runner.Tests
     }
 
     [Workflow("SubWorkflowWithLocalVariables", 1)]
-    public sealed class SubWorkflowWithLocalVariablesTestWorkflow : WorkflowContainer<SubWorkflowWithLocalVariablesState>
+    public sealed class SubWorkflowWithLocalVariablesTestWorkflow : WorkflowContainer
     {
         public List<int> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(SubWorkflowWithLocalVariablesState state)
         {
-            yield return WaitSubWorkflow(ChildWithVariables(), "ChildWithVariables", "Child");
+            yield return WaitSubWorkflow(ChildWithVariables(state), "ChildWithVariables", "Child");
             yield return WaitSignal<OrderReceivedSignal>("FinalSignal", "Final");
         }
 
         [SubWorkflow]
-        private async IAsyncEnumerable<Wait> ChildWithVariables()
+        private async IAsyncEnumerable<Wait> ChildWithVariables(SubWorkflowWithLocalVariablesState state)
         {
             yield return WaitSignal<PaymentConfirmedSignal>("Payment", "Payment Wait");
 

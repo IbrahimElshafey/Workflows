@@ -7,7 +7,7 @@ namespace Workflows.Runner.Tests.Infrastructure
     /// </summary>
     internal class InMemoryWorkflowRegistry : IWorkflowRegistry
     {
-        public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType)> Workflows { get; } = new();
+        public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType, string StartMethod)> Workflows { get; } = new();
         public Dictionary<string, Type> SignalTypes { get; } = new();
         public Dictionary<string, (Type CommandPayloadType, Type CommandResultType)> CommandTypes { get; } = new();
     }

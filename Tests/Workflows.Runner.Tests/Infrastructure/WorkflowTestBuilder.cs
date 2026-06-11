@@ -32,19 +32,44 @@ namespace Workflows.Runner.Tests.Infrastructure
 
         public WorkflowTestBuilder RegisterWorkflow<TWorkflow>(string workflowType) where TWorkflow : WorkflowContainer
         {
-            Type stateType = typeof(DefaultWorkflowState);
-            var baseType = typeof(TWorkflow).BaseType;
-            while (baseType != null)
+            Type workflowTypeClass = typeof(TWorkflow);
+            var attribute = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<WorkflowAttribute>(workflowTypeClass);
+            var startMethodName = (attribute == null || string.IsNullOrEmpty(attribute.StartMethod)) ? "Run" : attribute.StartMethod;
+
+            var methodInfo = workflowTypeClass.GetMethod(
+                startMethodName,
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+
+            Type stateType = typeof(object);
+            if (attribute != null && attribute.StateType != null)
             {
-                if (baseType.IsGenericType && baseType.GetGenericTypeDefinition() == typeof(WorkflowContainer<>))
-                {
-                    stateType = baseType.GetGenericArguments()[0];
-                    break;
-                }
-                baseType = baseType.BaseType;
+                stateType = attribute.StateType;
+            }
+            else if (methodInfo != null && methodInfo.GetParameters().Length == 1)
+            {
+                stateType = methodInfo.GetParameters()[0].ParameterType;
             }
 
-            _registry.Workflows[workflowType] = (typeof(TWorkflow), typeof(TWorkflow), stateType);
+            // Extract the generated state machine type if available, otherwise fallback to workflow type itself for testing
+            Type stateMachineType = workflowTypeClass;
+            if (methodInfo != null)
+            {
+                var stateMachineAttribute = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Runtime.CompilerServices.AsyncStateMachineAttribute>(methodInfo);
+                if (stateMachineAttribute != null)
+                {
+                    stateMachineType = stateMachineAttribute.StateMachineType;
+                }
+                else
+                {
+                    var asyncIteratorAttribute = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Runtime.CompilerServices.AsyncIteratorStateMachineAttribute>(methodInfo);
+                    if (asyncIteratorAttribute != null)
+                    {
+                        stateMachineType = asyncIteratorAttribute.StateMachineType;
+                    }
+                }
+            }
+
+            _registry.Workflows[workflowType] = (workflowTypeClass, stateMachineType, stateType, startMethodName);
             return this;
         }
 
@@ -100,8 +125,7 @@ namespace Workflows.Runner.Tests.Infrastructure
                         WorkflowType = workflowType,
                         StateIndex = -1,
                         Instance = Activator.CreateInstance<TWorkflow>(),
-                        StateMachinesObjects = new Dictionary<string, object>(),
-                        WaitStatesObjects = new Dictionary<Guid, object>()
+                        Locals = new Dictionary<string, object>()
                     },
                     Waits = waits ?? new List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto>(),
                     Status = WorkflowInstanceStatus.Running

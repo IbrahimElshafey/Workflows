@@ -8,7 +8,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             ExecutionLog.Add("Start");
 
@@ -57,3 +57,4 @@ namespace Workflows.Runner.Tests.TestWorkflows
         public bool ShouldFail { get; set; }
     }
 }
+

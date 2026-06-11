@@ -10,7 +10,7 @@ namespace InProcessSqliteSample
     // ---------------------------------------------------------
 
     [Workflow("OrderWorkflow", 1)]
-    public sealed partial class OrderProcessingWorkflow : WorkflowContainer<OrderWorkflowState>
+    public sealed partial class OrderProcessingWorkflow : WorkflowContainer
     {
         // Domain state — populated by the first generic signal, NOT from StartWorkflowAsync input.
         // The workflow starts with NO state; the first wait is generic (no MatchIf).
@@ -31,10 +31,10 @@ namespace InProcessSqliteSample
 
         public List<string> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run(OrderWorkflowState state)
+        public async IAsyncEnumerable<Wait> Run(OrderWorkflowState state)
         {
+            state.X = 10;
             ExecutionLog.Add("Workflow ready. Waiting for an order to be received.");
-
             // ---------------------------------------------------------------
             // Step 1: GENERIC first wait — no MatchIf, no state dependency.
             //   The workflow has just started; no domain state exists yet.
@@ -53,48 +53,49 @@ namespace InProcessSqliteSample
                         ShippingAddress = sig.ShippingAddress;
                         ExecutionLog.Add($"Order received: {OrderId} for {CustomerEmail}, amount {Amount:C}.");
                     });
-
+            state.X += 5;
             // ---------------------------------------------------------------
             // Step 2: PARALLEL state-dependent signal waits.
             //   State (OrderId, CustomerEmail) now exists — MatchIf is valid here.
             //   Both signals must arrive before proceeding (MatchAll).
             // ---------------------------------------------------------------
             ExecutionLog.Add("Waiting for stock confirmation and customer verification.");
-
             var stockWait = WaitSignal<StockConfirmedSignal>("StockConfirmed", "WaitStock")
-                .MatchIf(sig => sig.OrderId == OrderId)   // state exists — safe to filter
+                .WithState(state)
+                .MatchIf((sig, st) => sig.OrderId == OrderId)   // state exists — safe to filter
                 .AfterMatch(
-                    sig =>
+                    (sig, st) =>
                     {
-                        if(sig.Status == "Available")
+                        if (sig.Status == "Available")
                         {
-                            State.StockOk = true;
+                            st.StockOk = true;
                             ExecutionLog.Add("Stock confirmed available.");
-                        } else
+                        }
+                        else
                         {
                             ErrorReason = "OutOfStock";
                             ExecutionLog.Add($"Stock unavailable for order {OrderId}.");
                         }
                     });
-
             var customerWait = WaitSignal<CustomerVerifiedSignal>("CustomerVerified", "WaitCustomer")
-                .MatchIf(sig => sig.CustomerEmail == CustomerEmail)   // state exists — safe to filter
+                .WithState(state)
+                .MatchIf((sig, st) => sig.CustomerEmail == CustomerEmail)   // state exists — safe to filter
                 .AfterMatch(
-                    sig =>
+                    (sig, st) =>
                     {
-                        State.CustomerOk = sig.Verified;
+                        st.CustomerOk = sig.Verified;
                         ExecutionLog.Add(
                             sig.Verified ? "Customer verification succeeded." : "Customer verification failed.");
-                        if(!sig.Verified)
+                        if (!sig.Verified)
                             ErrorReason = "Customer verification failed";
                     });
 
             yield return WaitGroup(
-                [ (SignalWait<StockConfirmedSignal>)stockWait, (SignalWait<CustomerVerifiedSignal>)customerWait ],
+                [(SignalWait<StockConfirmedSignal>)stockWait, (SignalWait<CustomerVerifiedSignal>)customerWait],
                 "ParallelVerification")
                 .MatchAll();
 
-            if(!state.StockOk || !state.CustomerOk)
+            if (!state.StockOk || !state.CustomerOk)
             {
                 ExecutionLog.Add(
                     $"Aborting before payment — StockOk={state.StockOk}, CustomerOk={state.CustomerOk}. Reason: {ErrorReason}");
@@ -116,11 +117,11 @@ namespace InProcessSqliteSample
                         PaymentAuthorized = result.Success;
                         ExecutionLog.Add(
                             result.Success ? $"Payment authorized. Tx: {result.TransactionId}" : "Payment declined.");
-                        if(!result.Success)
+                        if (!result.Success)
                             ErrorReason = "Payment failed";
                     });
 
-            if(!PaymentAuthorized)
+            if (!PaymentAuthorized)
             {
                 ExecutionLog.Add("Aborting — payment was declined.");
                 yield break;
@@ -133,15 +134,16 @@ namespace InProcessSqliteSample
             yield return ExecuteCommand<ShipOrderCommand, ShipOrderResult>(
                 "ShipOrder",
                 new ShipOrderCommand { OrderId = OrderId, ShippingAddress = ShippingAddress })
+                .WithState(state)
                 .WithExecutionMode(CommandExecutionMode.Deferred)
                 .OnResult(
-                    result =>
+                    (result, st) =>
                     {
-                        State.OrderShipped = result.Success;
+                        st.OrderShipped = result.Success;
                         TrackingCode = result.TrackingNumber;
                         ExecutionLog.Add(
                             result.Success ? $"Order shipped. Tracking: {TrackingCode}" : "Shipping failed.");
-                        if(!result.Success)
+                        if (!result.Success)
                             ErrorReason = "Shipping failed";
                     });
 
@@ -154,5 +156,6 @@ namespace InProcessSqliteSample
         public bool StockOk { get; set; }
         public bool CustomerOk { get; set; }
         public bool OrderShipped { get; set; }
+        public int X { get; set; }
     }
 }

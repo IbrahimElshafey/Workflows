@@ -5,13 +5,13 @@ namespace WorkflowSample
 {
     // --- The Workflow Definition ---
     [Workflow("OrderProcessingWorkflow", 1)]
-    public sealed partial class OrderProcessingWorkflow : WorkflowContainer<OrderProcessingWorkflowState>
+    public sealed partial class OrderProcessingWorkflow : WorkflowContainer
     {
         public int CurrentOrderId { get; set; }
         public string CurrentCustomer { get; set; } = string.Empty;
         public int ProcessCount { get; set; }
 
-        public override async IAsyncEnumerable<Wait> Run(OrderProcessingWorkflowState state)
+        public async IAsyncEnumerable<Wait> Run(OrderProcessingWorkflowState state)
         {
             // Initialize domain state
             ProcessCount = 10;

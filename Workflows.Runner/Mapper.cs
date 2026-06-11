@@ -62,7 +62,7 @@ namespace Workflows.Runner
             // Set CallerName to the actual sub-workflow method name
             dto.CallerName = GetSubWorkflowMethodName(waitsGroup.Runner) ?? waitsGroup.CallerName;
 
-            // Stable key for storing/retrieving this sub-workflow's state in StateMachinesObjects
+            // Stable key for storing/retrieving this sub-workflow's state in Locals
             dto.StateMachineObjectId = dto.Id;
 
             if(waitsGroup.FirstWait != null)

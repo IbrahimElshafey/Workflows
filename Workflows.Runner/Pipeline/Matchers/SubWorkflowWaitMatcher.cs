@@ -20,13 +20,13 @@ namespace Workflows.Runner.Pipeline.Matchers
     /// </summary>
     internal class SubWorkflowWaitMatcher : WorkflowWaitMatcher
     {
-        private readonly ConcurrentDictionary<string, Func<object, object>> _workflowInvokers = new();
         private readonly WorkflowExecutionContext _context;
         private readonly MatcherFactory _matcherFactory;
         private readonly StateMachineAdvancer _stateMachineAdvancer;
         private readonly ProcessorFactory _processorFactory;
         private readonly CancelProcessor _cancelProcessor;
         private readonly IWorkflowRegistry _workflowRegistry;
+        private readonly IWorkflowHydrator _hydrator;
 
         public SubWorkflowWaitMatcher(
             WorkflowExecutionContext context,
@@ -34,7 +34,8 @@ namespace Workflows.Runner.Pipeline.Matchers
             StateMachineAdvancer stateMachineAdvancer,
             ProcessorFactory processorFactory,
             CancelProcessor cancelProcessor,
-            IWorkflowRegistry workflowRegistry)
+            IWorkflowRegistry workflowRegistry,
+            IWorkflowHydrator hydrator)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
@@ -42,6 +43,7 @@ namespace Workflows.Runner.Pipeline.Matchers
             _processorFactory = processorFactory ?? throw new ArgumentNullException(nameof(processorFactory));
             _cancelProcessor = cancelProcessor ?? throw new ArgumentNullException(nameof(cancelProcessor));
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
+            _hydrator = hydrator ?? throw new ArgumentNullException(nameof(hydrator));
         }
 
         public override async Task<bool> MatchAsync(WaitInfrastructureDto waitDto)
@@ -62,17 +64,39 @@ namespace Workflows.Runner.Pipeline.Matchers
             // Use the stable StateMachineObjectId from the DTO as the key
             var childKey = subWorkflowWaitDto.StateMachineObjectId.ToString();
 
-            // Restore or create child WorkflowStateObject from the unified StateMachinesObjects bag
-            if (!_context.WorkflowState.StateObject.StateMachinesObjects.TryGetValue(childKey, out var childRaw)
+            // Restore or create child WorkflowStateObject from the unified Locals bag
+            if (!_context.WorkflowState.StateObject.Locals.TryGetValue(childKey, out var childRaw)
                 || childRaw is not WorkflowStateObject childState)
             {
                 childState = new WorkflowStateObject();
+                _context.WorkflowState.StateObject.Locals[childKey] = childState;
             }
 
             // Execute the sub-workflow to completion using the CallerName from the DTO
             var callerName = string.IsNullOrEmpty(subWorkflowWaitDto.CallerName) ? "Run" : subWorkflowWaitDto.CallerName;
-            var workflowInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, callerName);
-            var subWorkflowStream = (System.Collections.Generic.IAsyncEnumerable<Definition.Wait>)workflowInvoker(_context.WorkflowInstance);
+            
+            // Resolve sub-workflow parameter type dynamically from method signature
+            var methodInfo = workflowTypes.WorkflowContainer.GetMethod(
+                callerName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+            Type subStateType = typeof(object);
+            if (methodInfo != null && methodInfo.GetParameters().Length == 1)
+            {
+                subStateType = methodInfo.GetParameters()[0].ParameterType;
+            }
+
+            if (!childState.Locals.TryGetValue("state", out var childStateObj) || childStateObj == null)
+            {
+                if (subStateType != typeof(object))
+                {
+                    childStateObj = Activator.CreateInstance(subStateType);
+                    childState.Locals["state"] = childStateObj;
+                }
+            }
+
+            var subWorkflowInvoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName, subStateType);
+            var subWorkflowStream = (System.Collections.Generic.IAsyncEnumerable<Definition.Wait>)subWorkflowInvoker(_context.WorkflowInstance, childStateObj);
             bool subWorkflowCompleted = false;
 
             while (!subWorkflowCompleted)
@@ -102,7 +126,7 @@ namespace Workflows.Runner.Pipeline.Matchers
                 if (!continueLoop)
                 {
                     // Sub-workflow suspended — store full WorkflowStateObject under its stable key
-                    _context.WorkflowState.StateObject.StateMachinesObjects[childKey] = childState;
+                    _context.WorkflowState.StateObject.Locals[childKey] = childState;
                     return false;
                 }
             }
@@ -111,17 +135,46 @@ namespace Workflows.Runner.Pipeline.Matchers
             subWorkflowWaitDto.Status = WaitStatus.Completed;
 
             // Remove child state since sub-workflow is done
-            _context.WorkflowState.StateObject.StateMachinesObjects.Remove(childKey);
+            _context.WorkflowState.StateObject.Locals.Remove(childKey);
 
             // Restore parent stream on context
-            var parentCallerName = "Run";
+            Type parentStateType;
+            string parentMethodName;
             var parentSub = FindParentSubWorkflow(subWorkflowWaitDto, _context.WorkflowState.Waits);
             if (parentSub != null)
             {
-                parentCallerName = string.IsNullOrEmpty(parentSub.CallerName) ? "Run" : parentSub.CallerName;
+                parentMethodName = string.IsNullOrEmpty(parentSub.CallerName) ? "Run" : parentSub.CallerName;
+                var parentMethodInfo = workflowTypes.WorkflowContainer.GetMethod(
+                    parentMethodName,
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                parentStateType = typeof(object);
+                if (parentMethodInfo != null && parentMethodInfo.GetParameters().Length == 1)
+                {
+                    parentStateType = parentMethodInfo.GetParameters()[0].ParameterType;
+                }
             }
-            var parentInvoker = GetOrAddWorkflowInvoker(workflowTypes.WorkflowContainer, parentCallerName);
-            _context.WorkflowStream = (System.Collections.Generic.IAsyncEnumerable<Definition.Wait>)parentInvoker(_context.WorkflowInstance);
+            else
+            {
+                parentMethodName = workflowTypes.StartMethod;
+                parentStateType = workflowTypes.StateType;
+            }
+
+            var parentInvoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, parentMethodName, parentStateType);
+            object? parentStateParam = null;
+            if (parentSub != null)
+            {
+                var parentKey = parentSub.StateMachineObjectId.ToString();
+                if (_context.WorkflowState.StateObject.Locals.TryGetValue(parentKey, out var parentRaw)
+                    && parentRaw is WorkflowStateObject parentState)
+                {
+                    parentState.Locals.TryGetValue("state", out parentStateParam);
+                }
+            }
+            else
+            {
+                _context.WorkflowState.StateObject.Locals.TryGetValue("state", out parentStateParam);
+            }
+            _context.WorkflowStream = (System.Collections.Generic.IAsyncEnumerable<Definition.Wait>)parentInvoker(_context.WorkflowInstance, parentStateParam);
 
             // Propagate matching to parent wait if present (e.g., GroupWait containing this sub-workflow)
             if (subWorkflowWaitDto.ParentWaitId.HasValue)
@@ -158,27 +211,6 @@ namespace Workflows.Runner.Pipeline.Matchers
                 }
             }
             return null;
-        }
-        private Func<object, object> GetOrAddWorkflowInvoker(Type containerType, string methodName)
-        {
-            var key = $"{containerType.FullName}:{methodName}";
-            return _workflowInvokers.GetOrAdd(key, _ =>
-            {
-                var method = containerType.GetMethod(
-                    methodName,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                    null,
-                    Type.EmptyTypes,
-                    null) ?? containerType.GetMethod(
-                    methodName,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (method == null) return null;
-
-                var instanceParam = Expression.Parameter(typeof(object), "instance");
-                var call = Expression.Call(Expression.Convert(instanceParam, containerType), method);
-                var lambda = Expression.Lambda<Func<object, object>>(Expression.Convert(call, typeof(object)), instanceParam);
-                return lambda.CompileFast();
-            });
         }
     }
 }

@@ -33,7 +33,7 @@ namespace Workflows.Analyzers
         private static readonly DiagnosticDescriptor WF000 = new DiagnosticDescriptor(
             DiagnosticIdWF000,
             "Strict No-Closure Enforcement",
-            "Lambda expression captures variable '{0}' from the outer scope, which violates the strict no-closure constraint. Pass state explicitly using '.WithState(state)' or map it to a class-level property.",
+            "Lambda expression captures local variable/parameter '{0}' from the outer scope, violating the strict no-closure constraint. Pass state explicitly using '.WithState(state)' or move it to the state POCO parameter.",
             "Workflow.Safety",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true,
@@ -50,7 +50,7 @@ namespace Workflows.Analyzers
         private static readonly DiagnosticDescriptor WF003 = new DiagnosticDescriptor(
             DiagnosticIdWF003,
             "No Anonymous Types",
-            "Passing anonymous type to '.WithState()' is disallowed. Use ValueTuple or record for state to ensure serialization stability.",
+            "Passing anonymous type to '.WithState()' is disallowed. Use a state class/record POCO to ensure serialization stability.",
             "Workflow.Serialization",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -65,8 +65,8 @@ namespace Workflows.Analyzers
 
         private static readonly DiagnosticDescriptor WF005 = new DiagnosticDescriptor(
             DiagnosticIdWF005,
-            "State Machine Blindspot (Synchronous Locals)",
-            "Passing local variable '{0}' from synchronous helper method '{1}' to '.WithState()' is unsafe as the state will vanish on workflow rehydration",
+            "Unserializable State Object",
+            "Passing object '{0}' of type '{1}' to '.WithState()' is disallowed because it is unserializable (delegates, IDisposable, or streams cannot be serialized).",
             "Workflow.Safety",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -271,16 +271,40 @@ namespace Workflows.Analyzers
 
         internal static ITypeSymbol? GetWorkflowStateType(INamedTypeSymbol? typeSymbol)
         {
-            while (typeSymbol != null)
+            if (typeSymbol == null) return null;
+            
+            // Check [Workflow] attribute first if present
+            var workflowAttr = typeSymbol.GetAttributes().FirstOrDefault(a => 
+                a.AttributeClass?.ToDisplayString() == "Workflows.Definition.WorkflowAttribute" ||
+                a.AttributeClass?.Name == "WorkflowAttribute");
+
+            string startMethodName = "Run";
+            if (workflowAttr != null)
             {
-                if ((typeSymbol.Name == "WorkflowContainer" || typeSymbol.ToDisplayString().StartsWith("Workflows.Definition.WorkflowContainer")) && 
-                    typeSymbol.IsGenericType && 
-                    typeSymbol.TypeArguments.Length == 1)
+                // Check if StateType was specified explicitly in the attribute
+                var stateTypeArg = workflowAttr.NamedArguments.FirstOrDefault(kv => kv.Key == "StateType").Value;
+                if (stateTypeArg.Value is ITypeSymbol explicitStateType)
                 {
-                    return typeSymbol.TypeArguments[0];
+                    return explicitStateType;
                 }
-                typeSymbol = typeSymbol.BaseType;
+
+                // Check if StartMethod was specified explicitly in the attribute
+                var startMethodArg = workflowAttr.NamedArguments.FirstOrDefault(kv => kv.Key == "StartMethod").Value;
+                if (startMethodArg.Value is string customStartMethodName && !string.IsNullOrEmpty(customStartMethodName))
+                {
+                    startMethodName = customStartMethodName;
+                }
             }
+
+            // Find the start point method
+            var method = typeSymbol.GetMembers().OfType<IMethodSymbol>()
+                .FirstOrDefault(m => m.Name == startMethodName && IsWorkflowMethod(m));
+
+            if (method != null && method.Parameters.Length == 1)
+            {
+                return method.Parameters[0].Type;
+            }
+
             return null;
         }
 

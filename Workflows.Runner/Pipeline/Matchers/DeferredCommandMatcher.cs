@@ -64,11 +64,11 @@ namespace Workflows.Runner.Pipeline.Matchers
                 {
                     // Retrieve explicitState
                     object explicitState = null;
-                    if (_context.WorkflowState?.StateObject?.WaitStatesObjects != null)
+                    if (_context.WorkflowState?.StateObject?.Locals != null)
                     {
-                        if (!_context.WorkflowState.StateObject.WaitStatesObjects.TryGetValue(commandWaitDto.StateKey, out explicitState))
+                        if (!_context.WorkflowState.StateObject.Locals.TryGetValue(commandWaitDto.StateKey.ToString(), out explicitState))
                         {
-                            _context.WorkflowState.StateObject.WaitStatesObjects.TryGetValue(commandWaitDto.Id, out explicitState);
+                            _context.WorkflowState.StateObject.Locals.TryGetValue(commandWaitDto.Id.ToString(), out explicitState);
                         }
                     }
 

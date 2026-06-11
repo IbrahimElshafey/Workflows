@@ -14,7 +14,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
         public List<string> ExecutionLog { get; set; } = new();
         public int ResumeCount { get; set; }
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             ExecutionLog.Add("Execution1: Start");
 
@@ -80,3 +80,4 @@ namespace Workflows.Runner.Tests.TestWorkflows
         }
     }
 }
+

@@ -244,7 +244,7 @@ Console.WriteLine("\n=== All DSL Tests Completed Successfully! ===");
 [Workflow("TestWorkflow", 1)]
 public sealed class TestWorkflow : WorkflowContainer
 {
-    public override async IAsyncEnumerable<Wait> Run()
+    public async IAsyncEnumerable<Wait> Run()
     {
         yield return WaitSignal<OrderReceivedEvent>("Test", "Test Signal");
         await Task.CompletedTask;

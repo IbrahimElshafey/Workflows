@@ -56,7 +56,7 @@ namespace Workflows.Runner.Tests.ResumptionTests
         public bool CustomerOk { get; set; }
         public List<string> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             ExecutionLog.Add("Start");
             yield return WaitSignal<ResumptionOrderReceivedSignal>("OrderReceived", "WaitOrderReceived")
@@ -222,3 +222,4 @@ namespace Workflows.Runner.Tests.ResumptionTests
         }
     }
 }
+

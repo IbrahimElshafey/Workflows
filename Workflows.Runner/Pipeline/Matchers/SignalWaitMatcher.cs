@@ -71,11 +71,11 @@ namespace Workflows.Runner.Pipeline.Matchers
 
                 // Retrieve explicitState
                 object matchedExplicitState = null;
-                if (_context.WorkflowState?.StateObject?.WaitStatesObjects != null)
+                if (_context.WorkflowState?.StateObject?.Locals != null)
                 {
-                    if (!_context.WorkflowState.StateObject.WaitStatesObjects.TryGetValue(signalWaitDto.StateKey, out matchedExplicitState))
+                    if (!_context.WorkflowState.StateObject.Locals.TryGetValue(signalWaitDto.StateKey.ToString(), out matchedExplicitState))
                     {
-                        _context.WorkflowState.StateObject.WaitStatesObjects.TryGetValue(signalWaitDto.Id, out matchedExplicitState);
+                        _context.WorkflowState.StateObject.Locals.TryGetValue(signalWaitDto.Id.ToString(), out matchedExplicitState);
                     }
                 }
 
@@ -103,11 +103,11 @@ namespace Workflows.Runner.Pipeline.Matchers
 
             // Retrieve explicitState
             object explicitState = null;
-            if (_context.WorkflowState?.StateObject?.WaitStatesObjects != null)
+            if (_context.WorkflowState?.StateObject?.Locals != null)
             {
-                if (!_context.WorkflowState.StateObject.WaitStatesObjects.TryGetValue(signalWaitDto.StateKey, out explicitState))
+                if (!_context.WorkflowState.StateObject.Locals.TryGetValue(signalWaitDto.StateKey.ToString(), out explicitState))
                 {
-                    _context.WorkflowState.StateObject.WaitStatesObjects.TryGetValue(signalWaitDto.Id, out explicitState);
+                    _context.WorkflowState.StateObject.Locals.TryGetValue(signalWaitDto.Id.ToString(), out explicitState);
                 }
             }
             Console.WriteLine($"[SignalWaitMatcher] explicitState type: {explicitState?.GetType().FullName}, value: {explicitState}");

@@ -8,6 +8,9 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\..\Workflows.Analyzers\Workflows.Analyzers.csproj"
+						OutputItemType="Analyzer"
+						ReferenceOutputAssembly="false" />
 		<ProjectReference Include="..\..\Workflows.Definition\Workflows.Definition.csproj" />
 		<ProjectReference Include="..\..\Hosting\Workflows.Hosting.InProcess\Workflows.Hosting.InProcess.csproj" />
 		<ProjectReference Include="..\..\DataStore\Workflows.Storage.Sqlite\Workflows.Storage.Sqlite.csproj" />

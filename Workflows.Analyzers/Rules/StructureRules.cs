@@ -46,10 +46,24 @@ namespace Workflows.Analyzers.Rules
                 // WF210: Missing Run Method check
                 if (!typeSymbol.IsAbstract && typeSymbol.Name != "TestWorkflow")
                 {
+                    var workflowAttr = typeSymbol.GetAttributes().FirstOrDefault(a => 
+                        a.AttributeClass?.ToDisplayString() == "Workflows.Definition.WorkflowAttribute" ||
+                        a.AttributeClass?.Name == "WorkflowAttribute");
+
+                    string startMethodName = "Run";
+                    if (workflowAttr != null)
+                    {
+                        var startMethodArg = workflowAttr.NamedArguments.FirstOrDefault(kv => kv.Key == "StartMethod").Value;
+                        if (startMethodArg.Value is string customStartMethodName && !string.IsNullOrEmpty(customStartMethodName))
+                        {
+                            startMethodName = customStartMethodName;
+                        }
+                    }
+
                     var stateType = WorkflowAnalyzer.GetWorkflowStateType(typeSymbol);
                     var hasRunMethod = typeSymbol.GetMembers()
                         .OfType<IMethodSymbol>()
-                        .Any(m => m.Name == "Run" && 
+                        .Any(m => m.Name == startMethodName && 
                                   WorkflowAnalyzer.IsWorkflowMethod(m) &&
                                   (m.Parameters.Length == 0 || (stateType != null && m.Parameters.Length == 1 && SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, stateType))));
                     if (!hasRunMethod)

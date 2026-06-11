@@ -74,11 +74,11 @@ namespace Workflows.Runner.Pipeline.Processors
         private List<CommandHistoryEntry> BuildCommandHistory(Workflows.Abstraction.DTOs.WorkflowStateObject stateObject)
         {
             var commandHistoryKey = "00000000-0000-0000-0000-000000000001";
-            stateObject.StateMachinesObjects ??= new Dictionary<string, object>();
-            if (!stateObject.StateMachinesObjects.TryGetValue("root", out var rootRaw))
+            stateObject.Locals ??= new Dictionary<string, object>();
+            if (!stateObject.Locals.TryGetValue("root", out var rootRaw))
             {
                 rootRaw = new Workflows.Abstraction.DTOs.StateMachineObject();
-                stateObject.StateMachinesObjects["root"] = rootRaw;
+                stateObject.Locals["root"] = rootRaw;
             }
             var root = rootRaw as Workflows.Abstraction.DTOs.StateMachineObject ?? new Workflows.Abstraction.DTOs.StateMachineObject();
 
@@ -95,15 +95,15 @@ namespace Workflows.Runner.Pipeline.Processors
             List<CommandHistoryEntry> commandHistory)
         {
             var commandHistoryKey = "00000000-0000-0000-0000-000000000001";
-            stateObject.StateMachinesObjects ??= new Dictionary<string, object>();
-            if (!stateObject.StateMachinesObjects.TryGetValue("root", out var rootRaw))
+            stateObject.Locals ??= new Dictionary<string, object>();
+            if (!stateObject.Locals.TryGetValue("root", out var rootRaw))
             {
                 rootRaw = new Workflows.Abstraction.DTOs.StateMachineObject();
-                stateObject.StateMachinesObjects["root"] = rootRaw;
+                stateObject.Locals["root"] = rootRaw;
             }
             var root = rootRaw as Workflows.Abstraction.DTOs.StateMachineObject ?? new Workflows.Abstraction.DTOs.StateMachineObject();
             root[commandHistoryKey] = commandHistory;
-            stateObject.StateMachinesObjects["root"] = root;
+            stateObject.Locals["root"] = root;
         }
 
         private async Task InvokeCompensationActionAsync(object action, object result, object explicitState)

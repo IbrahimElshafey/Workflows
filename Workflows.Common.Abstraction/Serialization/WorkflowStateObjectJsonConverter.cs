@@ -65,17 +65,54 @@ namespace Workflows.Shared.Serialization
                 }
             }
 
-            // 3. Deserialize StateMachinesObjects
-            if (jsonObject.TryGetValue("StateMachinesObjects", out var stateMachinesToken) && stateMachinesToken.Type != JTokenType.Null)
+            // 3. Deserialize Locals
+            if (jsonObject.TryGetValue("Locals", out var localsToken) && localsToken.Type != JTokenType.Null)
             {
                 var dict = new Dictionary<string, object>();
-                var stateMachinesJson = (JObject)stateMachinesToken;
-                foreach (var prop in stateMachinesJson.Properties())
+                var localsJson = (JObject)localsToken;
+
+                object? statePoco = null;
+                if (localsJson.TryGetValue("state", out var stateToken) && stateToken.Type != JTokenType.Null)
                 {
-                    if (prop.Name == "$id" || prop.Name == "$ref" || prop.Name == "$type")
+                    Type? stateType = null;
+                    if (!string.IsNullOrEmpty(stateObj.WorkflowType))
                     {
-                        continue;
+                        if (global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows.TryGetValue(stateObj.WorkflowType, out var tuple))
+                        {
+                            if (string.IsNullOrEmpty(stateObj.SubWorkflowMethod))
+                            {
+                                stateType = tuple.StateType;
+                            }
+                            else
+                            {
+                                var subMethod = tuple.WorkflowContainer.GetMethod(
+                                    stateObj.SubWorkflowMethod,
+                                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                                if (subMethod != null && subMethod.GetParameters().Length == 1)
+                                {
+                                    stateType = subMethod.GetParameters()[0].ParameterType;
+                                }
+                            }
+                        }
                     }
+
+                    if (stateType != null && stateType != typeof(object))
+                    {
+                        using (var subReader = stateToken.CreateReader())
+                        {
+                            statePoco = ContractBypassingSerializer(serializer).Deserialize(subReader, stateType);
+                        }
+                    }
+                    else
+                    {
+                        statePoco = stateToken.ToObject<object>(serializer);
+                    }
+                    dict["state"] = statePoco;
+                }
+
+                foreach (var prop in localsJson.Properties())
+                {
+                    if (prop.Name == "state") continue;
 
                     if (prop.Value.Type == JTokenType.Null)
                     {
@@ -156,30 +193,25 @@ namespace Workflows.Shared.Serialization
 
                         dict[prop.Name] = stateMachineObj;
                     }
-                    else
+                    else if (prop.Value is JObject propObj && 
+                             (propObj.TryGetValue("WorkflowType", out _) || 
+                              propObj.TryGetValue("Locals", out _) || 
+                              propObj.TryGetValue("SubWorkflowMethod", out _)))
                     {
                         using (var subReader = prop.Value.CreateReader())
                         {
                             dict[prop.Name] = serializer.Deserialize<WorkflowStateObject>(subReader);
                         }
                     }
-                }
-                stateObj.StateMachinesObjects = dict;
-            }
-
-            // 4. Deserialize WaitStatesObjects
-            if (jsonObject.TryGetValue("WaitStatesObjects", out var waitStatesToken) && waitStatesToken.Type != JTokenType.Null)
-            {
-                var dict = new Dictionary<Guid, object>();
-                var waitStatesJson = (JObject)waitStatesToken;
-                foreach (var prop in waitStatesJson.Properties())
-                {
-                    if (Guid.TryParse(prop.Name, out var guid))
+                    else
                     {
-                        dict[guid] = prop.Value;
+                        using (var subReader = prop.Value.CreateReader())
+                        {
+                            dict[prop.Name] = ContractBypassingSerializer(serializer).Deserialize(subReader, typeof(object));
+                        }
                     }
                 }
-                stateObj.WaitStatesObjects = dict;
+                stateObj.Locals = dict;
             }
 
             return stateObj;

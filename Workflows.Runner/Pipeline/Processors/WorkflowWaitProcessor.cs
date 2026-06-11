@@ -26,11 +26,11 @@ namespace Workflows.Runner.Pipeline.Processors
         {
             if (wait.ExplicitState == null) return;
 
-            stateObject.WaitStatesObjects ??= new Dictionary<Guid, object>();
+            stateObject.Locals ??= new Dictionary<string, object>();
 
-            if (!stateObject.WaitStatesObjects.ContainsKey(wait.Id))
+            if (!stateObject.Locals.ContainsKey(wait.Id.ToString()))
             {
-                stateObject.WaitStatesObjects[wait.Id] = wait.ExplicitState;
+                stateObject.Locals[wait.Id.ToString()] = wait.ExplicitState;
             }
         }
     }

@@ -89,7 +89,7 @@ namespace Workflows.Runner.Pipeline.Processors
                         if (!nestedContinues)
                         {
                             // Nested sub-workflow suspended
-                            context.WorkflowState.StateObject.StateMachinesObjects[childKey] = childState;
+                            context.WorkflowState.StateObject.Locals[childKey] = childState;
                             SaveWaitStatesToMachineState(subWorkflowWait, context.WorkflowState.StateObject);
                             context.WorkflowState.Waits.Add(subWorkflowDto);
                             return false;
@@ -103,7 +103,7 @@ namespace Workflows.Runner.Pipeline.Processors
                         if (!childContinues)
                         {
                             // Active wait suspended
-                            context.WorkflowState.StateObject.StateMachinesObjects[childKey] = childState;
+                            context.WorkflowState.StateObject.Locals[childKey] = childState;
                             SaveWaitStatesToMachineState(subWorkflowWait, context.WorkflowState.StateObject);
                             context.WorkflowState.Waits.Add(subWorkflowDto);
                             return false;
@@ -123,7 +123,7 @@ namespace Workflows.Runner.Pipeline.Processors
                     context.WorkflowState.Waits.Add(subWorkflowDto);
 
                     // Store child state in the parent's state machine objects
-                    context.WorkflowState.StateObject.StateMachinesObjects[childKey] = childState;
+                    context.WorkflowState.StateObject.Locals[childKey] = childState;
 
                     // Save parent sub-workflow wait states
                     SaveWaitStatesToMachineState(subWorkflowWait, context.WorkflowState.StateObject);
@@ -133,7 +133,7 @@ namespace Workflows.Runner.Pipeline.Processors
             }
 
             // Sub-workflow completed natively
-            context.WorkflowState.StateObject.StateMachinesObjects.Remove(childKey);
+            context.WorkflowState.StateObject.Locals.Remove(childKey);
             return true;
         }
 

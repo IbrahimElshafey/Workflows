@@ -73,7 +73,7 @@ namespace Workflows.Runner.Tests
     [Workflow("AnnotatedWorkflow", 2)]
     public sealed class AnnotatedTestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield break;
         }
@@ -81,9 +81,10 @@ namespace Workflows.Runner.Tests
 
     public sealed class UnannotatedTestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield break;
         }
     }
 }
+

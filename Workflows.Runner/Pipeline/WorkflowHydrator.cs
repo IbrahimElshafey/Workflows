@@ -14,7 +14,7 @@ namespace Workflows.Runner.Pipeline
         private readonly IServiceProvider _serviceProvider;
 
         private static readonly ConcurrentDictionary<Type, ObjectFactory> _factories = new();
-        private static readonly ConcurrentDictionary<string, Func<object, object>> _invokers = new();
+        private static readonly ConcurrentDictionary<string, Func<object, object?, object>> _invokers = new();
 
         public WorkflowHydrator(IServiceProvider serviceProvider)
         {
@@ -31,17 +31,12 @@ namespace Workflows.Runner.Pipeline
         }
 
         /// <inheritdoc />
-        public Func<object, object> GetInvoker(Type containerType, string methodName)
+        public Func<object, object?, object> GetInvoker(Type containerType, string methodName, Type stateType)
         {
-            var key = $"{containerType.FullName}:{methodName}";
+            var key = $"{containerType.FullName}:{methodName}:{stateType?.FullName ?? "null"}";
             return _invokers.GetOrAdd(key, _ =>
             {
                 var method = containerType.GetMethod(
-                    methodName,
-                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                    null,
-                    Type.EmptyTypes,
-                    null) ?? containerType.GetMethod(
                     methodName,
                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
@@ -49,10 +44,31 @@ namespace Workflows.Runner.Pipeline
                     throw new InvalidOperationException(
                         $"Workflow method '{methodName}' not found on type '{containerType.FullName}'.");
 
+                if (method.IsGenericMethodDefinition)
+                {
+                    method = method.MakeGenericMethod(stateType ?? typeof(object));
+                }
+
                 var instanceParam = Expression.Parameter(typeof(object), "instance");
-                var call = Expression.Call(Expression.Convert(instanceParam, containerType), method);
-                var lambda = Expression.Lambda<Func<object, object>>(
-                    Expression.Convert(call, typeof(object)), instanceParam);
+                var stateParam = Expression.Parameter(typeof(object), "state");
+                Expression call;
+                if (method.GetParameters().Length == 1)
+                {
+                    var paramType = method.GetParameters()[0].ParameterType;
+                    call = Expression.Call(
+                        Expression.Convert(instanceParam, containerType),
+                        method,
+                        Expression.Convert(stateParam, paramType));
+                }
+                else
+                {
+                    call = Expression.Call(
+                        Expression.Convert(instanceParam, containerType),
+                        method);
+                }
+
+                var lambda = Expression.Lambda<Func<object, object?, object>>(
+                    Expression.Convert(call, typeof(object)), instanceParam, stateParam);
 
                 return lambda.CompileFast();
             });

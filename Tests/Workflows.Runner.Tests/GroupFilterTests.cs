@@ -23,7 +23,7 @@ namespace Workflows.Runner.Tests
             public List<string> ExecutionLog { get; set; } = new();
             public int StateValue { get; set; } = 100;
 
-            public override async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run()
             {
                 ExecutionLog.Add("Start");
 
@@ -49,7 +49,7 @@ namespace Workflows.Runner.Tests
             public List<string> ExecutionLog { get; set; } = new();
             public int StateValue { get; set; } = 30;
 
-            public override async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run()
             {
                 ExecutionLog.Add("Start");
 
@@ -117,3 +117,4 @@ namespace Workflows.Runner.Tests
         }
     }
 }
+

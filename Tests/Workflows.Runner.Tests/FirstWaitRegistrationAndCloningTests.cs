@@ -207,7 +207,7 @@ namespace Workflows.Runner.Tests
     [Workflow("InvalidFirstWaitWorkflow", 1)]
     public sealed class InvalidFirstWaitWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPayment",
@@ -222,7 +222,7 @@ namespace Workflows.Runner.Tests
         public bool Completed { get; set; }
         public string ReceivedOrderId { get; set; }
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "First")
                 .AfterMatch(signal => {
@@ -232,3 +232,4 @@ namespace Workflows.Runner.Tests
         }
     }
 }
+

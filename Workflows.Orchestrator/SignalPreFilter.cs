@@ -56,11 +56,11 @@ namespace Workflows.Orchestrator
                 var signalElement = ToJsonElement(signalDto.Data);
 
                 object? explicitState = null;
-                if (state.StateObject?.WaitStatesObjects != null)
+                if (state.StateObject?.Locals != null)
                 {
-                    if (!state.StateObject.WaitStatesObjects.TryGetValue(signalWait.StateKey, out explicitState))
+                    if (!state.StateObject.Locals.TryGetValue(signalWait.StateKey.ToString(), out explicitState))
                     {
-                        state.StateObject.WaitStatesObjects.TryGetValue(signalWait.Id, out explicitState);
+                        state.StateObject.Locals.TryGetValue(signalWait.Id.ToString(), out explicitState);
                     }
                 }
                 var stateElement = ToJsonElement(explicitState);

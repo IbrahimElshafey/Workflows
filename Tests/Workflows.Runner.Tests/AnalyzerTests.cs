@@ -55,7 +55,7 @@ namespace TestWorkflows
 {
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSignal<string>(""MySignal"")
                 .WithState(new { OrderId = 123, Status = ""Pending"" });
@@ -81,7 +81,7 @@ namespace TestWorkflows
 {
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSignal<string>(""MySignal"")
                 .WithState((OrderId: 123, Status: ""Pending""));
@@ -111,7 +111,7 @@ namespace TestWorkflows
 
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             MyDisposable disposable = new MyDisposable();
             yield return WaitSignal<string>(""MySignal"");
@@ -138,7 +138,7 @@ namespace TestWorkflows
 {
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             Stream stream = new MemoryStream();
             yield return WaitSignal<string>(""MySignal"");
@@ -173,7 +173,7 @@ namespace TestWorkflows
 
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             SqlConnection conn = new SqlConnection();
             yield return WaitSignal<string>(""MySignal"");
@@ -198,7 +198,7 @@ namespace TestWorkflows
 {
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             int number = 42;
             string text = ""hello"";
@@ -225,7 +225,7 @@ namespace TestWorkflows
 {
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSignal<string>(""MySignal""); // name is omitted
         }
@@ -249,7 +249,7 @@ namespace TestWorkflows
 {
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSignal<string>(""MySignal1"", ""WaitA"");
             yield return WaitSignal<string>(""MySignal2"", ""WaitA"");
@@ -274,7 +274,7 @@ namespace TestWorkflows
 {
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSubWorkflow(Child(), ""Child"");
         }
@@ -329,7 +329,7 @@ namespace TestWorkflows
 {
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSubWorkflow(Child(), ""Child"");
         }
@@ -358,7 +358,7 @@ namespace TestWorkflows
 {
     public sealed class MissingAttributeWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSignal<string>(""MySignal"", ""WaitName"");
         }
@@ -383,7 +383,7 @@ namespace TestWorkflows
     [Workflow(""MyWorkflow"", 1)]
     public sealed class HasAttributeWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSignal<string>(""MySignal"", ""WaitName"");
         }
@@ -407,7 +407,7 @@ namespace TestWorkflows
     [Workflow(""MyWorkflow"", 1)]
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             int localVal = 42;
             yield return WaitSignal<string>(""MySignal"", ""WaitName"");
@@ -433,7 +433,7 @@ namespace TestWorkflows
     [Workflow(""MyWorkflow"", 1)]
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             int localVal = 42;
             Console.WriteLine(localVal); // used before yield return
@@ -479,7 +479,7 @@ namespace TestWorkflows
     [Workflow(""MyWorkflow"", 1)]
     public sealed class TestWorkflowWithRun : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield break;
         }
@@ -505,9 +505,9 @@ namespace TestWorkflows
     }
 
     [Workflow(""MyWorkflow"", 1)]
-    public sealed class TestWorkflowWithStateRun : WorkflowContainer<MyState>
+    public sealed class TestWorkflowWithStateRun : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run(MyState state)
+        public async IAsyncEnumerable<Wait> Run(MyState state)
         {
             yield break;
         }
@@ -575,7 +575,7 @@ namespace TestWorkflows
     [Workflow(""MyWorkflow"", 1)]
     public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             int localVal = 42;
             yield return WaitSignal<string>(""MySignal"", ""WaitName"");
@@ -587,7 +587,8 @@ namespace TestWorkflows
             var fixedSource = await ApplyCodeFixAsync(source, "WF_ERR_UNSAFE_STATE");
 
             fixedSource.Should().Contain("public class TestWorkflowState");
-            fixedSource.Should().Contain("public sealed class TestWorkflow : WorkflowContainer<TestWorkflowState>");
+            fixedSource.Should().Contain("public sealed class TestWorkflow : WorkflowContainer");
+            fixedSource.Should().Contain("public async IAsyncEnumerable<Wait> Run(TestWorkflowState state)");
             fixedSource.Should().Contain("state.localVal = 42;");
             fixedSource.Should().Contain("Console.WriteLine(state.localVal);");
             fixedSource.Should().NotContain("int localVal = 42;");
@@ -608,9 +609,9 @@ namespace TestWorkflows
     }
 
     [Workflow(""MyWorkflow"", 1)]
-    public sealed class TestWorkflow : WorkflowContainer<TestWorkflowState>
+    public sealed class TestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run(TestWorkflowState state)
+        public async IAsyncEnumerable<Wait> Run(TestWorkflowState state)
         {
             int localVal = 42;
             yield return WaitSignal<string>(""MySignal"", ""WaitName"");
@@ -629,3 +630,4 @@ namespace TestWorkflows
         }
     }
 }
+

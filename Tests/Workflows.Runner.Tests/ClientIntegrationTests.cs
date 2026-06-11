@@ -56,7 +56,7 @@ namespace Workflows.Runner.Tests
     {
         public string CommandResponse { get; set; } = string.Empty;
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitGroup(new Wait[]
             {
@@ -407,3 +407,4 @@ namespace Workflows.Runner.Tests
         }
     }
 }
+

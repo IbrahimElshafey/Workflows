@@ -33,7 +33,7 @@ namespace Workflows.Runner.Tests
                 return s => s.CreatedAt.Date == this.ExpectedDate.Date;
             }
 
-            public override async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run()
             {
                 yield break;
             }
@@ -482,3 +482,4 @@ namespace Workflows.Runner.Tests
         }
     }
 }
+

@@ -10,6 +10,8 @@ namespace Workflows.Definition
     {
         public string Name { get; }
         public int Version { get; }
+        public Type? StateType { get; set; }
+        public string StartMethod { get; set; } = "Run";
 
         public WorkflowAttribute(string name, int version = 1)
         {

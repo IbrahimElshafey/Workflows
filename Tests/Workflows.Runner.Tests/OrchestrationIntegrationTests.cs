@@ -453,7 +453,7 @@ namespace Workflows.Runner.Tests
     {
         public static bool Completed { get; set; }
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             var delay = WaitDelay(TimeSpan.FromMilliseconds(50), "ShortDelay", "50ms delay");
             var dummySignal = WaitSignal<OrderReceivedSignal>("DummyOrderReceived", "Dummy");
@@ -468,7 +468,7 @@ namespace Workflows.Runner.Tests
         public bool Completed { get; set; }
         public System.Threading.Tasks.TaskStatus ReceivedStatus { get; set; }
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "EnumWait")
                 .MatchIf(signal => signal.Status == System.Threading.Tasks.TaskStatus.Running)
@@ -486,7 +486,7 @@ namespace Workflows.Runner.Tests
         public bool Completed { get; set; }
         public int Threshold { get; set; }
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run()
         {
             yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "ThresholdWait")
                 .WithState(Threshold)
@@ -498,3 +498,4 @@ namespace Workflows.Runner.Tests
         }
     }
 }
+

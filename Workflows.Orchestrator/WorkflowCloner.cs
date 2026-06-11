@@ -51,22 +51,22 @@ namespace Workflows.Orchestrator
                 clone.Waits.Add(CloneAndRemapWaitRecursive(wait, idMap));
             }
 
-            // 4. Update keys in WaitStatesObjects in StateObject
-            if (clone.StateObject?.WaitStatesObjects != null)
+            // 4. Update keys in Locals in StateObject
+            if (clone.StateObject?.Locals != null)
             {
-                var updatedWaitStates = new Dictionary<Guid, object>();
-                foreach (var kvp in clone.StateObject.WaitStatesObjects)
+                var updatedLocals = new Dictionary<string, object>();
+                foreach (var kvp in clone.StateObject.Locals)
                 {
-                    if (idMap.TryGetValue(kvp.Key, out var newWaitId))
+                    if (Guid.TryParse(kvp.Key, out var oldWaitId) && idMap.TryGetValue(oldWaitId, out var newWaitId))
                     {
-                        updatedWaitStates[newWaitId] = kvp.Value;
+                        updatedLocals[newWaitId.ToString()] = kvp.Value;
                     }
                     else
                     {
-                        updatedWaitStates[kvp.Key] = kvp.Value;
+                        updatedLocals[kvp.Key] = kvp.Value;
                     }
                 }
-                clone.StateObject.WaitStatesObjects = updatedWaitStates;
+                clone.StateObject.Locals = updatedLocals;
             }
 
             return clone;
@@ -111,6 +111,15 @@ namespace Workflows.Orchestrator
             if (wait.ParentWaitId.HasValue && idMap.TryGetValue(wait.ParentWaitId.Value, out var newParentId))
             {
                 cloned.ParentWaitId = newParentId;
+            }
+
+            // Remap StateMachineObjectId for sub-workflows
+            if (cloned is SubWorkflowWaitDto clonedSubWorkflow)
+            {
+                if (idMap.TryGetValue(clonedSubWorkflow.StateMachineObjectId, out var newSMId))
+                {
+                    clonedSubWorkflow.StateMachineObjectId = newSMId;
+                }
             }
 
             // Clone and apply to children recursively

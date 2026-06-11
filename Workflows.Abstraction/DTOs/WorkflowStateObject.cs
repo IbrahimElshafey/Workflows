@@ -26,17 +26,10 @@ namespace Workflows.Abstraction.DTOs
         /// </summary>
         public object Instance { get; set; }
 
-        /// <summary>
-        /// Unified state bag for this workflow's execution scope.
-        /// Values are either:
-        ///   - StateMachineObject  keyed "root"  → local variables of the root IAsyncEnumerable method
-        ///   - WorkflowStateObject keyed by StateMachineObjectId → full snapshot of a suspended sub-workflow
-        /// </summary>
-        public Dictionary<string, object> StateMachinesObjects { get; set; } = new();
 
         /// <summary>
-        /// State object passed to .WithState(...) method
+        /// Local state parameters and wait states (keyed by wait Guid or "state") to prevent duplication by value.
         /// </summary>
-        public Dictionary<Guid, object> WaitStatesObjects { get; set; } = new();
+        public Dictionary<string, object> Locals { get; set; } = new();
     }
 }

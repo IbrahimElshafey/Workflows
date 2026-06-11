@@ -56,7 +56,7 @@ namespace Workflows.Runner.Tests
         [Workflow("DuplicateNameWorkflow", 1)]
         public sealed class DuplicateNameWorkflow : WorkflowContainer
         {
-            public override async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run()
             {
                 yield return WaitSignal<string>("Sig1", "WaitA");
                 yield return WaitSignal<string>("Sig2", "WaitA"); // Duplicate!
@@ -66,7 +66,7 @@ namespace Workflows.Runner.Tests
         [Workflow("PublicSubWorkflowWorkflow", 1)]
         public sealed class PublicSubWorkflowWorkflow : WorkflowContainer
         {
-            public override async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run()
             {
                 yield return WaitSubWorkflow(Child(), "ChildWait");
             }
@@ -81,7 +81,7 @@ namespace Workflows.Runner.Tests
         [Workflow("MissingAttributeSubWorkflowWorkflow", 1)]
         public sealed class MissingAttributeSubWorkflowWorkflow : WorkflowContainer
         {
-            public override async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run()
             {
                 yield return WaitSubWorkflow(Child(), "ChildWait");
             }
@@ -95,10 +95,11 @@ namespace Workflows.Runner.Tests
         [Workflow("MissingNameWorkflow", 1)]
         public sealed class MissingNameWorkflow : WorkflowContainer
         {
-            public override async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run()
             {
                 yield return WaitSignal<string>("Sig", null);
             }
         }
     }
 }
+

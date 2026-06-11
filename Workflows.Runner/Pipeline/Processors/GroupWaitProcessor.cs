@@ -131,7 +131,7 @@ namespace Workflows.Runner.Pipeline.Processors
                                 
                                 if (!childContinues)
                                 {
-                                    context.WorkflowState.StateObject.StateMachinesObjects[childKey] = childState;
+                                    context.WorkflowState.StateObject.Locals[childKey] = childState;
                                     break;
                                 }
                             }
@@ -143,14 +143,14 @@ namespace Workflows.Runner.Pipeline.Processors
                                 subWorkflowDto.ChildWaits.Add(subChildDto);
                                 
                                 // Store child state
-                                context.WorkflowState.StateObject.StateMachinesObjects[childKey] = childState;
+                                context.WorkflowState.StateObject.Locals[childKey] = childState;
                                 break;
                             }
                         }
 
                         if (subWorkflowCompleted)
                         {
-                            context.WorkflowState.StateObject.StateMachinesObjects.Remove(childKey);
+                            context.WorkflowState.StateObject.Locals.Remove(childKey);
                             subWorkflowDto.Status = Abstraction.Enums.WaitStatus.Completed;
                         }
                     }

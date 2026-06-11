@@ -74,10 +74,14 @@ namespace Workflows.Runner.Pipeline
                 ?? _hydrator.CreateInstance(workflowTypes.WorkflowContainer);
             state.StateObject.Instance = workflowInstance;
 
-            var stateType = workflowInstance.GetStateType();
-            if (stateType != null && workflowInstance.GetState() == null)
+            var stateType = workflowTypes.StateType;
+            if (!state.StateObject.Locals.TryGetValue("state", out var stateObj) || stateObj == null)
             {
-                workflowInstance.SetState(Activator.CreateInstance(stateType));
+                if (stateType != typeof(object))
+                {
+                    stateObj = Activator.CreateInstance(stateType);
+                    state.StateObject.Locals["state"] = stateObj;
+                }
             }
 
             // Restore cancelled tokens from history
@@ -97,20 +101,42 @@ namespace Workflows.Runner.Pipeline
             {
                 // This wait belongs to a sub-workflow - use the parent's CallerName to invoke the workflow method
                 // Retrieve child state
-                if (!state.StateObject.StateMachinesObjects?.TryGetValue(parentSubWorkflowDto.Id.ToString(), out var storedChildState) == true)
+                if (!state.StateObject.Locals.TryGetValue(parentSubWorkflowDto.StateMachineObjectId.ToString(), out var storedChildStateObj)
+                    || storedChildStateObj is not WorkflowStateObject childState)
                 {
                     throw new InvalidOperationException($"Sub-workflow state not found for SubWorkflowWait '{parentSubWorkflowDto.WaitName}'.");
                 }
 
                 var callerName = string.IsNullOrEmpty(parentSubWorkflowDto.CallerName) ? "Run" : parentSubWorkflowDto.CallerName;
-                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName);
-                workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
+                
+                // Get the sub-workflow state type from parameter
+                var methodInfo = workflowTypes.WorkflowContainer.GetMethod(
+                    callerName,
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                Type subStateType = typeof(object);
+                if (methodInfo != null && methodInfo.GetParameters().Length == 1)
+                {
+                    subStateType = methodInfo.GetParameters()[0].ParameterType;
+                }
+
+                if (!childState.Locals.TryGetValue("state", out var childStateObj) || childStateObj == null)
+                {
+                    if (subStateType != typeof(object))
+                    {
+                        childStateObj = Activator.CreateInstance(subStateType);
+                        childState.Locals["state"] = childStateObj;
+                    }
+                }
+
+                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName, subStateType);
+                workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance, childStateObj);
             }
             else
             {
-                var callerName = (triggeringWaitDto != null && !string.IsNullOrEmpty(triggeringWaitDto.CallerName)) ? triggeringWaitDto.CallerName : "Run";
-                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName);
-                workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
+                var callerName = (triggeringWaitDto != null && !string.IsNullOrEmpty(triggeringWaitDto.CallerName)) ? triggeringWaitDto.CallerName : workflowTypes.StartMethod;
+                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName, stateType);
+                state.StateObject.Locals.TryGetValue("state", out var st);
+                workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance, st);
             }
 
             context.Signal = incomingRequest.Signal;
@@ -241,9 +267,6 @@ namespace Workflows.Runner.Pipeline
             return null;
         }
 
-        /// <summary>
-        /// Gets parent workflow stream for resumption after sub-workflow completion.
-        /// </summary>
         public IAsyncEnumerable<Definition.Wait> GetParentWorkflowStream(
             string workflowType,
             Definition.WorkflowContainer workflowInstance,
@@ -252,8 +275,32 @@ namespace Workflows.Runner.Pipeline
             if (!_workflowRegistry.Workflows.TryGetValue(workflowType, out var workflowTypes))
                 throw new InvalidOperationException($"Workflow '{workflowType}' not registered.");
 
-            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, string.IsNullOrEmpty(callerName) ? "Run" : callerName);
-            return (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
+            var actualCallerName = string.IsNullOrEmpty(callerName) ? workflowTypes.StartMethod : callerName;
+
+            Type stateType = typeof(object);
+            if (actualCallerName == workflowTypes.StartMethod)
+            {
+                stateType = workflowTypes.StateType;
+            }
+            else
+            {
+                var methodInfo = workflowTypes.WorkflowContainer.GetMethod(
+                    actualCallerName,
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (methodInfo != null && methodInfo.GetParameters().Length == 1)
+                {
+                    stateType = methodInfo.GetParameters()[0].ParameterType;
+                }
+            }
+
+            object? stateObj = null;
+            if (stateType != typeof(object))
+            {
+                stateObj = Activator.CreateInstance(stateType);
+            }
+
+            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, actualCallerName, stateType);
+            return (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance, stateObj);
         }
 
         /// <summary>
@@ -268,10 +315,11 @@ namespace Workflows.Runner.Pipeline
             // Instantiate the workflow container
             var workflowInstance = _hydrator.CreateInstance(workflowTypes.WorkflowContainer);
 
-            var stateType = workflowInstance.GetStateType();
-            if (stateType != null && workflowInstance.GetState() == null)
+            var stateType = workflowTypes.StateType;
+            object? stateObj = null;
+            if (stateType != typeof(object))
             {
-                workflowInstance.SetState(Activator.CreateInstance(stateType));
+                stateObj = Activator.CreateInstance(stateType);
             }
 
             // Copy public properties of the input object to the instantiated workflow container and/or state POCO
@@ -290,10 +338,9 @@ namespace Workflows.Runner.Pipeline
                     }
                 }
 
-                var statePoco = workflowInstance.GetState();
-                if (statePoco != null)
+                if (stateObj != null)
                 {
-                    var statePocoType = statePoco.GetType();
+                    var statePocoType = stateObj.GetType();
                     foreach (var inputProp in inputType.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
                     {
                         if (!inputProp.CanRead) continue;
@@ -301,15 +348,16 @@ namespace Workflows.Runner.Pipeline
                         if (stateProp != null && stateProp.CanWrite)
                         {
                             var value = inputProp.GetValue(input);
-                            stateProp.SetValue(statePoco, value);
+                            stateProp.SetValue(stateObj, value);
                         }
                     }
                 }
             }
 
-            // Get the top-level Run stream
-            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, nameof(Definition.WorkflowContainer.Run));
-            var workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
+            // Get the top-level start point stream
+            var startMethod = workflowTypes.StartMethod;
+            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, startMethod, stateType);
+            var workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance, stateObj);
 
             var freshState = new WorkflowStateDto
             {
@@ -322,12 +370,16 @@ namespace Workflows.Runner.Pipeline
                     WorkflowType = workflowName,
                     Instance = workflowInstance,
                     StateIndex = -1,
-                    StateMachinesObjects = new Dictionary<string, object>(),
-                    WaitStatesObjects = new Dictionary<Guid, object>()
+                    Locals = new Dictionary<string, object>()
                 },
                 Waits = new List<WaitInfrastructureDto>(),
                 CancellationHistory = new List<CancellationHistoryEntry>()
             };
+
+            if (stateObj != null)
+            {
+                freshState.StateObject.Locals["state"] = stateObj;
+            }
 
             context.WorkflowState = freshState;
             context.WorkflowInstance = workflowInstance;

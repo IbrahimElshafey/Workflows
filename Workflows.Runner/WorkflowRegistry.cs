@@ -20,8 +20,8 @@ namespace Workflows.Runner
     internal class WorkflowBuilder : IWorkflowBuilder, IWorkflowRegistry
     {
         private readonly BulkRegistrationPackage registrationPackage = new BulkRegistrationPackage();
-        // Key=> Workflow Name, Value => Tuple of (WorkflowContainer Type, StateMachine Type, StateType Type)
-        private readonly Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType)> _workflows = new();
+        // Key=> Workflow Name, Value => Tuple of (WorkflowContainer Type, StateMachine Type, StateType Type, StartMethod Name)
+        private readonly Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType, string StartMethod)> _workflows = new();
         // Key => Signal Identifier, Value => Signal Payload Type
         private readonly Dictionary<string, Type> _signals = new();
         // Key => Command Identifier, Value => Tuple of (Command Payload Type, Command Result Type)
@@ -33,7 +33,7 @@ namespace Workflows.Runner
             _schemaGenerator = schemaGenerator;
         }
 
-        public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType)> Workflows => _workflows;
+        public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType, string StartMethod)> Workflows => _workflows;
 
         public Dictionary<string, Type> SignalTypes => _signals;
 
@@ -89,10 +89,30 @@ namespace Workflows.Runner
             {
                 throw new InvalidOperationException($"The workflow class '{typeof(WorkflowClass).Name}' is not decorated with [WorkflowAttribute].");
             }
-            return RegisterWorkflow<WorkflowClass>(attribute.Name, attribute.Version);
+            return RegisterWorkflowInternal<WorkflowClass>(attribute.Name, attribute.Version, null);
+        }
+
+        public IWorkflowBuilder RegisterWorkflow<WorkflowClass>(string startMethod) where WorkflowClass : WorkflowContainer
+        {
+            var attribute = typeof(WorkflowClass).GetCustomAttribute<WorkflowAttribute>();
+            if (attribute == null)
+            {
+                throw new InvalidOperationException($"The workflow class '{typeof(WorkflowClass).Name}' is not decorated with [WorkflowAttribute].");
+            }
+            return RegisterWorkflowInternal<WorkflowClass>(attribute.Name, attribute.Version, startMethod);
         }
 
         public IWorkflowBuilder RegisterWorkflow<WorkflowClass>(string name, int version) where WorkflowClass : WorkflowContainer
+        {
+            return RegisterWorkflowInternal<WorkflowClass>(name, version, null);
+        }
+
+        public IWorkflowBuilder RegisterWorkflow<WorkflowClass>(string name, int version, string startMethod) where WorkflowClass : WorkflowContainer
+        {
+            return RegisterWorkflowInternal<WorkflowClass>(name, version, startMethod);
+        }
+
+        private IWorkflowBuilder RegisterWorkflowInternal<WorkflowClass>(string name, int version, string? customStartMethod) where WorkflowClass : WorkflowContainer
         {
             Type workflowType = typeof(WorkflowClass);
 
@@ -108,16 +128,17 @@ namespace Workflows.Runner
                 throw new InvalidOperationException($"Registration failed for '{name}'. The workflow class '{workflowType.Name}' must be sealed.");
             }
 
+            var startMethodName = !string.IsNullOrEmpty(customStartMethod) 
+                ? customStartMethod 
+                : (string.IsNullOrEmpty(attribute.StartMethod) ? "Run" : attribute.StartMethod);
+
             var methodInfo = workflowType.GetMethod(
-                nameof(WorkflowContainer.Run),
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                null,
-                Type.EmptyTypes,
-                null);
+                startMethodName,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
             if (methodInfo == null)
             {
-                throw new InvalidOperationException($"Could not find 'ExecuteWorkflowAsync' method on '{workflowType.Name}'.");
+                throw new InvalidOperationException($"Could not find '{startMethodName}' method on '{workflowType.Name}'.");
             }
 
             // 3. Extract the generated state machine type
@@ -138,31 +159,29 @@ namespace Workflows.Runner
 
             if (stateMachineType == null)
             {
-                throw new InvalidOperationException($"Method 'ExecuteWorkflowAsync' on '{workflowType.Name}' must be an 'async' method.");
+                throw new InvalidOperationException($"Method '{startMethodName}' on '{workflowType.Name}' must be an 'async' method.");
             }
 
             // 4. Resolve State Type
-            Type stateType = typeof(DefaultWorkflowState);
-            var baseType = workflowType.BaseType;
-            while (baseType != null)
+            Type stateType = typeof(object);
+            if (attribute.StateType != null)
             {
-                if (baseType.IsGenericType && baseType.GetGenericTypeDefinition() == typeof(WorkflowContainer<>))
-                {
-                    stateType = baseType.GetGenericArguments()[0];
-                    break;
-                }
-                baseType = baseType.BaseType;
+                stateType = attribute.StateType;
+            }
+            else if (methodInfo.GetParameters().Length == 1)
+            {
+                stateType = methodInfo.GetParameters()[0].ParameterType;
             }
 
-            // 5. Correctly assign the container type, state machine type, and state type
-            _workflows[name] = (workflowType, stateMachineType, stateType);
-            global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows[name] = (workflowType, stateMachineType, stateType);
+            // 5. Correctly assign the container type, state machine type, state type, and start method
+            _workflows[name] = (workflowType, stateMachineType, stateType, startMethodName);
+            global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows[name] = (workflowType, stateMachineType, stateType, startMethodName);
 
             // Validate sub-workflows (visibility and attribute)
-            ValidateWorkflowSubWorkflows(workflowType);
+            ValidateWorkflowSubWorkflows(workflowType, startMethodName);
 
             // Validate wait names
-            ValidateWorkflowWaits(workflowType);
+            ValidateWorkflowWaits(workflowType, startMethodName, stateType);
 
             registrationPackage.Workflows.Add(new WorkflowDefinition
             {
@@ -178,12 +197,12 @@ namespace Workflows.Runner
             return this;
         }
 
-        private void ValidateWorkflowSubWorkflows(Type workflowType)
+        private void ValidateWorkflowSubWorkflows(Type workflowType, string startMethodName)
         {
             var methods = workflowType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
             foreach (var method in methods)
             {
-                if (method.Name == nameof(WorkflowContainer.Run)) continue;
+                if (method.Name == startMethodName) continue;
 
                 var hasSubWorkflowAttr = method.GetCustomAttribute<SubWorkflowAttribute>() != null;
                 var returnsWaitAsyncEnum = typeof(IAsyncEnumerable<Wait>).IsAssignableFrom(method.ReturnType);
@@ -202,32 +221,50 @@ namespace Workflows.Runner
             }
         }
 
-        private void ValidateWorkflowWaits(Type workflowType)
+        private void ValidateWorkflowWaits(Type workflowType, string startMethodName, Type stateType)
         {
             try
             {
                 var container = (WorkflowContainer)Activator.CreateInstance(workflowType);
-                var enumerator = container.Run().GetAsyncEnumerator();
-                var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                var moveNextTask = Task.Run(async () =>
+                object? state = null;
+                if (stateType != typeof(object))
                 {
-                    var waits = new List<Wait>();
-                    while (await enumerator.MoveNextAsync())
+                    state = Activator.CreateInstance(stateType);
+                }
+                var runMethod = workflowType.GetMethod(startMethodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                if (runMethod != null)
+                {
+                    IAsyncEnumerable<Wait> stream;
+                    if (runMethod.GetParameters().Length == 1)
                     {
-                        waits.Add(enumerator.Current);
+                        stream = (IAsyncEnumerable<Wait>)runMethod.Invoke(container, new[] { state });
                     }
-                    return waits;
-                });
-
-                if (moveNextTask.Wait(200))
-                {
-                    var waits = moveNextTask.Result;
-                    foreach (var wait in waits)
+                    else
                     {
-                        if (wait != null)
+                        stream = (IAsyncEnumerable<Wait>)runMethod.Invoke(container, null);
+                    }
+                    var enumerator = stream.GetAsyncEnumerator();
+                    var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    var moveNextTask = Task.Run(async () =>
+                    {
+                        var waits = new List<Wait>();
+                        while (await enumerator.MoveNextAsync())
                         {
-                            ValidateWaitRecursive(wait, seenNames, workflowType.Name);
+                            waits.Add(enumerator.Current);
+                        }
+                        return waits;
+                    });
+
+                    if (moveNextTask.Wait(200))
+                    {
+                        var waits = moveNextTask.Result;
+                        foreach (var wait in waits)
+                        {
+                            if (wait != null)
+                            {
+                                ValidateWaitRecursive(wait, seenNames, workflowType.Name);
+                            }
                         }
                     }
                 }
