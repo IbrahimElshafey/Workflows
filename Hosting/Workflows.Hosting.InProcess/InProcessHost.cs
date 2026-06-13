@@ -45,6 +45,7 @@ namespace Workflows.Hosting.InProcess
             services.AddScoped<Workflows.Orchestrator.ISignalPreFilter, Workflows.Orchestrator.SignalPreFilter>();
             services.AddScoped<Workflows.Orchestrator.Orchestrator>();
             services.AddScoped<IOrchestrator, InboxOrchestrator>();
+            services.AddScoped<WorkflowVersionRouter>();
 
             // 4. In-Process Message Transport & Routing Setup
             services.AddSingleton<InProcessMessageTransport>();

@@ -2,11 +2,14 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Reflection;
 using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Runner;
+using Workflows.Definition;
 using Workflows.Definition.Registration;
 using Workflows.Runner.ExpressionTransformers;
 using Workflows.Runner.Helpers;
+using Workflows.Runner.Migration;
 using Workflows.Runner.Pipeline;
 using Workflows.Runner.Pipeline.Matchers;
 using Workflows.Runner.Pipeline.Processors;
@@ -164,6 +167,29 @@ namespace Workflows.Runner
             }
 
             opts.Commands[key] = metadata;
+            return services;
+        }
+
+        /// <summary>
+        /// Registers a migration class for a specific version transition.
+        /// The migration is keyed as "{WorkflowName}:{fromVersion}:{toVersion}" for resolution by WorkflowVersionRouter.
+        /// </summary>
+        public static IServiceCollection AddWorkflowMigration<TOld, TNew, TMigration>(
+            this IServiceCollection services)
+            where TOld : WorkflowStateWrapper
+            where TNew : WorkflowStateWrapper
+            where TMigration : WorkflowMigration<TOld, TNew>, new()
+        {
+            var attr = typeof(TMigration).GetCustomAttribute<WorkflowMigrationAttribute>()
+                ?? throw new InvalidOperationException(
+                    $"{typeof(TMigration).Name} must be decorated with [WorkflowMigration].");
+
+            string key = $"{attr.WorkflowName}:{attr.FromVersion}:{attr.ToVersion}";
+
+            services.AddKeyedTransient<IWorkflowMigrationExecutor>(key,
+                (sp, _) => ActivatorUtilities.CreateInstance<
+                    WorkflowMigrationExecutor<TOld, TNew, TMigration>>(sp));
+
             return services;
         }
     }

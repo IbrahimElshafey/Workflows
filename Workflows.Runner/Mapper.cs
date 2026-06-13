@@ -461,6 +461,23 @@ namespace Workflows.Runner
             return dto;
         }
 
+        public PlaceholderWaitDto MapToDto(PlaceholderWait wait)
+        {
+            var dto = new PlaceholderWaitDto();
+            CopyBase(wait, dto);
+            return dto;
+        }
+
+        public PlaceholderSubWorkflowWaitDto MapToDto(PlaceholderSubWorkflowWait wait)
+        {
+            var dto = new PlaceholderSubWorkflowWaitDto
+            {
+                MethodFullPath = wait.MethodFullPath
+            };
+            CopyBase(wait, dto);
+            return dto;
+        }
+
         public WaitInfrastructureDto MapToDto(Wait wait)
         {
             if(wait == null)
@@ -468,6 +485,8 @@ namespace Workflows.Runner
 
             var dto = wait switch
             {
+                PlaceholderWait placeholderWait => MapToDto(placeholderWait),
+                PlaceholderSubWorkflowWait placeholderSubWorkflowWait => MapToDto(placeholderSubWorkflowWait),
                 SubWorkflowWait subWorkflowWait => MapToDto(subWorkflowWait),
                 TimeWait timeWait => MapToDto(timeWait),
                 GroupWait groupWait => MapToDto(groupWait),

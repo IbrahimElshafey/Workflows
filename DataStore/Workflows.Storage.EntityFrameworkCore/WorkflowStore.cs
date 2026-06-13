@@ -80,6 +80,7 @@ namespace Workflows.Storage.EntityFrameworkCore
                             Created = state.Created,
                             Status = (int)state.Status,
                             WorkflowType = state.WorkflowType,
+                            WorkflowVersion = state.WorkflowVersion,
                             StateObject = state.StateObject ?? new(),
                             CancellationHistory = state.CancellationHistory ?? new(),
                             Waits = state.Waits ?? new()
@@ -89,6 +90,7 @@ namespace Workflows.Storage.EntityFrameworkCore
                     else
                     {
                         dbInstance.Status = (int)state.Status;
+                        dbInstance.WorkflowVersion = state.WorkflowVersion;
                         dbInstance.StateObject = state.StateObject ?? new();
                         dbInstance.CancellationHistory = state.CancellationHistory ?? new();
                         dbInstance.Waits = state.Waits ?? new();
@@ -272,6 +274,7 @@ namespace Workflows.Storage.EntityFrameworkCore
                 Created = dbInstance.Created,
                 Status = (WorkflowInstanceStatus)dbInstance.Status,
                 WorkflowType = dbInstance.WorkflowType,
+                WorkflowVersion = dbInstance.WorkflowVersion,
                 StateObject = dbInstance.StateObject,
                 Waits = waits,
                 CancellationHistory = dbInstance.CancellationHistory
@@ -627,6 +630,74 @@ namespace Workflows.Storage.EntityFrameworkCore
                 foreach (var child in wait.ChildWaits)
                 {
                     CollectAndInsertOutboxMessagesRecursive(child, workflowInstanceId);
+                }
+            }
+        }
+
+        public async Task ReplaceMigratedStateAsync(
+            Guid instanceId,
+            WorkflowStateDto newState,
+            List<WaitInfrastructureDto> newWaits,
+            int newVersion,
+            System.Threading.CancellationToken ct)
+        {
+            using (var transaction = await _dbContext.Database.BeginTransactionAsync(ct))
+            {
+                try
+                {
+                    var dbInstance = await _dbContext.WorkflowInstances.FindAsync(new object[] { instanceId }, ct)
+                        ?? throw new InvalidOperationException($"Workflow instance '{instanceId}' not found.");
+
+                    dbInstance.WorkflowVersion = newVersion;
+                    dbInstance.WorkflowType = newState.WorkflowType;
+                    dbInstance.Status = (int)newState.Status;
+                    dbInstance.StateObject = newState.StateObject ?? new();
+                    dbInstance.CancellationHistory = newState.CancellationHistory ?? new();
+                    dbInstance.Waits = newWaits;
+                    dbInstance.ConcurrencyToken = Guid.NewGuid().ToString();
+
+                    var oldSignalWaits = await _dbContext.SignalWaits.Where(w => w.WorkflowInstanceId == instanceId).ToListAsync(ct);
+                    _dbContext.SignalWaits.RemoveRange(oldSignalWaits);
+
+                    var oldCommandWaits = await _dbContext.CommandWaits.Where(w => w.WorkflowInstanceId == instanceId).ToListAsync(ct);
+                    _dbContext.CommandWaits.RemoveRange(oldCommandWaits);
+
+                    var oldTimeWaits = await _dbContext.TimeWaits.Where(w => w.WorkflowInstanceId == instanceId).ToListAsync(ct);
+                    _dbContext.TimeWaits.RemoveRange(oldTimeWaits);
+
+                    MarkWaitsAsPersistedRecursive(newWaits);
+
+                    var flattenedRecords = new List<WorkflowWaitEntity>();
+                    foreach (var wait in newWaits)
+                    {
+                        FlattenAndCollectWaits(wait, null, instanceId, flattenedRecords);
+                    }
+
+                    foreach (var record in flattenedRecords)
+                    {
+                        if (record is SignalWaitEntity sigRecord)
+                        {
+                            _dbContext.SignalWaits.Add(sigRecord);
+                        }
+                        else if (record is CommandWaitEntity cmdRecord)
+                        {
+                            _dbContext.CommandWaits.Add(cmdRecord);
+                        }
+                        else if (record is TimeWaitEntity timeRecord)
+                        {
+                            _dbContext.TimeWaits.Add(timeRecord);
+                        }
+                    }
+
+                    _dbContext.WorkflowInstances.Update(dbInstance);
+
+                    await _dbContext.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+                }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync(ct);
+                    throw;
                 }
             }
         }

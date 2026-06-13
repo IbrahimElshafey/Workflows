@@ -586,11 +586,11 @@ namespace TestWorkflows
 
             var fixedSource = await ApplyCodeFixAsync(source, "WF_ERR_UNSAFE_STATE");
 
-            fixedSource.Should().Contain("public class TestWorkflowState");
+            fixedSource.Should().Contain("public sealed class RunState");
             fixedSource.Should().Contain("public sealed class TestWorkflow : WorkflowContainer");
-            fixedSource.Should().Contain("public async IAsyncEnumerable<Wait> Run(TestWorkflowState state)");
-            fixedSource.Should().Contain("state.localVal = 42;");
-            fixedSource.Should().Contain("Console.WriteLine(state.localVal);");
+            fixedSource.Should().Contain("public async IAsyncEnumerable<Wait> Run(RunState state)");
+            fixedSource.Should().Contain("state.LocalVal = 42;");
+            fixedSource.Should().Contain("Console.WriteLine(state.LocalVal);");
             fixedSource.Should().NotContain("int localVal = 42;");
         }
 
@@ -623,10 +623,232 @@ namespace TestWorkflows
             var fixedSource = await ApplyCodeFixAsync(source, "WF_ERR_UNSAFE_STATE");
 
             fixedSource.Should().Contain("public class TestWorkflowState");
-            fixedSource.Should().Contain("public int localVal { get; set; }");
-            fixedSource.Should().Contain("state.localVal = 42;");
-            fixedSource.Should().Contain("Console.WriteLine(state.localVal);");
+            fixedSource.Should().Contain("public int LocalVal { get; set; }");
+            fixedSource.Should().Contain("state.LocalVal = 42;");
+            fixedSource.Should().Contain("Console.WriteLine(state.LocalVal);");
             fixedSource.Should().NotContain("int localVal = 42;");
+        }
+
+        [Fact]
+        public async Task WF300_VersionBumped_ShouldTriggerWarning()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""MyWorkflow"", 2)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public string MyProp { get; set; } = """";
+        public async IAsyncEnumerable<Wait> Run() { yield break; }
+    }
+}";
+            var schemaContent = @"{
+  ""SchemaVersion"": 1,
+  ""WorkflowName"": ""MyWorkflow"",
+  ""AssemblyRootNamespace"": ""TestAssembly"",
+  ""StateProperties"": [
+    {
+      ""Name"": ""MyProp"",
+      ""TypeFqn"": ""string"",
+      ""Nullable"": false
+    }
+  ]
+}";
+
+            var diagnostics = await RunAnalyzerWithAdditionalFilesAsync(source, "Schemas/MyWorkflow_Schema.json", schemaContent);
+            diagnostics.Should().ContainSingle(d => d.Id == "WF300");
+        }
+
+        [Fact]
+        public async Task WF300_CodeFix_ShouldGenerateArchivedFiles()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""MyWorkflow"", 2)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public string MyProp { get; set; } = """";
+        public async IAsyncEnumerable<Wait> Run() { yield break; }
+    }
+}";
+            var schemaContent = @"{
+  ""SchemaVersion"": 1,
+  ""WorkflowName"": ""MyWorkflow"",
+  ""AssemblyRootNamespace"": ""TestAssembly"",
+  ""StateProperties"": [
+    {
+      ""Name"": ""MyProp"",
+      ""TypeFqn"": ""string"",
+      ""Nullable"": false
+    }
+  ]
+}";
+
+            var solution = await ApplyCodeFixWithAdditionalFilesAsync(source, "WF300", "Schemas/MyWorkflow_Schema.json", schemaContent);
+            
+            // Check that files are added
+            var documents = solution.Projects.SelectMany(p => p.Documents).ToList();
+            var additionalDocs = solution.Projects.SelectMany(p => p.AdditionalDocuments).ToList();
+
+            documents.Any(d => d.Name == "MyWorkflow_V1.cs").Should().BeTrue();
+            documents.Any(d => d.Name == "MyWorkflowV1_Layout.cs").Should().BeTrue();
+            additionalDocs.Any(d => d.Name == "MyWorkflow_V1_Schema.json").Should().BeTrue();
+            additionalDocs.Any(d => d.Name == "MyWorkflow_V1.csproj").Should().BeTrue();
+            additionalDocs.Any(d => d.Name == "MyWorkflow_Schema.json").Should().BeTrue();
+
+            // Verify namespace is rewritten in archived source
+            var archivedDoc = documents.First(d => d.Name == "MyWorkflow_V1.cs");
+            var syntaxRoot = await archivedDoc.GetSyntaxRootAsync();
+            syntaxRoot!.ToFullString().Should().Contain("namespace TestWorkflows.Archive.MyWorkflow.V1");
+        }
+
+        [Fact]
+        public async Task WF301_ArchivedSchemaDrift_ShouldTriggerError()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows.Archive.MyWorkflow.V1
+{
+    public sealed class MyWorkflowV1 : WorkflowStateWrapper
+    {
+        public MyWorkflowV1(Workflows.Abstraction.DTOs.WorkflowStateDto dto) : base(dto) {}
+    }
+}";
+            var schemaContent = @"{
+  ""SchemaVersion"": 1,
+  ""WorkflowName"": ""MyWorkflow"",
+  ""AssemblyRootNamespace"": ""TestAssembly"",
+  ""StateProperties"": [
+    {
+      ""Name"": ""MyProp"",
+      ""TypeFqn"": ""string"",
+      ""Nullable"": false
+    }
+  ]
+}";
+
+            // The file path must contain /Archive/ for WF301 to check it.
+            var syntaxTree = CSharpSyntaxTree.ParseText(source, path: "d:/MySrc/Workflows/Archive/MyWorkflow/V1/MyWorkflow_V1.cs");
+            var references = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => MetadataReference.CreateFromFile(a.Location))
+                .Cast<MetadataReference>()
+                .ToList();
+
+            var compilation = CSharpCompilation.Create(
+                "TestAssembly",
+                new[] { syntaxTree },
+                references,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+            var additionalText = new InMemoryAdditionalText("d:/MySrc/Workflows/Archive/MyWorkflow/V1/MyWorkflow_V1_Schema.json", schemaContent);
+            var compilationWithAnalyzers = compilation.WithAnalyzers(
+                ImmutableArray.Create<DiagnosticAnalyzer>(new WorkflowAnalyzer()),
+                new AnalyzerOptions(ImmutableArray.Create<AdditionalText>(additionalText)));
+
+            var diagnostics = await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
+            diagnostics.Should().ContainSingle(d => d.Id == "WF301");
+        }
+
+        private async Task<List<Diagnostic>> RunAnalyzerWithAdditionalFilesAsync(string source, string schemaPath, string schemaContent)
+        {
+            var syntaxTree = CSharpSyntaxTree.ParseText(source);
+            var references = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => MetadataReference.CreateFromFile(a.Location))
+                .Cast<MetadataReference>()
+                .ToList();
+
+            var compilation = CSharpCompilation.Create(
+                "TestAssembly",
+                new[] { syntaxTree },
+                references,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+            var additionalText = new InMemoryAdditionalText(schemaPath, schemaContent);
+            var compilationWithAnalyzers = compilation.WithAnalyzers(
+                ImmutableArray.Create<DiagnosticAnalyzer>(new WorkflowAnalyzer()),
+                new AnalyzerOptions(ImmutableArray.Create<AdditionalText>(additionalText)));
+
+            var diagnostics = await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
+            return diagnostics.ToList();
+        }
+
+        private async Task<Solution> ApplyCodeFixWithAdditionalFilesAsync(string source, string diagnosticId, string schemaPath, string schemaContent)
+        {
+            var syntaxTree = CSharpSyntaxTree.ParseText(source);
+            var references = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => MetadataReference.CreateFromFile(a.Location))
+                .Cast<MetadataReference>()
+                .ToList();
+
+            var workspace = new AdhocWorkspace();
+            var projectId = ProjectId.CreateNewId();
+            var documentId = DocumentId.CreateNewId(projectId);
+
+            var solution = workspace.CurrentSolution
+                .AddProject(projectId, "TestProject", "TestAssembly", LanguageNames.CSharp)
+                .AddMetadataReferences(projectId, references)
+                .AddDocument(documentId, "TestFile.cs", source);
+
+            var additionalText = new InMemoryAdditionalText(schemaPath, schemaContent);
+            solution = solution.AddAdditionalDocument(DocumentId.CreateNewId(projectId), System.IO.Path.GetFileName(schemaPath), schemaContent, new[] { "Schemas" }, schemaPath);
+
+            var document = solution.GetDocument(documentId)!;
+            var compilation = await document.Project.GetCompilationAsync();
+            
+            var compilationWithAnalyzers = compilation!.WithAnalyzers(
+                ImmutableArray.Create<DiagnosticAnalyzer>(new WorkflowAnalyzer()),
+                new AnalyzerOptions(ImmutableArray.Create<AdditionalText>(additionalText)));
+
+            var diagnostics = await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
+            var targetDiag = diagnostics.FirstOrDefault(d => d.Id == diagnosticId);
+            if (targetDiag == null) return solution;
+
+            var codeFixProvider = new WorkflowCodeFixProvider();
+            var actions = new List<CodeAction>();
+            var context = new CodeFixContext(document, targetDiag, (action, diag) => actions.Add(action), default);
+
+            await codeFixProvider.RegisterCodeFixesAsync(context);
+            if (actions.Count == 0) return solution;
+
+            var fixAction = actions.First();
+            var operations = await fixAction.GetOperationsAsync(default);
+            var applyChangesOperation = operations.OfType<ApplyChangesOperation>().FirstOrDefault();
+            if (applyChangesOperation == null) return solution;
+
+            return applyChangesOperation.ChangedSolution;
+        }
+    }
+
+    public class InMemoryAdditionalText : AdditionalText
+    {
+        private readonly string _content;
+
+        public InMemoryAdditionalText(string path, string content)
+        {
+            Path = path;
+            _content = content;
+        }
+
+        public override string Path { get; }
+
+        public override Microsoft.CodeAnalysis.Text.SourceText GetText(System.Threading.CancellationToken cancellationToken = default)
+        {
+            return Microsoft.CodeAnalysis.Text.SourceText.From(_content);
         }
     }
 }

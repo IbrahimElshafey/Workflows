@@ -47,6 +47,12 @@ namespace Workflows.Shared.Serialization
                 case WaitType.GroupWaitWithExpression:
                     targetType = typeof(GroupWaitDto);
                     break;
+                case WaitType.Placeholder:
+                    targetType = typeof(PlaceholderWaitDto);
+                    break;
+                case WaitType.PlaceholderSubWorkflow:
+                    targetType = typeof(PlaceholderSubWorkflowWaitDto);
+                    break;
                 case WaitType.SignalWait:
                 default:
                     if (jsonObject.ContainsKey("UniqueMatchId") || jsonObject.ContainsKey("ExecutionTime"))

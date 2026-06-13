@@ -187,8 +187,28 @@ namespace Workflows.Analyzers
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
 
+        // WF300: Version bumped — archive required
+        public const string DiagnosticIdWF300 = "WF300";
+        private static readonly DiagnosticDescriptor WF300 = new DiagnosticDescriptor(
+            DiagnosticIdWF300,
+            "Workflow version incremented",
+            "Workflow '{0}' version bumped from {1} to {2}. Apply 'Archive V{1} and generate schema' code fix.",
+            "Workflow.Versioning",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
+        // WF301: Schema drift in archived file
+        public const string DiagnosticIdWF301 = "WF301";
+        private static readonly DiagnosticDescriptor WF301 = new DiagnosticDescriptor(
+            DiagnosticIdWF301,
+            "Archived workflow schema drift",
+            "Property '{0}' in archived '{1}' changed or was {2}. This breaks the serialization contract in '{3}'.",
+            "Workflow.Versioning",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(
-            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209, WF_ERR_UNSAFE_STATE, WF210);
+            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209, WF_ERR_UNSAFE_STATE, WF210, WF300, WF301);
 
         public override void Initialize(AnalysisContext context)
         {
@@ -210,6 +230,7 @@ namespace Workflows.Analyzers
         {
             Rules.StructureRules.AnalyzeNamedType(context, WF201, WF202, WF209, WF210);
             Rules.WaitRules.AnalyzeNamedType(context, WF204, WF205, WF206, WF207, WF208);
+            Rules.VersioningRules.AnalyzeNamedType(context, WF300, WF301);
         }
 
         private static void AnalyzeAwaitForeach(SyntaxNodeAnalysisContext context)

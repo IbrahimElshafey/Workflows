@@ -25,6 +25,8 @@
     <None Include="$(MSBuildThisFileDirectory)Development\Workflow DTO Refactoring.md" />
     <None Include="$(MSBuildThisFileDirectory)Development\Embedded Execution Engine Migration.md" />
     <None Include="$(MSBuildThisFileDirectory)Archive\Deterministic Callback Registry to Eliminate.md" />
+    <None Include="$(MSBuildThisFileDirectory)HowTo\index.md" />
+    <None Include="$(MSBuildThisFileDirectory)HowTo\Migrating_Workflows_By_Sample.md" />
     <None Include="$(MSBuildThisFileDirectory)README.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Commands System Specifications- draft 2.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Proactive Look-Ahead Timer Checking.md" />
@@ -34,6 +36,8 @@
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Upcoming_Implementation_Tasks.md" />
     <None Include="$(MSBuildThisFileDirectory)Archive\Versioning-old.md" />
     <None Include="$(MSBuildThisFileDirectory)Archive\Versioning - How to implement.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\How SxS %28Side-by-Side%29 Execution Works.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Think How.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Summary.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Why Both SxS and Migration.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Workflow Logic.md" />

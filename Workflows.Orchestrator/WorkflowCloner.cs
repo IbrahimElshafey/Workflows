@@ -26,6 +26,7 @@ namespace Workflows.Orchestrator
                 Created = DateTime.UtcNow,
                 Status = source.Status,
                 WorkflowType = source.WorkflowType,
+                WorkflowVersion = source.WorkflowVersion,
                 StateObject = CloneStateObject(source.StateObject),
                 Waits = new List<WaitInfrastructureDto>(),
                 CancellationHistory = source.CancellationHistory != null ? new List<CancellationHistoryEntry>(source.CancellationHistory) : new()

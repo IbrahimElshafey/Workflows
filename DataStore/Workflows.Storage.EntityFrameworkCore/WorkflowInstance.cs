@@ -14,6 +14,7 @@ namespace Workflows.Storage.EntityFrameworkCore
 
         public int Status { get; set; } // Map from WorkflowInstanceStatus
         public string WorkflowType { get; set; } = string.Empty;
+        public int WorkflowVersion { get; set; } = 1;
 
         // JSON Owned property
         public WorkflowStateObject StateObject { get; set; } = new();

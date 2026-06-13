@@ -41,6 +41,18 @@ namespace Workflows.Hosting.InProcess
 
                             if (context.Message is WorkflowExecutionRequest req)
                             {
+                                var versionRouter = scope.ServiceProvider.GetRequiredService<WorkflowVersionRouter>();
+                                var sxsResult = await versionRouter.RouteAsync(req, stoppingToken);
+
+                                if (sxsResult != null)
+                                {
+                                    if (context.CompletionSource != null)
+                                    {
+                                        context.CompletionSource.TrySetResult(sxsResult);
+                                    }
+                                    continue;
+                                }
+
                                 var result = await runner.RunWorkflowAsync(req);
                                 // If the egress client was skipped or bypassed (e.g. Unmatched signal), 
                                 // set result here directly so it does not hang

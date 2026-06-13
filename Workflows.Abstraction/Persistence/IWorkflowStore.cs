@@ -35,7 +35,15 @@ namespace Workflows.Abstraction.Persistence
         /// Retrieves all pending time waits from the database.
         /// </summary>
         Task<List<TimeWaitDto>> GetPendingTimeWaitsAsync();
+
+        /// <summary>
+        /// Atomically updates a workflow instance with its migrated version state and waits.
+        /// </summary>
+        Task ReplaceMigratedStateAsync(
+            Guid instanceId,
+            WorkflowStateDto newState,
+            List<WaitInfrastructureDto> newWaits,
+            int newVersion,
+            System.Threading.CancellationToken ct);
     }
-
 }
-

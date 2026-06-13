@@ -43,6 +43,7 @@ namespace Workflows.Abstraction.DTOs
         public List<CancellationHistoryEntry> CancellationHistory { get; internal set; } = new();
 
         public string WorkflowType { get; internal set; }
+        public int WorkflowVersion { get; internal set; }
     }
 }
 

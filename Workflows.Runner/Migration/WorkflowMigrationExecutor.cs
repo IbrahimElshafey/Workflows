@@ -1,0 +1,372 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json;
+using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.DTOs.Waits;
+using Workflows.Abstraction.Enums;
+using Workflows.Abstraction.Helpers;
+using Workflows.Abstraction.Persistence;
+using Workflows.Definition;
+using Workflows.Communication.Abstraction;
+
+namespace Workflows.Runner.Migration
+{
+    public interface IWorkflowMigrationExecutor
+    {
+        Task MigrateAsync(Guid workflowInstanceId, CancellationToken ct);
+    }
+
+    public class StatePropertySchema
+    {
+        public string Name { get; set; } = "";
+        public string TypeFqn { get; set; } = "";
+        public bool Nullable { get; set; }
+    }
+
+    public class BasicBlockSchema
+    {
+        public int BlockIndex { get; set; }
+        public string? YieldWaitType { get; set; }
+        public string? YieldWaitName { get; set; }
+        public int[] Edges { get; set; } = Array.Empty<int>();
+        public int YieldOrdinal { get; set; }
+    }
+
+    public class SubWorkflowSchema
+    {
+        public string MethodName { get; set; } = "";
+        public string MethodFullPath { get; set; } = "";
+        public List<BasicBlockSchema> BasicBlocks { get; set; } = new();
+    }
+
+    public class WorkflowVersionManifest
+    {
+        public int SchemaVersion { get; set; }
+        public string WorkflowName { get; set; } = "";
+        public List<StatePropertySchema> StateProperties { get; set; } = new();
+        public List<BasicBlockSchema> MainCfg { get; set; } = new();
+        public List<SubWorkflowSchema> SubWorkflows { get; set; } = new();
+
+        public BasicBlockSchema? FindBlockByName(string waitName)
+        {
+            return MainCfg.FirstOrDefault(b => string.Equals(b.YieldWaitName, waitName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public BasicBlockSchema? FindSubWorkflowBlockByName(string methodFullPath, string waitName)
+        {
+            var sub = SubWorkflows.FirstOrDefault(s => string.Equals(s.MethodFullPath, methodFullPath, StringComparison.OrdinalIgnoreCase)
+                                                    || string.Equals(s.MethodName, methodFullPath, StringComparison.OrdinalIgnoreCase)
+                                                    || methodFullPath.EndsWith("." + s.MethodName, StringComparison.OrdinalIgnoreCase));
+            return sub?.BasicBlocks.FirstOrDefault(b => string.Equals(b.YieldWaitName, waitName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public static WorkflowVersionManifest Load(string workflowName, int version)
+        {
+            var baseDirs = new[]
+            {
+                AppDomain.CurrentDomain.BaseDirectory,
+                Directory.GetCurrentDirectory(),
+                Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location)
+            };
+
+            var filenames = new[]
+            {
+                $"Schemas/{workflowName}_Schema.json",
+                $"Schemas\\{workflowName}_Schema.json",
+                $"Archive/{workflowName}/V{version}/{workflowName}_V{version}_Schema.json",
+                $"Archive\\{workflowName}\\V{version}\\{workflowName}_V{version}_Schema.json",
+                $"{workflowName}_Schema.json",
+                $"{workflowName}_V{version}_Schema.json"
+            };
+
+            foreach (var baseDir in baseDirs.Where(d => !string.IsNullOrEmpty(d)))
+            {
+                var currentDir = baseDir;
+                while (currentDir != null)
+                {
+                    foreach (var filename in filenames)
+                    {
+                        var fullPath = Path.Combine(currentDir, filename);
+                        if (File.Exists(fullPath))
+                        {
+                            try
+                            {
+                                var json = File.ReadAllText(fullPath);
+                                var manifest = JsonConvert.DeserializeObject<WorkflowVersionManifest>(json);
+                                if (manifest != null) return manifest;
+                            }
+                            catch
+                            {
+                            }
+                        }
+                    }
+                    currentDir = Directory.GetParent(currentDir)?.FullName;
+                }
+            }
+
+            Console.WriteLine($"[WARNING] Schema sidecar for {workflowName} V{version} not found in any directories.");
+            return new WorkflowVersionManifest { WorkflowName = workflowName, SchemaVersion = version };
+        }
+    }
+
+    internal class WorkflowMigrationExecutor<TOld, TNew, TMigration> : IWorkflowMigrationExecutor
+        where TOld : WorkflowStateWrapper
+        where TNew : WorkflowStateWrapper
+        where TMigration : WorkflowMigration<TOld, TNew>, new()
+    {
+        private readonly IWorkflowStore _store;
+        private readonly IObjectSerializer _serializer;
+        private readonly Mapper _mapper;
+        private readonly IMessageDispatcher _messageDispatcher;
+
+        public WorkflowMigrationExecutor(
+            IWorkflowStore store,
+            IObjectSerializer serializer,
+            Mapper mapper,
+            IMessageDispatcher messageDispatcher)
+        {
+            _store = store ?? throw new ArgumentNullException(nameof(store));
+            _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _messageDispatcher = messageDispatcher ?? throw new ArgumentNullException(nameof(messageDispatcher));
+        }
+
+        public async Task MigrateAsync(Guid workflowInstanceId, CancellationToken ct)
+        {
+            // ── 1. Load the V1 state from DB ─────────────────────────────────────
+            var v1State = await _store.GetInstanceStateAsync(workflowInstanceId)
+                ?? throw new InvalidOperationException($"Instance {workflowInstanceId} not found.");
+
+            // Get instance types using reflection on BaseType generic arguments
+            var oldInstanceType = typeof(TOld).BaseType!.GetGenericArguments()[0];
+            var newInstanceType = typeof(TNew).BaseType!.GetGenericArguments()[0];
+
+            // ── 2. Reconstruct typed V1 and V2 wrappers ───────────────────────────
+            object? v1StateInput = null;
+            if (v1State.StateObject.Locals != null && v1State.StateObject.Locals.TryGetValue("state", out var stateObj))
+            {
+                v1StateInput = stateObj;
+            }
+            else
+            {
+                v1StateInput = v1State.StateObject.Instance;
+            }
+
+            var v1InstanceJson = _serializer.Serialize(v1StateInput, SerializationScope.CompilerGeneratedClass);
+            var v1Instance = _serializer.Deserialize(v1InstanceJson, oldInstanceType, SerializationScope.CompilerGeneratedClass);
+            var v1Wrapper = (TOld)Activator.CreateInstance(typeof(TOld), v1State, v1Instance)!;
+
+            var v2Instance = Activator.CreateInstance(newInstanceType)!;
+            var v2State = new WorkflowStateDto
+            {
+                Id = workflowInstanceId,
+                Created = v1State.Created,
+                Status = v1State.Status,
+                WorkflowType = typeof(TNew).Namespace!.Replace(".Archive", "").Split('.').Last() // or get from TMigration attribute
+            };
+
+            // Read metadata attribute to get target workflow details
+            var attr = typeof(TMigration).GetCustomAttribute<WorkflowMigrationAttribute>()
+                ?? throw new InvalidOperationException($"Migration {typeof(TMigration).Name} is missing [WorkflowMigrationAttribute].");
+
+            v2State.WorkflowType = attr.WorkflowName;
+            v2State.WorkflowVersion = attr.ToVersion;
+
+            var v2Wrapper = (TNew)Activator.CreateInstance(typeof(TNew), v2State, v2Instance)!;
+
+            // ── 3. Phase 1 — MigrateInstance ─────────────────────────────────────
+            var migration = new TMigration();
+            
+            // Resolve registry context if needed
+            // migration._context = ... (can be assigned if needed, or left null)
+
+            migration.MigrateInstance(v1Wrapper, v2Wrapper);
+
+            // Resolve target container instance type
+            object? containerInstance = null;
+            if (global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows.TryGetValue(attr.WorkflowName, out var tuple))
+            {
+                try
+                {
+                    containerInstance = Activator.CreateInstance(tuple.WorkflowContainer);
+                }
+                catch { }
+            }
+
+            // Populate state object properties on V2 DTO
+            v2State.StateObject = new WorkflowStateObject
+            {
+                WorkflowType = attr.WorkflowName,
+                Instance = containerInstance,
+                StateIndex = v1State.StateObject.StateIndex,
+                Locals = v1State.StateObject.Locals ?? new Dictionary<string, object>()
+            };
+            v2State.StateObject.Locals["state"] = v2Instance;
+
+            // ── 4. Phase 2+3 — Walk and migrate all active waits ─────────────────
+            var waitsToMigrate = v1State.Waits.Where(w => w.Status == WaitStatus.Waiting);
+            var migratedWaits = MigrateWaitsRecursive(waitsToMigrate, migration, v2Wrapper);
+
+            // ── 5. Resolve PlaceholderWait → real StateAfterWait from V2 manifest ─
+            var v2Manifest = WorkflowVersionManifest.Load(attr.WorkflowName, attr.ToVersion);
+            var resolvedWaits = ResolveStateIndices(migratedWaits, v2Manifest);
+
+            // ── 6. Atomic DB update (new WorkflowStore method) ───────────────────
+            await _store.ReplaceMigratedStateAsync(
+                workflowInstanceId,
+                v2State,
+                resolvedWaits,
+                newVersion: attr.ToVersion,
+                ct);
+
+            // ── 7. Dispatch scheduled commands (POST-commit, fire-and-forget) ─────
+            foreach (var cmd in migration._scheduledCommands)
+            {
+                await _messageDispatcher.DispatchAsync(cmd);
+            }
+        }
+
+        private List<WaitInfrastructureDto> MigrateWaitsRecursive(
+            IEnumerable<WaitInfrastructureDto> waits,
+            WorkflowMigration<TOld, TNew> migration,
+            TNew _new)
+        {
+            var result = new List<WaitInfrastructureDto>();
+
+            foreach (var wait in waits)
+            {
+                if (wait.Status == WaitStatus.Completed)
+                {
+                    result.Add(wait);
+                    continue;
+                }
+
+                var newWait = migration.MigrateActiveWait(wait, _new);
+
+                if (wait is GroupWaitDto group)
+                {
+                    var newGroupDto = _mapper.MapToDto(newWait) as GroupWaitDto
+                        ?? new GroupWaitDto { WaitName = newWait.WaitName };
+
+                    newGroupDto.ChildWaits = MigrateWaitsRecursive(group.ChildWaits, migration, _new);
+                    result.Add(newGroupDto);
+                    continue;
+                }
+
+                if (wait is SubWorkflowWaitDto oldSub && newWait is SubWorkflowWait)
+                {
+                    var childMigrated = migration.MigrateSubWorkflowState(oldSub, _new);
+                    var newSubDto = _mapper.MapToDto(newWait) as SubWorkflowWaitDto
+                        ?? new SubWorkflowWaitDto { WaitName = newWait.WaitName };
+                    
+                    newSubDto.StateMachineObjectId = oldSub.StateMachineObjectId;
+                    result.Add(newSubDto);
+                    continue;
+                }
+
+                result.Add(_mapper.MapToDto(newWait));
+            }
+
+            return result;
+        }
+
+        private List<WaitInfrastructureDto> ResolveStateIndices(
+            List<WaitInfrastructureDto> waits, WorkflowVersionManifest manifest)
+        {
+            var resolved = new List<WaitInfrastructureDto>();
+
+            foreach (var wait in waits)
+            {
+                var currentWait = wait;
+
+                if (currentWait is PlaceholderWaitDto ph)
+                {
+                    var block = manifest.FindBlockByName(ph.WaitName);
+                    if (block != null)
+                    {
+                        currentWait = CreateConcreteDtoFromSchema(ph, block);
+                    }
+                }
+                else if (currentWait is PlaceholderSubWorkflowWaitDto phSub)
+                {
+                    var block = manifest.FindSubWorkflowBlockByName(phSub.MethodFullPath, phSub.WaitName);
+                    if (block != null)
+                    {
+                        currentWait = CreateConcreteDtoFromSchema(phSub, block);
+                    }
+                }
+                else
+                {
+                    var block = manifest.FindBlockByName(currentWait.WaitName);
+                    if (block != null)
+                    {
+                        currentWait.StateAfterWait = block.YieldOrdinal;
+                    }
+                }
+
+                if (currentWait.ChildWaits?.Count > 0)
+                {
+                    currentWait.ChildWaits = ResolveStateIndices(currentWait.ChildWaits, manifest);
+                }
+
+                resolved.Add(currentWait);
+            }
+
+            return resolved;
+        }
+
+        private WaitInfrastructureDto CreateConcreteDtoFromSchema(WaitInfrastructureDto placeholder, BasicBlockSchema block)
+        {
+            WaitInfrastructureDto concrete;
+
+            switch (block.YieldWaitType)
+            {
+                case "SignalWait":
+                case "ISignalWait":
+                    concrete = new SignalWaitDto
+                    {
+                        SignalIdentifier = block.YieldWaitName ?? ""
+                    };
+                    break;
+                case "TimeWait":
+                    concrete = new TimeWaitDto
+                    {
+                        UniqueMatchId = Guid.NewGuid().ToString()
+                    };
+                    break;
+                case "SubWorkflowWait":
+                    concrete = new SubWorkflowWaitDto();
+                    break;
+                case "GroupWait":
+                    concrete = new GroupWaitDto();
+                    break;
+                default:
+                    concrete = new SignalWaitDto
+                    {
+                        SignalIdentifier = block.YieldWaitName ?? ""
+                    };
+                    break;
+            }
+
+            concrete.Id = placeholder.Id;
+            concrete.WaitName = placeholder.WaitName;
+            concrete.CallerName = placeholder.CallerName;
+            concrete.InCodeLine = placeholder.InCodeLine;
+            concrete.Created = placeholder.Created;
+            concrete.StateKey = placeholder.StateKey;
+            concrete.ParentWaitId = placeholder.ParentWaitId;
+            concrete.ChildWaits = placeholder.ChildWaits;
+            concrete.CancelTokens = placeholder.CancelTokens;
+            concrete.IsPersisted = placeholder.IsPersisted;
+            concrete.StateAfterWait = block.YieldOrdinal;
+
+            return concrete;
+        }
+    }
+}

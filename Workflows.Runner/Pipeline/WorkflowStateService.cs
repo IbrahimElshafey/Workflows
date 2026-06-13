@@ -360,11 +360,14 @@ namespace Workflows.Runner.Pipeline
             var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, startMethod, stateType);
             var workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance, stateObj);
 
+            var version = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<Definition.WorkflowAttribute>(workflowTypes.WorkflowContainer)?.Version ?? 1;
+
             var freshState = new WorkflowStateDto
             {
                 Id = Guid.NewGuid(),
                 Created = DateTime.UtcNow,
                 WorkflowType = workflowName,
+                WorkflowVersion = version,
                 Status = Abstraction.Enums.WorkflowInstanceStatus.New,
                 StateObject = new WorkflowStateObject
                 {
