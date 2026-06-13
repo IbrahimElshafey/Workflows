@@ -28,10 +28,23 @@ namespace Workflows.Hosting.InProcess
             services.AddSingleton<IExternalScheduler>(sp => sp.GetRequiredService<Scheduler>());
             services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<Scheduler>());
 
-            services.AddScoped<IWorkflowRunnerClient, WorkflowRunnerClient>();
+            services.AddSingleton<WorkflowExecutionChannel>();
+            services.AddSingleton<InboxOptions>();
+            services.AddScoped<WorkflowExecutionSession>();
+            services.AddScoped<WorkflowRunnerClient>(); // Direct DB writer used by Commit Worker
+            services.AddScoped<IWorkflowRunnerClient, ChannelWorkflowRunnerClient>(); // Proxied client for the Runner
+
+            services.AddHostedService<RunnerWorker>();
+            services.AddHostedService<CoordinatorCommitWorker>();
+            services.AddHostedService<OutboxSweeperWorker>();
+            services.AddHostedService<InboxPollerWorker>();
+
+            services.AddScoped<CommandResultInboxWriter>();
+
             services.AddScoped<Workflows.Orchestrator.IWorkflowCloner, Workflows.Orchestrator.WorkflowCloner>();
             services.AddScoped<Workflows.Orchestrator.ISignalPreFilter, Workflows.Orchestrator.SignalPreFilter>();
-            services.AddScoped<IOrchestrator, Workflows.Orchestrator.Orchestrator>();
+            services.AddScoped<Workflows.Orchestrator.Orchestrator>();
+            services.AddScoped<IOrchestrator, InboxOrchestrator>();
 
             // 4. In-Process Message Transport & Routing Setup
             services.AddSingleton<InProcessMessageTransport>();

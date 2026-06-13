@@ -37,8 +37,8 @@ namespace Workflows.Runner.Pipeline.Processors
             // Save ExplicitState to WorkflowStateObject.WaitStatesObjects
             SaveWaitStatesToMachineState(yieldedWait, context.WorkflowState.StateObject);
 
-            // Map parent group to DTO
-            var groupWaitDto = _mapper.MapToDto(groupWait) as GroupWaitDto;
+            // Map parent group to DTO (do not map children yet)
+            var groupWaitDto = _mapper.MapToDto(groupWait, mapChildren: false) as GroupWaitDto;
             if (groupWaitDto == null)
             {
                 throw new InvalidOperationException("Failed to map GroupWait to GroupWaitDto.");

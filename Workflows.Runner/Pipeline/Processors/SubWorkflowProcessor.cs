@@ -39,7 +39,7 @@ namespace Workflows.Runner.Pipeline.Processors
                 throw new InvalidOperationException($"Sub-workflow '{subWorkflowWait.WaitName}' has no Runner.");
             }
 
-            var subWorkflowDto = _mapper.MapToDto(subWorkflowWait) as Workflows.Abstraction.DTOs.Waits.SubWorkflowWaitDto;
+            var subWorkflowDto = _mapper.MapToDto(subWorkflowWait, mapChildren: false) as Workflows.Abstraction.DTOs.Waits.SubWorkflowWaitDto;
             if (subWorkflowDto == null)
             {
                 throw new InvalidOperationException("Failed to map SubWorkflowWait to SubWorkflowWaitDto.");

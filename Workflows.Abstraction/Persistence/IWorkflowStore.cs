@@ -30,6 +30,11 @@ namespace Workflows.Abstraction.Persistence
         /// Fast relational lookup for command completion.
         /// </summary>
         Task<Guid> GetInstanceByCommandWaitIdAsync(Guid commandWaitId);
+
+        /// <summary>
+        /// Retrieves all pending time waits from the database.
+        /// </summary>
+        Task<List<TimeWaitDto>> GetPendingTimeWaitsAsync();
     }
 
 }

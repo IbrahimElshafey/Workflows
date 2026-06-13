@@ -24,7 +24,7 @@ namespace Workflows.Shared.Serialization
             var active = GetActiveTypes();
             bool isBypassed = active.Contains(objectType);
             bool assignable = typeof(Wait).IsAssignableFrom(objectType);
-            Console.WriteLine($"[CanConvert] Type: {objectType.FullName}, IsBypassed: {isBypassed}, Assignable: {assignable}, Active: [{string.Join(", ", active.Select(t => t.Name))}]");
+            // Console.WriteLine($"[CanConvert] Type: {objectType.FullName}, IsBypassed: {isBypassed}, Assignable: {assignable}, Active: [{string.Join(", ", active.Select(t => t.Name))}]");
             if (isBypassed)
             {
                 return false;
@@ -81,13 +81,13 @@ namespace Workflows.Shared.Serialization
 
             var activeTypes = GetActiveTypes();
             bool added = activeTypes.Add(targetType);
-            Console.WriteLine($"[ReadJson] Start.ObjectType: {objectType.FullName}, TargetType: {targetType.FullName}, Added to active: {added}");
+            // Console.WriteLine($"[ReadJson] Start.ObjectType: {objectType.FullName}, TargetType: {targetType.FullName}, Added to active: {added}");
             try
             {
                 using (var subReader = jsonObject.CreateReader())
                 {
                     var res = ContractBypassingSerializer(serializer).Deserialize(subReader, targetType);
-                    Console.WriteLine($"[ReadJson] End. ObjectType: {objectType.FullName}, ResultType: {res?.GetType().FullName}");
+                    // Console.WriteLine($"[ReadJson] End. ObjectType: {objectType.FullName}, ResultType: {res?.GetType().FullName}");
                     return res;
                 }
             }
@@ -111,11 +111,11 @@ namespace Workflows.Shared.Serialization
             var type = value.GetType();
             var activeTypes = GetActiveTypes();
             bool added = activeTypes.Add(type);
-            Console.WriteLine($"[WriteJson] Start. ValueType: {type.FullName}, Added to active: {added}");
+            // Console.WriteLine($"[WriteJson] Start. ValueType: {type.FullName}, Added to active: {added}");
             try
             {
                 ContractBypassingSerializer(serializer).Serialize(writer, value);
-                Console.WriteLine($"[WriteJson] End. ValueType: {type.FullName}");
+                // Console.WriteLine($"[WriteJson] End. ValueType: {type.FullName}");
             }
             finally
             {

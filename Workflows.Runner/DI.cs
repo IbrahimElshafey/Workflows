@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Linq;
+using System.Linq.Expressions;
 using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition.Registration;
@@ -45,6 +47,9 @@ namespace Workflows.Runner
             //services.AddScoped<IWorkflowRunner, WorkflowRunner>();
             services.AddSingleton<MatchExpressionTransformer>();
             services.AddSingleton<WorkflowBuilder>();
+
+            // Register CommandRegistryOptions
+            services.AddSingleton<CommandRegistryOptions>();
 
             // Default ICommandHandlerFactory — resolves handlers by key from DI
             services.AddSingleton<ICommandHandlerFactory, DiCommandHandlerFactory>();
@@ -93,6 +98,72 @@ namespace Workflows.Runner
         public static IServiceCollection AddDefaultImmediateCommandHandler(this IServiceCollection services, Type immediateCommandHandler)
         {
             services.AddTransient(typeof(IImmediateCommandHandler<,>), immediateCommandHandler);
+            return services;
+        }
+
+        public static IServiceCollection AddSyncCommand<TInput, TOutput, THandler>(
+            this IServiceCollection services, string commandKey)
+            where THandler : class, ICommandHandler<TInput, TOutput>
+        {
+            services.AddKeyedTransient<ICommandHandler<TInput, TOutput>, THandler>(commandKey);
+            services.AddOrUpdateCommandRegistry(commandKey,
+                new CommandMetadata(typeof(TInput), typeof(TOutput), IsAsync: false, IsExternal: false, null));
+            return services;
+        }
+
+        public static IServiceCollection AddSyncCommand<TInput, TOutput>(
+            this IServiceCollection services, string commandKey,
+            Func<IServiceProvider, TInput, TOutput> handler)
+        {
+            services.AddKeyedSingleton(commandKey, (sp, _) => handler);
+            services.AddOrUpdateCommandRegistry(commandKey,
+                new CommandMetadata(typeof(TInput), typeof(TOutput), IsAsync: false, IsExternal: false, null));
+            return services;
+        }
+
+        public static IServiceCollection AddStandardAsyncCommand<TInput, TOutput, TDispatcher, TReceiver>(
+            this IServiceCollection services, string commandKey)
+            where TDispatcher : class, IDispatcher<TInput>
+            where TReceiver : class, IReceiver<TOutput>
+        {
+            services.AddKeyedTransient<IDispatcher<TInput>, TDispatcher>(commandKey);
+            services.AddKeyedTransient<IReceiver<TOutput>, TReceiver>(commandKey);
+            services.AddOrUpdateCommandRegistry(commandKey,
+                new CommandMetadata(typeof(TInput), typeof(TOutput), IsAsync: true, IsExternal: false, null));
+            return services;
+        }
+
+        public static IServiceCollection AddExternalAsyncCommand<TInput, TOutput, TCallbackPayload, TDispatcher, TReceiver>(
+            this IServiceCollection services, string commandKey,
+            Expression<Func<TCallbackPayload, TInput, bool>> matchExpression)
+            where TDispatcher : class, IDispatcher<TInput>
+            where TReceiver : class, IReceiver<TOutput>
+        {
+            services.AddKeyedTransient<IDispatcher<TInput>, TDispatcher>(commandKey);
+            services.AddKeyedTransient<IReceiver<TOutput>, TReceiver>(commandKey);
+            services.AddOrUpdateCommandRegistry(commandKey,
+                new CommandMetadata(typeof(TInput), typeof(TOutput), IsAsync: true, IsExternal: true, matchExpression));
+            return services;
+        }
+
+        private static IServiceCollection AddOrUpdateCommandRegistry(
+            this IServiceCollection services, string key, CommandMetadata metadata)
+        {
+            var descriptor = services.FirstOrDefault(
+                d => d.ServiceType == typeof(CommandRegistryOptions));
+
+            CommandRegistryOptions opts;
+            if (descriptor?.ImplementationInstance is CommandRegistryOptions existing)
+            {
+                opts = existing;
+            }
+            else
+            {
+                opts = new CommandRegistryOptions();
+                services.AddSingleton(opts);
+            }
+
+            opts.Commands[key] = metadata;
             return services;
         }
     }

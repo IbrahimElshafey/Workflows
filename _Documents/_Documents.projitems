@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <MSBuildAllProjects Condition="'$(MSBuildVersion)' == '' Or '$(MSBuildVersion)' &lt; '16.0'">$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
@@ -23,8 +23,10 @@
     <None Include="$(MSBuildThisFileDirectory)Development\Reflection Bottleneck Fix.md" />
     <None Include="$(MSBuildThisFileDirectory)Development\State Management Implementation.md" />
     <None Include="$(MSBuildThisFileDirectory)Development\Workflow DTO Refactoring.md" />
+    <None Include="$(MSBuildThisFileDirectory)Development\Embedded Execution Engine Migration.md" />
     <None Include="$(MSBuildThisFileDirectory)Archive\Deterministic Callback Registry to Eliminate.md" />
     <None Include="$(MSBuildThisFileDirectory)README.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Commands System Specifications- draft 2.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Proactive Look-Ahead Timer Checking.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Engine_Performance_&amp;_Scaling.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Feature_Gap_Analysis.md" />

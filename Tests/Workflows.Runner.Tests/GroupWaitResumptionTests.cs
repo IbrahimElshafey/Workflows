@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using FluentAssertions;
 using Newtonsoft.Json.Schema.Generation;
 using Xunit;
@@ -92,8 +93,18 @@ namespace Workflows.Runner.Tests.ResumptionTests
         }
     }
 
-    public class GroupWaitResumptionTests
+    public class GroupWaitResumptionTests : IDisposable
     {
+        private readonly List<IHostedService> _startedServices = new();
+
+        public void Dispose()
+        {
+            foreach (var service in _startedServices)
+            {
+                try { service.StopAsync(default).GetAwaiter().GetResult(); } catch {}
+            }
+        }
+
         private class TestSchemaGenerator : JSchemaGenerator
         {
             public override Newtonsoft.Json.Schema.JSchema Generate(Type type) => Newtonsoft.Json.Schema.JSchema.Parse("{}");
@@ -114,6 +125,21 @@ namespace Workflows.Runner.Tests.ResumptionTests
             {
                 scope.ServiceProvider.GetRequiredService<WorkflowsDbContext>().Database.EnsureCreated();
             }
+
+            // Configure bypass for synchronous testing
+            var inboxOptions = provider.GetService<InboxOptions>();
+            if (inboxOptions != null)
+            {
+                inboxOptions.BypassInbox = true;
+            }
+
+            // Start background hosted services
+            foreach (var service in provider.GetServices<IHostedService>())
+            {
+                service.StartAsync(default).GetAwaiter().GetResult();
+                _startedServices.Add(service);
+            }
+
             return provider;
         }
 

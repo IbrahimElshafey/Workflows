@@ -44,6 +44,7 @@ namespace Workflows.Runner.Pipeline
             if (incomingRequest.TriggeringWaitId != Guid.Empty)
             {
                 triggeringWaitDto = FindWaitById(state.Waits, incomingRequest.TriggeringWaitId);
+
                 if (triggeringWaitDto == null)
                 {
                     throw new InvalidOperationException($"Triggering wait with ID {incomingRequest.TriggeringWaitId} not found.");

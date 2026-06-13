@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Workflows.Abstraction.Orchestrator;
+using Workflows.Abstraction.Persistence;
 
 namespace Workflows.Orchestrator
 {
@@ -34,11 +35,39 @@ namespace Workflows.Orchestrator
             return Task.CompletedTask;
         }
 
-        public Task StartAsync(CancellationToken cancellationToken)
+        public async Task StartAsync(CancellationToken cancellationToken)
         {
             _cts = new CancellationTokenSource();
+
+            // Load pending timers on startup
+            try
+            {
+                using (var scope = _serviceProvider.CreateScope())
+                {
+                    var store = scope.ServiceProvider.GetService<IWorkflowStore>();
+                    if (store != null)
+                    {
+                        var pendingTimers = await store.GetPendingTimeWaitsAsync();
+                        foreach (var timer in pendingTimers)
+                        {
+                            var record = new TimerRecord
+                            {
+                                Id = Guid.NewGuid(),
+                                SignalIdentifier = timer.UniqueMatchId,
+                                Payload = null!,
+                                ExecuteAt = timer.ExecutionTime
+                            };
+                            _timers.TryAdd(record.Id, record);
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Fail-silent on startup errors (e.g. database not initialized yet in some integration tests)
+            }
+
             _backgroundTask = RunTimerLoopAsync(_cts.Token);
-            return Task.CompletedTask;
         }
 
         public async Task StopAsync(CancellationToken cancellationToken)

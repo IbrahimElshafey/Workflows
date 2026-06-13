@@ -65,37 +65,8 @@ namespace Workflows.Orchestrator
             }
 
 
-            // 4. Scan the active waits recursively for any waiting deferred CommandWaitDto and dispatch them
-            var commandWaits = new List<CommandWaitDto>();
-            foreach (var wait in activeWaits)
-            {
-                CollectCommandWaits(wait, commandWaits);
-            }
-
-            foreach (var commandWait in commandWaits)
-            {
-                if (commandWait.Status == Abstraction.Enums.WaitStatus.Waiting && 
-                    commandWait.ExecutionMode == Primitives.CommandExecutionMode.Deferred &&
-                    !existingWaitIds.Contains(commandWait.Id))
-                {
-                    var notification = new CommandDispatchNotification
-                    {
-                        CommandWaitId = commandWait.Id,
-                        HandlerKey = commandWait.HandlerKey,
-                        CommandData = commandWait.CommandData?.ToString() ?? string.Empty
-                    };
-
-                    try
-                    {
-                        await _dispatcher.DispatchAsync(notification);
-                    }
-                    catch (InvalidOperationException ex) when (ex.Message.Contains("No routing rule found for message type"))
-                    {
-                        // In some purely in-process tests (like OrchestrationIntegrationTests),
-                        // there is no out-of-process subscriber/runner configured, so we ignore this.
-                    }
-                }
-            }
+            // 4. Deferred commands are now written to OutboxMessages table atomically in WorkflowStore.SaveContextSyncAsync.
+            // The OutboxSweeperWorker is responsible for sweeping and dispatching them.
 
             return runResult;
         }

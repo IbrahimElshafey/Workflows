@@ -256,7 +256,7 @@ namespace Workflows.Runner
                         return waits;
                     });
 
-                    if (moveNextTask.Wait(200))
+                    if (moveNextTask.Wait(5000))
                     {
                         var waits = moveNextTask.Result;
                         foreach (var wait in waits)

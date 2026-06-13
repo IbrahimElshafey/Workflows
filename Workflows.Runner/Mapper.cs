@@ -50,7 +50,9 @@ namespace Workflows.Runner
         }
 
         #region To DTO
-        public SubWorkflowWaitDto MapToDto(SubWorkflowWait waitsGroup)
+        public SubWorkflowWaitDto MapToDto(SubWorkflowWait waitsGroup) => MapToDto(waitsGroup, true);
+
+        public SubWorkflowWaitDto MapToDto(SubWorkflowWait waitsGroup, bool mapChildren)
         {
             if(waitsGroup == null)
                 throw new ArgumentNullException(nameof(waitsGroup));
@@ -65,12 +67,15 @@ namespace Workflows.Runner
             // Stable key for storing/retrieving this sub-workflow's state in Locals
             dto.StateMachineObjectId = dto.Id;
 
-            if(waitsGroup.FirstWait != null)
+            if (mapChildren)
             {
-                dto.ChildWaits = new List<WaitInfrastructureDto> { MapToDto(waitsGroup.FirstWait) };
-            } else if(waitsGroup.ChildWaits?.Count > 0)
-            {
-                dto.ChildWaits = waitsGroup.ChildWaits.Select(MapToDto).ToList();
+                if(waitsGroup.FirstWait != null)
+                {
+                    dto.ChildWaits = new List<WaitInfrastructureDto> { MapToDto(waitsGroup.FirstWait) };
+                } else if(waitsGroup.ChildWaits?.Count > 0)
+                {
+                    dto.ChildWaits = waitsGroup.ChildWaits.Select(MapToDto).ToList();
+                }
             }
 
             return dto;
@@ -125,7 +130,9 @@ namespace Workflows.Runner
         }
 
 
-        public GroupWaitDto MapToDto(GroupWait waitsGroup)
+        public GroupWaitDto MapToDto(GroupWait waitsGroup) => MapToDto(waitsGroup, true);
+
+        public GroupWaitDto MapToDto(GroupWait waitsGroup, bool mapChildren)
         {
             if(waitsGroup == null)
                 throw new ArgumentNullException(nameof(waitsGroup));
@@ -162,7 +169,7 @@ namespace Workflows.Runner
             };
 
             CopyBase(waitsGroup, dto);
-            if(waitsGroup.ChildWaits?.Count > 0)
+            if(mapChildren && waitsGroup.ChildWaits?.Count > 0)
             {
                 dto.ChildWaits = waitsGroup.ChildWaits.Select(MapToDto).ToList();
             }

@@ -13,6 +13,20 @@ namespace Workflows.Abstraction.Runner
         ValueTask<TResult> HandleAsync(TCommand command, CancellationToken cancellationToken);
     }
 
+    public interface ICommandHandler<in TInput, TOutput>
+    {
+        ValueTask<TOutput> HandleAsync(TInput input, CancellationToken cancellationToken = default);
+    }
+
+    public interface IDispatcher<in TInput>
+    {
+        ValueTask DispatchAsync(TInput input, Guid commandId, Guid workflowInstanceId, CancellationToken cancellationToken = default);
+    }
+
+    public interface IReceiver<TOutput>
+    {
+    }
+
     /// <summary>
     /// Dispatches a command to an external system. 
     /// Does NOT return a result, as the workflow will suspend and wait for an asynchronous callback.

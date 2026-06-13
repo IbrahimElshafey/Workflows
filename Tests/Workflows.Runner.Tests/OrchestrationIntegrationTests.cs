@@ -45,8 +45,18 @@ namespace Workflows.Runner.Tests
         }
     }
 
-    public class OrchestrationIntegrationTests
+    public class OrchestrationIntegrationTests : IDisposable
     {
+        private readonly List<IHostedService> _startedServices = new();
+
+        public void Dispose()
+        {
+            foreach (var service in _startedServices)
+            {
+                try { service.StopAsync(default).GetAwaiter().GetResult(); } catch {}
+            }
+        }
+
         private ServiceProvider CreateServiceProvider(string dbName, out SqliteConnection connection)
         {
             var services = new ServiceCollection();
@@ -71,6 +81,20 @@ namespace Workflows.Runner.Tests
             {
                 var context = scope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
                 context.Database.EnsureCreated();
+            }
+
+            // Configure bypass for synchronous testing
+            var inboxOptions = provider.GetService<InboxOptions>();
+            if (inboxOptions != null)
+            {
+                inboxOptions.BypassInbox = true;
+            }
+
+            // Start background hosted services
+            foreach (var service in provider.GetServices<IHostedService>())
+            {
+                service.StartAsync(default).GetAwaiter().GetResult();
+                _startedServices.Add(service);
             }
 
             return provider;

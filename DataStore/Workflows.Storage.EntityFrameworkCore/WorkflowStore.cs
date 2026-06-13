@@ -123,6 +123,14 @@ namespace Workflows.Storage.EntityFrameworkCore
                         }
                     }
 
+                    if (newWaitsList.Count > 0)
+                    {
+                        foreach (var wait in newWaitsList)
+                        {
+                            CollectAndInsertOutboxMessagesRecursive(wait, state.Id);
+                        }
+                    }
+
                     await _dbContext.SaveChangesAsync();
                     await transaction.CommitAsync();
                 }
@@ -503,6 +511,19 @@ namespace Workflows.Storage.EntityFrameworkCore
             return record?.WorkflowInstanceId ?? Guid.Empty;
         }
 
+        public async Task<List<TimeWaitDto>> GetPendingTimeWaitsAsync()
+        {
+            var entities = await _dbContext.TimeWaits
+                .Where(w => w.Status == (int)WaitStatus.Waiting)
+                .ToListAsync();
+
+            return entities.Select(e => new TimeWaitDto
+            {
+                UniqueMatchId = e.UniqueMatchId,
+                ExecutionTime = e.ExecutionTime
+            }).ToList();
+        }
+
         private static bool AreWaitsEqual(List<WaitInfrastructureDto>? list1, List<WaitInfrastructureDto>? list2)
         {
             if (list1 == null && list2 == null) return true;
@@ -566,6 +587,48 @@ namespace Workflows.Storage.EntityFrameworkCore
                 if (w.ChildWaits != null && HasFirstWait(w.ChildWaits)) return true;
             }
             return false;
+        }
+
+        private void CollectAndInsertOutboxMessagesRecursive(WaitInfrastructureDto wait, Guid workflowInstanceId)
+        {
+            if (wait == null) return;
+            if (wait is CommandWaitDto commandWait && 
+                commandWait.ExecutionMode == CommandExecutionMode.Deferred && 
+                commandWait.Status == WaitStatus.Waiting)
+            {
+                bool alreadyExists = _dbContext.OutboxMessages.Local.Any(m => m.CommandWaitId == commandWait.Id) ||
+                                     _dbContext.OutboxMessages.Any(m => m.CommandWaitId == commandWait.Id);
+                if (!alreadyExists)
+                {
+                    var notification = new CommandDispatchNotification
+                    {
+                        CommandWaitId = commandWait.Id,
+                        HandlerKey = commandWait.HandlerKey,
+                        CommandData = commandWait.CommandData?.ToString() ?? string.Empty
+                    };
+
+                    var outboxMessage = new OutboxMessageEntity
+                    {
+                        GlobalId = Guid.NewGuid(),
+                        CreatedAt = DateTime.UtcNow,
+                        Status = 0, // Pending
+                        MessageType = typeof(CommandDispatchNotification).AssemblyQualifiedName ?? typeof(CommandDispatchNotification).FullName ?? "CommandDispatchNotification",
+                        Payload = JsonConvert.SerializeObject(notification),
+                        WorkflowInstanceId = workflowInstanceId,
+                        CommandWaitId = commandWait.Id
+                    };
+
+                    _dbContext.OutboxMessages.Add(outboxMessage);
+                }
+            }
+
+            if (wait.ChildWaits != null)
+            {
+                foreach (var child in wait.ChildWaits)
+                {
+                    CollectAndInsertOutboxMessagesRecursive(child, workflowInstanceId);
+                }
+            }
         }
     }
 }
