@@ -19,17 +19,26 @@ namespace Workflows.Storage.EntityFrameworkCore
         private readonly WorkflowsDbContext _dbContext;
         private readonly IObjectSerializer _serializer;
         private readonly ITemplateRepository? _templateRepository;
+        private readonly IWorkflowInstanceCache? _cache;
+        private readonly IOutboxNotificationDispatcher? _outboxNotificationDispatcher;
 
-        public WorkflowStore(WorkflowsDbContext dbContext, IObjectSerializer serializer, ITemplateRepository? templateRepository = null)
+        public WorkflowStore(
+            WorkflowsDbContext dbContext,
+            IObjectSerializer serializer,
+            ITemplateRepository? templateRepository = null,
+            IWorkflowInstanceCache? cache = null,
+            IOutboxNotificationDispatcher? outboxNotificationDispatcher = null)
         {
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
             _templateRepository = templateRepository;
+            _cache = cache;
+            _outboxNotificationDispatcher = outboxNotificationDispatcher;
         }
 
         public async Task SaveContextSyncAsync(
             WorkflowStateDto state,
-            IEnumerable<Guid> completedWaitIds)
+            IEnumerable<string> completedWaitIds)
         {
             if (state == null) throw new ArgumentNullException(nameof(state));
 
@@ -125,16 +134,40 @@ namespace Workflows.Storage.EntityFrameworkCore
                         }
                     }
 
+                    var notifications = new List<CommandDispatchNotification>();
                     if (newWaitsList.Count > 0)
                     {
                         foreach (var wait in newWaitsList)
                         {
-                            CollectAndInsertOutboxMessagesRecursive(wait, state.Id);
+                            CollectAndInsertOutboxMessagesRecursive(wait, state.Id, notifications);
                         }
                     }
 
                     await _dbContext.SaveChangesAsync();
                     await transaction.CommitAsync();
+
+                    if (_cache != null)
+                    {
+                        Console.WriteLine($"[CACHE DEBUG] SaveContextSyncAsync: State ID = {state.Id}, Status = {state.Status}");
+                        if (state.Status == WorkflowInstanceStatus.Completed || state.Status == WorkflowInstanceStatus.InError)
+                        {
+                            Console.WriteLine($"[CACHE DEBUG] Removing from cache: {state.Id}");
+                            _cache.Remove(state.Id);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[CACHE DEBUG] Updating cache: {state.Id} to Status {state.Status}");
+                            _cache.Update(state.Id, state);
+                        }
+                    }
+
+                    if (_outboxNotificationDispatcher != null)
+                    {
+                        foreach (var notification in notifications)
+                        {
+                            _outboxNotificationDispatcher.NotifyCommandDispatched(notification);
+                        }
+                    }
                 }
                 catch (Exception)
                 {
@@ -176,7 +209,7 @@ namespace Workflows.Storage.EntityFrameworkCore
         private void CollectCancelledWaitsRecursive(
             IEnumerable<WaitInfrastructureDto> waits,
             HashSet<string> cancelledTokens,
-            List<Guid> result)
+            List<string> result)
         {
             if (waits == null) return;
             foreach (var wait in waits)
@@ -194,7 +227,7 @@ namespace Workflows.Storage.EntityFrameworkCore
 
         private void FlattenAndCollectWaits(
             WaitInfrastructureDto wait,
-            Guid? parentWaitId,
+            string? parentWaitId,
             Guid workflowInstanceId,
             List<WorkflowWaitEntity> resultList)
         {
@@ -240,6 +273,13 @@ namespace Workflows.Storage.EntityFrameworkCore
                     CommandWaitId = commandWait.Id
                 };
             }
+            else if (wait is CompensationWaitDto compensationWait)
+            {
+                record = new CompensationWaitEntity
+                {
+                    Token = compensationWait.Token ?? string.Empty
+                };
+            }
             else
             {
                 record = new WorkflowWaitEntity();
@@ -248,6 +288,9 @@ namespace Workflows.Storage.EntityFrameworkCore
             record.Id = wait.Id;
             record.WorkflowInstanceId = workflowInstanceId;
             record.Status = (int)wait.Status;
+            record.CancelTokens = wait.CancelTokens != null && wait.CancelTokens.Any()
+                ? string.Join(",", wait.CancelTokens)
+                : null;
 
             resultList.Add(record);
 
@@ -261,6 +304,25 @@ namespace Workflows.Storage.EntityFrameworkCore
         }
 
         public async Task<WorkflowStateDto> GetInstanceStateAsync(Guid instanceId)
+        {
+            if (_cache != null)
+            {
+                var cachedState = await _cache.GetOrAddAsync(instanceId, async id => {
+                    Console.WriteLine($"[CACHE DEBUG] GetInstanceStateAsync: Cache MISS for {id}. Loading from DB. Stack Trace:\n{Environment.StackTrace}");
+                    return await LoadInstanceStateFromDbAsync(id);
+                });
+                if (cachedState != null)
+                {
+                    Console.WriteLine($"[CACHE DEBUG] GetInstanceStateAsync: Cache HIT for {instanceId}. Status = {cachedState.Status}");
+                    return cachedState;
+                }
+                return null;
+            }
+            Console.WriteLine($"[CACHE DEBUG] GetInstanceStateAsync: Cache is NULL. Loading from DB.");
+            return await LoadInstanceStateFromDbAsync(instanceId);
+        }
+
+        private async Task<WorkflowStateDto> LoadInstanceStateFromDbAsync(Guid instanceId)
         {
             var dbInstance = await _dbContext.WorkflowInstances.FindAsync(instanceId);
             if (dbInstance == null) return null;
@@ -394,7 +456,7 @@ namespace Workflows.Storage.EntityFrameworkCore
         /// <summary>
         /// Updates a wait row's status by ID in whichever concrete table owns it.
         /// </summary>
-        private async Task UpdateWaitStatusAsync(Guid id, WaitStatus status)
+        private async Task UpdateWaitStatusAsync(string id, WaitStatus status)
         {
             var signal = await _dbContext.SignalWaits.FindAsync(id);
             if (signal != null)
@@ -420,7 +482,7 @@ namespace Workflows.Storage.EntityFrameworkCore
             }
         }
 
-        private WaitInfrastructureDto? FindWaitById(IEnumerable<WaitInfrastructureDto> waits, Guid id)
+        private WaitInfrastructureDto? FindWaitById(IEnumerable<WaitInfrastructureDto> waits, string id)
         {
             if (waits == null) return null;
             foreach (var wait in waits)
@@ -507,7 +569,7 @@ namespace Workflows.Storage.EntityFrameworkCore
             return token.ToString();
         }
 
-        public async Task<Guid> GetInstanceByCommandWaitIdAsync(Guid commandWaitId)
+        public async Task<Guid> GetInstanceByCommandWaitIdAsync(string commandWaitId)
         {
             var record = await _dbContext.CommandWaits
                 .FirstOrDefaultAsync(w => w.CommandWaitId == commandWaitId);
@@ -592,11 +654,10 @@ namespace Workflows.Storage.EntityFrameworkCore
             return false;
         }
 
-        private void CollectAndInsertOutboxMessagesRecursive(WaitInfrastructureDto wait, Guid workflowInstanceId)
+        private void CollectAndInsertOutboxMessagesRecursive(WaitInfrastructureDto wait, Guid workflowInstanceId, List<CommandDispatchNotification> notifications)
         {
             if (wait == null) return;
             if (wait is CommandWaitDto commandWait && 
-                commandWait.ExecutionMode == CommandExecutionMode.Deferred && 
                 commandWait.Status == WaitStatus.Waiting)
             {
                 bool alreadyExists = _dbContext.OutboxMessages.Local.Any(m => m.CommandWaitId == commandWait.Id) ||
@@ -622,6 +683,11 @@ namespace Workflows.Storage.EntityFrameworkCore
                     };
 
                     _dbContext.OutboxMessages.Add(outboxMessage);
+
+                    if (_outboxNotificationDispatcher != null)
+                    {
+                        notifications.Add(notification);
+                    }
                 }
             }
 
@@ -629,7 +695,7 @@ namespace Workflows.Storage.EntityFrameworkCore
             {
                 foreach (var child in wait.ChildWaits)
                 {
-                    CollectAndInsertOutboxMessagesRecursive(child, workflowInstanceId);
+                    CollectAndInsertOutboxMessagesRecursive(child, workflowInstanceId, notifications);
                 }
             }
         }

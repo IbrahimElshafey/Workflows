@@ -16,7 +16,7 @@ namespace Workflows.Orchestrator
             _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         }
 
-        public WorkflowStateDto CloneStateWithNewIds(WorkflowStateDto source, out Guid newTriggeringWaitId, Guid oldTriggeringWaitId)
+        public WorkflowStateDto CloneStateWithNewIds(WorkflowStateDto source, out string newTriggeringWaitId, string oldTriggeringWaitId)
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
 
@@ -33,8 +33,8 @@ namespace Workflows.Orchestrator
             };
 
             // 1. Build a map of old wait ID -> new wait ID
-            var idMap = new Dictionary<Guid, Guid>();
-            BuildIdMapRecursive(source.Waits, idMap);
+            var idMap = new Dictionary<string, string>();
+            BuildIdMapRecursive(source.Waits, idMap, source.Id.ToString(), clone.Id.ToString());
 
             // 2. Map the triggering wait ID
             if (idMap.TryGetValue(oldTriggeringWaitId, out var mappedTriggerId))
@@ -58,9 +58,9 @@ namespace Workflows.Orchestrator
                 var updatedLocals = new Dictionary<string, object>();
                 foreach (var kvp in clone.StateObject.Locals)
                 {
-                    if (Guid.TryParse(kvp.Key, out var oldWaitId) && idMap.TryGetValue(oldWaitId, out var newWaitId))
+                    if (idMap.TryGetValue(kvp.Key, out var newWaitId))
                     {
-                        updatedLocals[newWaitId.ToString()] = kvp.Value;
+                        updatedLocals[newWaitId] = kvp.Value;
                     }
                     else
                     {
@@ -73,20 +73,40 @@ namespace Workflows.Orchestrator
             return clone;
         }
 
-        private void BuildIdMapRecursive(IEnumerable<WaitInfrastructureDto> waits, Dictionary<Guid, Guid> idMap)
+        private string ReplaceInstanceIdInPath(string waitId, string oldInstanceId, string newInstanceId)
+        {
+            if (string.IsNullOrEmpty(waitId)) return waitId;
+            if (waitId.EndsWith(oldInstanceId, StringComparison.OrdinalIgnoreCase))
+            {
+                return waitId.Substring(0, waitId.Length - oldInstanceId.Length) + newInstanceId;
+            }
+            // Fallback
+            var parts = waitId.Split('/');
+            if (parts.Length > 0 && Guid.TryParse(parts[parts.Length - 1], out _))
+            {
+                parts[parts.Length - 1] = newInstanceId;
+                return string.Join("/", parts);
+            }
+            return waitId;
+        }
+
+        private void BuildIdMapRecursive(IEnumerable<WaitInfrastructureDto> waits, Dictionary<string, string> idMap, string oldInstanceId, string newInstanceId)
         {
             if (waits == null) return;
             foreach (var w in waits)
             {
-                idMap[w.Id] = Guid.NewGuid();
+                if (!string.IsNullOrEmpty(w.Id))
+                {
+                    idMap[w.Id] = ReplaceInstanceIdInPath(w.Id, oldInstanceId, newInstanceId);
+                }
                 if (w.ChildWaits != null)
                 {
-                    BuildIdMapRecursive(w.ChildWaits, idMap);
+                    BuildIdMapRecursive(w.ChildWaits, idMap, oldInstanceId, newInstanceId);
                 }
             }
         }
 
-        private WaitInfrastructureDto CloneAndRemapWaitRecursive(WaitInfrastructureDto wait, Dictionary<Guid, Guid> idMap)
+        private WaitInfrastructureDto CloneAndRemapWaitRecursive(WaitInfrastructureDto wait, Dictionary<string, string> idMap)
         {
             // Serialize and deserialize to clone the wait DTO polymorphically
             var serialized = _serializer.Serialize(wait, SerializationScope.CompilerGeneratedClass);
@@ -99,7 +119,7 @@ namespace Workflows.Orchestrator
             }
             else
             {
-                cloned.Id = Guid.NewGuid();
+                cloned.Id = Guid.NewGuid().ToString();
             }
 
             cloned.IsPersisted = false; // Reset persistence flag so it gets indexed
@@ -109,7 +129,7 @@ namespace Workflows.Orchestrator
                 clonedSignal.IsFirstWait = false;
 
             // Reset parent ID
-            if (wait.ParentWaitId.HasValue && idMap.TryGetValue(wait.ParentWaitId.Value, out var newParentId))
+            if (!string.IsNullOrEmpty(wait.ParentWaitId) && idMap.TryGetValue(wait.ParentWaitId, out var newParentId))
             {
                 cloned.ParentWaitId = newParentId;
             }
@@ -117,10 +137,9 @@ namespace Workflows.Orchestrator
             // Remap StateMachineObjectId for sub-workflows
             if (cloned is SubWorkflowWaitDto clonedSubWorkflow)
             {
-                if (idMap.TryGetValue(clonedSubWorkflow.StateMachineObjectId, out var newSMId))
-                {
-                    clonedSubWorkflow.StateMachineObjectId = newSMId;
-                }
+                var newSMId = Guid.NewGuid();
+                idMap[clonedSubWorkflow.StateMachineObjectId.ToString()] = newSMId.ToString();
+                clonedSubWorkflow.StateMachineObjectId = newSMId;
             }
 
             // Clone and apply to children recursively

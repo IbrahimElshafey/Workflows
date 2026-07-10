@@ -14,7 +14,7 @@ namespace Workflows.Abstraction.Persistence
         /// </summary>
         Task SaveContextSyncAsync(
             WorkflowStateDto state,
-            IEnumerable<Guid> completedWaitIds);
+            IEnumerable<string> completedWaitIds);
 
         /// <summary>
         /// Retrieves the "Source of Truth" JSON document.
@@ -29,7 +29,7 @@ namespace Workflows.Abstraction.Persistence
         /// <summary>
         /// Fast relational lookup for command completion.
         /// </summary>
-        Task<Guid> GetInstanceByCommandWaitIdAsync(Guid commandWaitId);
+        Task<Guid> GetInstanceByCommandWaitIdAsync(string commandWaitId);
 
         /// <summary>
         /// Retrieves all pending time waits from the database.

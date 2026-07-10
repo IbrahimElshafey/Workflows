@@ -66,7 +66,7 @@ namespace Workflows.Runner
             dto.CallerName = GetSubWorkflowMethodName(waitsGroup.Runner) ?? waitsGroup.CallerName;
 
             // Stable key for storing/retrieving this sub-workflow's state in Locals
-            dto.StateMachineObjectId = dto.Id;
+            dto.StateMachineObjectId = Guid.NewGuid();
 
             if (mapChildren)
             {
@@ -250,6 +250,7 @@ namespace Workflows.Runner
                 ResultAction = commandWait.HandlerKey + ":OnResult",
                 HandlerKey = commandWait.HandlerKey,
                 ExecutionMode = commandWait.ExecutionMode,
+                CompensationTokens = commandWait.CompensationTokens ?? Array.Empty<string>()
             };
 
             CopyBase(commandWait, dto);
@@ -479,6 +480,16 @@ namespace Workflows.Runner
             return dto;
         }
 
+        public CompensationWaitDto MapToDto(CompensationWait wait)
+        {
+            var dto = new CompensationWaitDto
+            {
+                Token = wait.Token
+            };
+            CopyBase(wait, dto);
+            return dto;
+        }
+
         public WaitInfrastructureDto MapToDto(Wait wait)
         {
             if(wait == null)
@@ -491,6 +502,7 @@ namespace Workflows.Runner
                 SubWorkflowWait subWorkflowWait => MapToDto(subWorkflowWait),
                 TimeWait timeWait => MapToDto(timeWait),
                 GroupWait groupWait => MapToDto(groupWait),
+                CompensationWait compensationWait => MapToDto(compensationWait),
                 Wait w when w.WaitType == Workflows.Primitives.WaitType.Command => MapToDto((dynamic)w),
                 ISignalWait signalWait => MapToDto((dynamic)signalWait),
                 _ => throw new NotSupportedException($"Unsupported wait type [{wait.GetType().FullName}].")

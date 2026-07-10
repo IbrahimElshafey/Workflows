@@ -40,5 +40,10 @@ namespace Workflows.Hosting.InProcess
         {
             return _inner.StartWorkflowAsync(workflowName, version, input);
         }
+
+        public Task CancelWorkflowAsync(Guid instanceId, string token, string reason = "")
+        {
+            return _inner.CancelWorkflowAsync(instanceId, token, reason);
+        }
     }
 }

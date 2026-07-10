@@ -6,32 +6,32 @@ using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
 
-namespace Workflows.Runner.Pipeline.Processors
+namespace Workflows.Runner.Pipeline.Serializers
 {
     /// <summary>
     /// Handles GroupWait objects.
     /// Unfolds composite layers and supports executing nested sub-workflows.
     /// Returns false to suspend execution.
     /// </summary>
-    internal class GroupWaitProcessor : WorkflowWaitProcessor
+    internal class GroupWaitSerializer : WaitSerializer
     {
         private readonly Mapper _mapper;
         private readonly StateMachineAdvancer _stateMachineAdvancer;
 
-        public ProcessorFactory ProcessorFactory { get; set; }
+        public SerializerFactory ProcessorFactory { get; set; }
 
-        public GroupWaitProcessor(Mapper mapper, StateMachineAdvancer stateMachineAdvancer)
+        public GroupWaitSerializer(Mapper mapper, StateMachineAdvancer stateMachineAdvancer)
         {
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _stateMachineAdvancer = stateMachineAdvancer ?? throw new ArgumentNullException(nameof(stateMachineAdvancer));
         }
 
-        public override async Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
+        public override async Task<bool> Serialize(Wait yieldedWait, WorkflowExecutionContext context)
         {
             var groupWait = yieldedWait as GroupWait;
             if (groupWait == null)
             {
-                throw new InvalidOperationException("GroupWaitProcessor requires a GroupWait.");
+                throw new InvalidOperationException("GroupWaitSerializer requires a GroupWait.");
             }
 
             // Save ExplicitState to WorkflowStateObject.WaitStatesObjects
@@ -56,7 +56,7 @@ namespace Workflows.Runner.Pipeline.Processors
 
         private async Task<List<WaitInfrastructureDto>> ProcessChildWaits(
             IReadOnlyList<Wait> childWaits, 
-            Guid parentWaitId, 
+            string parentWaitId, 
             WorkflowExecutionContext context)
         {
             if (childWaits == null || !childWaits.Any())
@@ -126,8 +126,8 @@ namespace Workflows.Runner.Pipeline.Processors
 
                             if (IsActiveWait(childWait))
                             {
-                                var childProcessor = ProcessorFactory.GetProcessor(childWait);
-                                bool childContinues = await childProcessor.ProcessAsync(childWait, context).ConfigureAwait(false);
+                                var childProcessor = ProcessorFactory.GetSerializer(childWait);
+                                bool childContinues = await childProcessor.Serialize(childWait, context).ConfigureAwait(false);
                                 
                                 if (!childContinues)
                                 {
@@ -180,27 +180,6 @@ namespace Workflows.Runner.Pipeline.Processors
 
         private bool IsActiveWait(Wait wait)
         {
-            if (wait is CompensationWait || wait is SubWorkflowWait)
-            {
-                return true;
-            }
-
-            if (wait.WaitType == Workflows.Primitives.WaitType.Command)
-            {
-                var commandWaitType = wait.GetType();
-                var executionModeProperty = commandWaitType.GetProperty("ExecutionMode",
-                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-
-                if (executionModeProperty != null)
-                {
-                    var executionMode = executionModeProperty.GetValue(wait);
-                    if (executionMode != null && executionMode.ToString() == "Immediate")
-                    {
-                        return true;
-                    }
-                }
-            }
-
             return false;
         }
     }

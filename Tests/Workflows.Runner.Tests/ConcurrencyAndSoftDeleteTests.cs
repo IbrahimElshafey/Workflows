@@ -87,7 +87,7 @@ namespace Workflows.Runner.Tests
         public async Task HardDelete_ShouldRemoveRowFromDatabase_AndPruneDirectly()
         {
             var instanceId = Guid.NewGuid();
-            var waitId = Guid.NewGuid();
+            var waitId = Guid.NewGuid().ToString();
 
             // 1. Arrange: Save a workflow instance and an active wait record
             using (var context = new WorkflowsDbContext(_options))

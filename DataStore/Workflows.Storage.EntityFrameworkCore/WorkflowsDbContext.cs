@@ -18,6 +18,7 @@ namespace Workflows.Storage.EntityFrameworkCore
         public DbSet<SignalWaitEntity> SignalWaits { get; set; }
         public DbSet<CommandWaitEntity> CommandWaits { get; set; }
         public DbSet<TimeWaitEntity> TimeWaits { get; set; }
+        public DbSet<CompensationWaitEntity> CompensationWaits { get; set; }
         public DbSet<WorkflowDefinitionEntity> WorkflowDefinitions { get; set; }
         public DbSet<SignalDefinitionEntity> SignalDefinitions { get; set; }
         public DbSet<CommandDefinitionEntity> CommandDefinitions { get; set; }
@@ -191,6 +192,18 @@ namespace Workflows.Storage.EntityFrameworkCore
                 entity.ToTable("CommandWaits");
                 entity.HasIndex(e => e.WorkflowInstanceId);
                 entity.HasIndex(e => e.CommandWaitId);
+
+                entity.HasOne<WorkflowInstance>()
+                      .WithMany()
+                      .HasForeignKey(e => e.WorkflowInstanceId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<CompensationWaitEntity>(entity =>
+            {
+                entity.ToTable("CompensationWaits");
+                entity.HasIndex(e => e.WorkflowInstanceId);
+                entity.HasIndex(e => e.Token);
 
                 entity.HasOne<WorkflowInstance>()
                       .WithMany()

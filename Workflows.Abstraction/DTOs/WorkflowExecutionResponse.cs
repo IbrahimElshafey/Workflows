@@ -10,6 +10,6 @@ namespace Workflows.Abstraction.DTOs
     public class WorkflowExecutionResponse
     {
         public WorkflowStateDto UpdatedState { get; set; } // The new JSON snapshot
-        public List<Guid> ConsumedWaitsIds { get; set; } // To be removed from SQL
+        public List<string> ConsumedWaitsIds { get; set; } = new(); // To be removed from SQL
     }
 }

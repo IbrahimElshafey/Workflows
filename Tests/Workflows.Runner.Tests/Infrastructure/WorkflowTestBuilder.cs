@@ -102,7 +102,7 @@ namespace Workflows.Runner.Tests.Infrastructure
         }
 
         public WorkflowExecutionRequest CreateExecutionRequest<TWorkflow>(
-            Guid triggeringWaitId,
+            string triggeringWaitId,
             string workflowType,
             WorkflowStateObject? stateObject = null,
             SignalDto? signal = null,
@@ -136,11 +136,11 @@ namespace Workflows.Runner.Tests.Infrastructure
         public Workflows.Abstraction.DTOs.Waits.SignalWaitDto CreateSignalWaitDto(
             string signalIdentifier,
             string waitName,
-            Guid? waitId = null)
+            string? waitId = null)
         {
             return new Workflows.Abstraction.DTOs.Waits.SignalWaitDto
             {
-                Id = waitId ?? Guid.NewGuid(),
+                Id = waitId ?? Guid.NewGuid().ToString(),
                 SignalIdentifier = signalIdentifier,
                 WaitName = waitName,
                 Status = WaitStatus.Waiting,

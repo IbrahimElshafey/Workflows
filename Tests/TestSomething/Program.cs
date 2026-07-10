@@ -43,7 +43,7 @@ class Program
     {
         var signal = new SignalWaitDto
         {
-            Id = Guid.NewGuid(),
+            Id = Guid.NewGuid().ToString(),
             SignalIdentifier = "TestSignal",
             WaitName = "Child Signal Wait",
             Status = WaitStatus.Waiting,
@@ -52,7 +52,7 @@ class Program
 
         var group = new GroupWaitDto
         {
-            Id = Guid.NewGuid(),
+            Id = Guid.NewGuid().ToString(),
             WaitName = "Parent Group Wait",
             Status = WaitStatus.Waiting,
             WaitType = WaitType.GroupWaitAll,

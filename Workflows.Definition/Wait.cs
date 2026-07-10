@@ -13,7 +13,7 @@ namespace Workflows.Definition
     {
         internal Wait(WaitType waitType, string waitName, int inCodeLine, string callerName, string callerFilePath)
         {
-            Id = Guid.NewGuid();
+            Id = Guid.NewGuid().ToString();
             WaitType = waitType;
             WaitName = waitName;
             InCodeLine = inCodeLine;
@@ -24,9 +24,10 @@ namespace Workflows.Definition
 
         internal Wait()
         {
+            Id = Guid.NewGuid().ToString();
         }
 
-        internal Guid Id { get; set; }
+        internal string Id { get; set; }
 
         internal HashSet<string> CancelTokens { get; set; } = new HashSet<string>();
         internal string WaitName { get; set; }

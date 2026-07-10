@@ -58,6 +58,7 @@ namespace Workflows.Orchestrator
                 object? explicitState = null;
                 if (state.StateObject?.Locals != null)
                 {
+                    Console.WriteLine($"[FILTER DEBUG] Locals keys/values: {string.Join(", ", state.StateObject.Locals.Select(kvp => $"{kvp.Key} = {kvp.Value} ({kvp.Value?.GetType().Name})"))}");
                     if (!state.StateObject.Locals.TryGetValue(signalWait.StateKey.ToString(), out explicitState))
                     {
                         state.StateObject.Locals.TryGetValue(signalWait.Id.ToString(), out explicitState);
@@ -66,11 +67,15 @@ namespace Workflows.Orchestrator
                 var stateElement = ToJsonElement(explicitState);
                 var instanceElement = ToJsonElement(state.StateObject?.Instance);
 
+                Console.WriteLine($"[FILTER DEBUG] IsMatch: StateKey = {signalWait.StateKey}, Id = {signalWait.Id}, explicitState = {explicitState}, stateElement = {stateElement}, Instance = {state.StateObject?.Instance}");
+
                 var matchResult = compiled(signalElement, stateElement, instanceElement);
+                Console.WriteLine($"[FILTER DEBUG] IsMatch result = {matchResult}");
                 return matchResult;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Console.WriteLine($"[FILTER DEBUG] IsMatch Exception: {ex}");
                 // Defensive fallback: proceed to runner if evaluation fails
                 return true;
             }

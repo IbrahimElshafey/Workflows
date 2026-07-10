@@ -44,6 +44,7 @@ namespace Workflows.Abstraction.DTOs
 
         public string WorkflowType { get; internal set; }
         public int WorkflowVersion { get; internal set; }
+        public int WaitCounter { get; set; }
     }
 }
 

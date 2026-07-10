@@ -35,11 +35,14 @@ namespace Workflows.Orchestrator
         {
             if (result == null) throw new ArgumentNullException(nameof(result));
 
+            Console.WriteLine($"[CLIENT DEBUG] SendWorkflowRunResultAsync: WorkflowType = {result.UpdatedState.WorkflowType}, State ID = {result.UpdatedState.Id}, Stack Trace:\n{Environment.StackTrace}");
+
+            Console.WriteLine($"[CLIENT DEBUG] SendWorkflowRunResultAsync: WorkflowType = {result.UpdatedState.WorkflowType}, State ID = {result.UpdatedState.Id}");
             // 1. Get existing waits to identify which ones are new
             var existingState = await _workflowStore.GetInstanceStateAsync(result.UpdatedState.Id);
             var existingWaitIds = existingState != null
                 ? existingState.Waits.Select(w => w.Id).ToHashSet()
-                : new HashSet<Guid>();
+                : new HashSet<string>();
 
             // 2. Commit the state updates, new/active waits, and completed wait IDs atomically
             await _workflowStore.SaveContextSyncAsync(

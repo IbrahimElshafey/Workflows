@@ -4,27 +4,27 @@ using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
 using Workflows.Primitives;
 
-namespace Workflows.Runner.Pipeline.Processors
+namespace Workflows.Runner.Pipeline.Serializers
 {
     /// <summary>
     /// Handles deferred command dispatch.
     /// Serializes the contract to an out-of-process messaging shape and bundles
     /// the dispatch payload into the execution context. Returns false to suspend execution.
     /// </summary>
-    internal class CommandProcessor : WorkflowWaitProcessor
+    internal class CommandSerializer : WaitSerializer
     {
         private readonly Mapper _mapper;
 
-        public CommandProcessor(Mapper mapper)
+        public CommandSerializer(Mapper mapper)
         {
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
-        public override Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
+        public override Task<bool> Serialize(Wait yieldedWait, WorkflowExecutionContext context)
         {
             if (yieldedWait.WaitType != WaitType.Command)
             {
-                throw new InvalidOperationException("CommandProcessor requires a CommandWait.");
+                throw new InvalidOperationException("CommandSerializer requires a CommandWait.");
             }
 
             // Get command data for serialization
@@ -53,8 +53,21 @@ namespace Workflows.Runner.Pipeline.Processors
             var waitDto = commandDto ?? _mapper.MapToDto(yieldedWait);
             context.WorkflowState.Waits.Add(waitDto);
 
-            // Return false - passive wait, suspend execution until callback
-            return Task.FromResult(false);
+            // Determine if this is a synchronous (immediate) command to keep in cache
+            bool isImmediate = false;
+            var executionModeProperty = commandWaitType.GetProperty("ExecutionMode",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+
+            if (executionModeProperty != null)
+            {
+                var executionMode = executionModeProperty.GetValue(yieldedWait);
+                if (executionMode != null && executionMode.ToString() == "Immediate")
+                {
+                    isImmediate = true;
+                }
+            }
+
+            return Task.FromResult(isImmediate);
         }
     }
 }

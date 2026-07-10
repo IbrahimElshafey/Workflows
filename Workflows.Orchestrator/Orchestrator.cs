@@ -24,6 +24,7 @@ namespace Workflows.Orchestrator
         private readonly IWorkflowCloner _workflowCloner;
         private readonly ISignalPreFilter _signalPreFilter;
         private readonly ITemplateRepository? _templateRepository;
+        private readonly IOutboxNotificationDispatcher? _outboxNotificationDispatcher;
 
         public Orchestrator(
             IWorkflowStore workflowStore,
@@ -33,7 +34,8 @@ namespace Workflows.Orchestrator
             IWorkflowRegistry workflowRegistry,
             IWorkflowCloner workflowCloner,
             ISignalPreFilter signalPreFilter,
-            ITemplateRepository? templateRepository = null)
+            ITemplateRepository? templateRepository = null,
+            IOutboxNotificationDispatcher? outboxNotificationDispatcher = null)
         {
             _workflowStore = workflowStore ?? throw new ArgumentNullException(nameof(workflowStore));
             _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
@@ -43,6 +45,7 @@ namespace Workflows.Orchestrator
             _workflowCloner = workflowCloner ?? throw new ArgumentNullException(nameof(workflowCloner));
             _signalPreFilter = signalPreFilter ?? throw new ArgumentNullException(nameof(signalPreFilter));
             _templateRepository = templateRepository;
+            _outboxNotificationDispatcher = outboxNotificationDispatcher;
         }
 
         public async Task ProcessCommandResultAsync(CommandResultDto commandResultDto)
@@ -206,7 +209,7 @@ namespace Workflows.Orchestrator
                     var isFirstWait = triggeringWait is SignalWaitDto sw && sw.IsFirstWait;
 
                     WorkflowStateDto runState = state;
-                    Guid triggeringWaitId = triggeringWait.Id;
+                    string triggeringWaitId = triggeringWait.Id;
 
                     if (isFirstWait)
                     {
@@ -222,9 +225,9 @@ namespace Workflows.Orchestrator
                         if (template != null && (template.IsGenericMatchFullMatch || template.IsExactMatchFullMatch))
                         {
                             signalWaitInRunState.Status = WaitStatus.Matched;
-                            if (signalWaitInRunState.ParentWaitId.HasValue)
+                            if (!string.IsNullOrEmpty(signalWaitInRunState.ParentWaitId))
                             {
-                                var parentWait = WaitFinder.FindWaitById(runState.Waits, signalWaitInRunState.ParentWaitId.Value);
+                                var parentWait = WaitFinder.FindWaitById(runState.Waits, signalWaitInRunState.ParentWaitId);
                                 if (parentWait is GroupWaitDto parentGroup && parentGroup.WaitType == WaitType.GroupWaitAll)
                                 {
                                     bool allCompletedOrMatched = true;
@@ -277,6 +280,33 @@ namespace Workflows.Orchestrator
 
             var result = await _runner.StartWorkflow(workflowName, input);
             return result.Id;
+        }
+
+        public async Task CancelWorkflowAsync(Guid instanceId, string token, string reason = "")
+        {
+            var state = await _workflowStore.GetInstanceStateAsync(instanceId);
+            if (state == null)
+            {
+                throw new InvalidOperationException($"Workflow instance '{instanceId}' not found.");
+            }
+
+            var existingTokens = state.CancellationHistory.GetCancelledTokens();
+            if (!existingTokens.Contains(token))
+            {
+                state.CancellationHistory.Add(new CancellationHistoryEntry
+                {
+                    Token = token,
+                    CancelledAt = DateTime.UtcNow,
+                    Reason = reason
+                });
+
+                await _workflowStore.SaveContextSyncAsync(state, Enumerable.Empty<string>());
+
+                if (_outboxNotificationDispatcher != null)
+                {
+                    _outboxNotificationDispatcher.NotifyCancellationRequested(instanceId, token, reason);
+                }
+            }
         }
     }
 }

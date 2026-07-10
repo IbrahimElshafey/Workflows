@@ -59,7 +59,7 @@ namespace Workflows.Runner.Tests
                 // Wait 1: Exact match on OrderId (ORD-123)
                 context.SignalWaits.Add(new SignalWaitEntity
                 {
-                    Id = Guid.NewGuid(),
+                    Id = Guid.NewGuid().ToString(),
                     WorkflowInstanceId = instId1,
                     Status = (int)WaitStatus.Waiting,
                     SignalPath = "OrderSignal",
@@ -71,7 +71,7 @@ namespace Workflows.Runner.Tests
                 // Wait 2: Exact match on OrderId (ORD-456)
                 context.SignalWaits.Add(new SignalWaitEntity
                 {
-                    Id = Guid.NewGuid(),
+                    Id = Guid.NewGuid().ToString(),
                     WorkflowInstanceId = instId2,
                     Status = (int)WaitStatus.Waiting,
                     SignalPath = "OrderSignal",
@@ -83,7 +83,7 @@ namespace Workflows.Runner.Tests
                 // Wait 3: Exact match on OrderId and Amount (ORD-123, 250)
                 context.SignalWaits.Add(new SignalWaitEntity
                 {
-                    Id = Guid.NewGuid(),
+                    Id = Guid.NewGuid().ToString(),
                     WorkflowInstanceId = instId3,
                     Status = (int)WaitStatus.Waiting,
                     SignalPath = "OrderSignal",
@@ -95,7 +95,7 @@ namespace Workflows.Runner.Tests
                 // Wait 4: Broadcast Wait (no exact match configuration)
                 context.SignalWaits.Add(new SignalWaitEntity
                 {
-                    Id = Guid.NewGuid(),
+                    Id = Guid.NewGuid().ToString(),
                     WorkflowInstanceId = instId4,
                     Status = (int)WaitStatus.Waiting,
                     SignalPath = "OrderSignal",
@@ -146,7 +146,7 @@ namespace Workflows.Runner.Tests
         public async Task SaveAndLoadTemplateHashKey_ShouldCorrectlyPersist()
         {
             var instId = Guid.NewGuid();
-            var waitId = Guid.NewGuid();
+            var waitId = Guid.NewGuid().ToString();
 
             using (var context = new WorkflowsDbContext(_options))
             {
@@ -172,7 +172,7 @@ namespace Workflows.Runner.Tests
                     }
                 };
 
-                await store.SaveContextSyncAsync(state, Enumerable.Empty<Guid>());
+                await store.SaveContextSyncAsync(state, Enumerable.Empty<string>());
             }
 
             using (var context = new WorkflowsDbContext(_options))
@@ -216,7 +216,7 @@ namespace Workflows.Runner.Tests
                     // Wait 1: Exact match with path "$" on primitive JValue
                     context.SignalWaits.Add(new SignalWaitEntity
                     {
-                        Id = Guid.NewGuid(),
+                        Id = Guid.NewGuid().ToString(),
                         WorkflowInstanceId = instId1,
                         Status = (int)WaitStatus.Waiting,
                         SignalPath = "PrimitiveSignal",
@@ -228,7 +228,7 @@ namespace Workflows.Runner.Tests
                     // Wait 2: Match path with invalid JSON path format
                     context.SignalWaits.Add(new SignalWaitEntity
                     {
-                        Id = Guid.NewGuid(),
+                        Id = Guid.NewGuid().ToString(),
                         WorkflowInstanceId = instId2,
                         Status = (int)WaitStatus.Waiting,
                         SignalPath = "InvalidPathSignal",
@@ -240,7 +240,7 @@ namespace Workflows.Runner.Tests
                     // Wait 3 & 4: Distinct Match Paths normalization test (null vs "")
                     context.SignalWaits.Add(new SignalWaitEntity
                     {
-                        Id = Guid.NewGuid(),
+                        Id = Guid.NewGuid().ToString(),
                         WorkflowInstanceId = instId3,
                         Status = (int)WaitStatus.Waiting,
                         SignalPath = "DuplicateConfigSignal",
@@ -251,7 +251,7 @@ namespace Workflows.Runner.Tests
 
                     context.SignalWaits.Add(new SignalWaitEntity
                     {
-                        Id = Guid.NewGuid(),
+                        Id = Guid.NewGuid().ToString(),
                         WorkflowInstanceId = instId4,
                         Status = (int)WaitStatus.Waiting,
                         SignalPath = "DuplicateConfigSignal",
@@ -340,7 +340,7 @@ namespace Workflows.Runner.Tests
                 {
                     new SignalWaitDto
                     {
-                        Id = Guid.NewGuid(),
+                        Id = Guid.NewGuid().ToString(),
                         Status = WaitStatus.Waiting,
                         SignalIdentifier = "TestSignal",
                         IsPersisted = false
@@ -365,7 +365,7 @@ namespace Workflows.Runner.Tests
                 {
                     new SignalWaitDto
                     {
-                        Id = Guid.NewGuid(),
+                        Id = Guid.NewGuid().ToString(),
                         Status = WaitStatus.Waiting,
                         SignalIdentifier = "TestSignal",
                         IsPersisted = false
@@ -378,11 +378,11 @@ namespace Workflows.Runner.Tests
                 var store = new WorkflowStore(context, serializer);
 
                 // Save first state
-                await store.SaveContextSyncAsync(state1, Enumerable.Empty<Guid>());
+                await store.SaveContextSyncAsync(state1, Enumerable.Empty<string>());
                 state1.Id.Should().Be(instId1);
 
                 // Save second state (should match and de-duplicate)
-                await store.SaveContextSyncAsync(state2, Enumerable.Empty<Guid>());
+                await store.SaveContextSyncAsync(state2, Enumerable.Empty<string>());
                 state2.Id.Should().Be(instId1); // Should be re-mapped to the first instance ID!
             }
 
@@ -418,7 +418,7 @@ namespace Workflows.Runner.Tests
                 {
                     new SignalWaitDto
                     {
-                        Id = Guid.NewGuid(),
+                        Id = Guid.NewGuid().ToString(),
                         Status = WaitStatus.Waiting,
                         SignalIdentifier = "TestSignal",
                         IsPersisted = false
@@ -429,7 +429,7 @@ namespace Workflows.Runner.Tests
             using (var context = new WorkflowsDbContext(_options))
             {
                 var store = new WorkflowStore(context, serializer);
-                await store.SaveContextSyncAsync(state, Enumerable.Empty<Guid>());
+                await store.SaveContextSyncAsync(state, Enumerable.Empty<string>());
             }
 
             // Act & Assert: Query db directly to verify no "$type" name handling was stored

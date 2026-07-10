@@ -25,7 +25,7 @@ namespace Workflows.TestShell
         private readonly List<ExecutionLogEntry> _executionLog = new();
         private string? _currentStateJson;
         private WorkflowStateDto? _currentState;
-        private Guid _lastTriggeringWaitId;
+        private string _lastTriggeringWaitId = string.Empty;
 
         public IServiceProvider ServiceProvider => _serviceProvider;
 
@@ -76,8 +76,8 @@ namespace Workflows.TestShell
             _executionLog.Add(new ExecutionLogEntry
             {
                 TriggeringWaitId = _lastTriggeringWaitId,
-                ConsumedWaitIds = response.ConsumedWaitsIds?.Distinct().ToList() ?? new List<Guid>(),
-                NewWaitIds = response.UpdatedState.Waits?.Where(w => w.Status == WaitStatus.Waiting).Select(w => w.Id).ToList() ?? new List<Guid>(),
+                ConsumedWaitIds = response.ConsumedWaitsIds?.Distinct().ToList() ?? new List<string>(),
+                NewWaitIds = response.UpdatedState.Waits?.Where(w => w.Status == WaitStatus.Waiting).Select(w => w.Id).ToList() ?? new List<string>(),
                 Status = response.UpdatedState.Status,
                 SerializedStateSnapshot = _currentStateJson,
                 Timestamp = DateTime.UtcNow
@@ -120,7 +120,7 @@ namespace Workflows.TestShell
 
         public async Task<WorkflowStateDto?> StartWorkflowAsync(string workflowName, object? input = null)
         {
-            _lastTriggeringWaitId = Guid.Empty;
+            _lastTriggeringWaitId = string.Empty;
             var runner = _serviceProvider.GetRequiredService<IWorkflowRunner>();
             await runner.StartWorkflow(workflowName, input);
             return _currentState;
@@ -160,7 +160,7 @@ namespace Workflows.TestShell
             return _currentState;
         }
 
-        public async Task<WorkflowStateDto?> SimulateCommandResultAsync(Guid waitId, object commandResult)
+        public async Task<WorkflowStateDto?> SimulateCommandResultByWaitIdAsync(string waitId, object commandResult)
         {
             if (_currentState == null || _currentStateJson == null)
             {
@@ -203,7 +203,7 @@ namespace Workflows.TestShell
                 throw new InvalidOperationException($"No active CommandWait found matching command identifier '{commandIdentifier}'.");
             }
 
-            return await SimulateCommandResultAsync(activeWait.Id, commandResult);
+            return await SimulateCommandResultByWaitIdAsync(activeWait.Id, commandResult);
         }
 
         /// <summary>

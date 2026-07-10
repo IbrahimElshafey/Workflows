@@ -39,7 +39,7 @@ namespace Workflows.Runner
             _stateService.PopulateExecutionContext(_context, incomingContext);
 
             // If no triggering wait, run the root execution loop directly
-            if (_context.TriggeringWaitId == Guid.Empty)
+            if (string.IsNullOrEmpty(_context.TriggeringWaitId))
             {
                 return await RunExecutionLoopAndSendResult();
             }
@@ -134,12 +134,12 @@ namespace Workflows.Runner
         private Abstraction.DTOs.Waits.WaitInfrastructureDto FindParentWait(
             Abstraction.DTOs.Waits.WaitInfrastructureDto wait)
         {
-            if (!wait.ParentWaitId.HasValue)
+            if (string.IsNullOrEmpty(wait.ParentWaitId))
                 return null;
 
             return _stateService.FindWaitById(
                 _context.WorkflowState.Waits,
-                wait.ParentWaitId.Value);
+                wait.ParentWaitId);
         }
 
         private async Task<AsyncResult> RunExecutionLoopAndSendResult()

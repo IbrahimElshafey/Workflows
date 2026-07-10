@@ -12,7 +12,7 @@ using Workflows.Runner.Helpers;
 using Workflows.Runner.Migration;
 using Workflows.Runner.Pipeline;
 using Workflows.Runner.Pipeline.CompletionChecker;
-using Workflows.Runner.Pipeline.Processors;
+using Workflows.Runner.Pipeline.Serializers;
 
 namespace Workflows.Runner
 {
@@ -26,8 +26,8 @@ namespace Workflows.Runner
             services.AddSingleton<CallbackRegistry>();
             services.AddSingleton<ICallbackRegistry>(sp => sp.GetRequiredService<CallbackRegistry>());
             services.AddScoped<CompletionCheckerFactory>();
-            services.AddScoped<ProcessorFactory>();
-            services.AddSingleton<CancelProcessor>();
+            services.AddScoped<SerializerFactory>();
+            services.AddSingleton<CancelTokensHandler>();
             services.AddSingleton<StateMachineAdvancer>();
             services.AddScoped<Mapper>();
             services.AddScoped<WorkflowRunLoop>();

@@ -32,7 +32,7 @@ namespace Workflows.Runner.Tests
             };
 
             var request = builder.CreateExecutionRequest<NestedGroupsTestWorkflow>(
-                Guid.Empty,
+                string.Empty,
                 "NestedGroupsTest",
                 stateObject: stateMachine);
 

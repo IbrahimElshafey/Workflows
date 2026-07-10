@@ -20,7 +20,7 @@ namespace Workflows.Abstraction.Runner
 
     public interface IDispatcher<in TInput>
     {
-        ValueTask DispatchAsync(TInput input, Guid commandId, Guid workflowInstanceId, CancellationToken cancellationToken = default);
+        ValueTask DispatchAsync(TInput input, string commandId, Guid workflowInstanceId, CancellationToken cancellationToken = default);
     }
 
     public interface IReceiver<TOutput>
@@ -33,21 +33,21 @@ namespace Workflows.Abstraction.Runner
     /// </summary>
     public interface IDeferredCommandDispatcher<in TCommand>
     {
-        ValueTask DispatchAsync(TCommand command, Guid commandId, Guid workflowInstanceId, CancellationToken cancellationToken);
+        ValueTask DispatchAsync(TCommand command, string commandId, Guid workflowInstanceId, CancellationToken cancellationToken);
     }
 
     public interface IWorkflowCommandContext
     {
         Guid WorkflowInstanceId { get; }
-        Guid CommandId { get; }
+        string CommandId { get; }
 
         // Used by the Runner to set the context before execution
-        void SetContext(Guid workflowInstanceId, Guid commandId);
+        void SetContext(Guid workflowInstanceId, string commandId);
     }
 
     // 2. INTERNAL WRITER (Used ONLY by the Runner/Factory)
     internal interface IWorkflowCommandContextSetter
     {
-        void SetContext(Guid workflowInstanceId, Guid commandId);
+        void SetContext(Guid workflowInstanceId, string commandId);
     }
 }

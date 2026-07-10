@@ -12,6 +12,6 @@ namespace Workflows.Storage.EntityFrameworkCore
         public string MessageType { get; set; } = string.Empty;
         public string Payload { get; set; } = string.Empty;
         public Guid WorkflowInstanceId { get; set; }
-        public Guid CommandWaitId { get; set; }
+        public string CommandWaitId { get; set; } = string.Empty;
     }
 }

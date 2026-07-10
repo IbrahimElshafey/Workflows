@@ -4,6 +4,6 @@ namespace Workflows.Storage.EntityFrameworkCore
 {
     public class CommandWaitEntity : WorkflowWaitEntity
     {
-        public Guid CommandWaitId { get; set; }
+        public string CommandWaitId { get; set; } = string.Empty;
     }
 }

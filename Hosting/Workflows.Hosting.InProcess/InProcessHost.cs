@@ -28,6 +28,10 @@ namespace Workflows.Hosting.InProcess
             services.AddSingleton<IExternalScheduler>(sp => sp.GetRequiredService<Scheduler>());
             services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<Scheduler>());
 
+            services.AddSingleton<IWorkflowInstanceCache, WorkflowInstanceCache>();
+            services.AddSingleton<BackgroundWorkerChannel>();
+            services.AddSingleton<IOutboxNotificationDispatcher, OutboxNotificationDispatcher>();
+
             services.AddSingleton<WorkflowExecutionChannel>();
             services.AddSingleton<InboxOptions>();
             services.AddScoped<WorkflowExecutionSession>();
@@ -36,7 +40,9 @@ namespace Workflows.Hosting.InProcess
 
             services.AddHostedService<RunnerWorker>();
             services.AddHostedService<CoordinatorCommitWorker>();
-            services.AddHostedService<OutboxSweeperWorker>();
+            services.AddHostedService<CommandExecutorWorker>();
+            services.AddHostedService<CompensationWorker>();
+            services.AddHostedService<CancelerWorker>();
             services.AddHostedService<InboxPollerWorker>();
 
             services.AddScoped<CommandResultInboxWriter>();

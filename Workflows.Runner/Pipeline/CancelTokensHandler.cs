@@ -5,14 +5,14 @@ using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Definition;
 
-namespace Workflows.Runner.Pipeline.Processors
+namespace Workflows.Runner.Pipeline
 {
     /// <summary>
     /// Handles cancellation logic and triggers attached OnCancel callbacks.
     /// Executed at the tail end of evaluation and generation loops.
     /// Matches active trees against the CancellationHistory.
     /// </summary>
-    internal class CancelProcessor
+    internal class CancelTokensHandler
     {
         private static readonly ActionInvokerCache _invokerCache = new();
 
@@ -20,27 +20,24 @@ namespace Workflows.Runner.Pipeline.Processors
         /// Checks if a yielded wait should be cancelled and skips it if so.
         /// Returns true if wait was cancelled and execution should continue to next wait.
         /// </summary>
-        public async Task<bool> CheckAndSkipCancelledWaitAsync(Wait yieldedWait, WorkflowExecutionContext context)
+        public Task<bool> CheckAndSkipCancelledWaitAsync(Wait yieldedWait, WorkflowExecutionContext context)
         {
-            if (yieldedWait == null) return false;
+            if (yieldedWait == null) return Task.FromResult(false);
 
             var cancelledTokens = context.WorkflowState.CancellationHistory?.GetCancelledTokens();
             if (cancelledTokens == null || !cancelledTokens.Any())
             {
-                return false;
+                return Task.FromResult(false);
             }
 
             bool isCancelled = IsWaitCancelled(yieldedWait, cancelledTokens);
             if (isCancelled)
             {
-                // Invoke cancel callback
-                await InvokeCancelActionAsync(yieldedWait);
-
                 // Wait is cancelled - signal to skip it and continue loop
-                return true;
+                return Task.FromResult(true);
             }
 
-            return false;
+            return Task.FromResult(false);
         }
 
         /// <summary>
@@ -146,41 +143,6 @@ namespace Workflows.Runner.Pipeline.Processors
                 child.Status = Abstraction.Enums.WaitStatus.Canceled;
                 context.ConsumedWaitsIds.Add(child.Id);
                 CancelChildWaitsRecursive(child, context);
-            }
-        }
-
-        /// <summary>
-        /// Invokes the cancel action callback for a wait if present.
-        /// </summary>
-        public async Task InvokeCancelActionAsync(Wait wait)
-        {
-            if (wait.CancelAction == null) return;
-
-            try
-            {
-                //todo: to fix
-                switch (wait.CancelAction)
-                {
-                    case Func<ValueTask> asyncAction:
-                        await asyncAction();
-                        break;
-                    case Func<object, ValueTask> asyncActionWithState:
-                        await asyncActionWithState(wait);
-                        break;
-                    case Action action:
-                        action();
-                        break;
-                    case Action<object> actionWithState:
-                        actionWithState(wait);
-                        break;
-                }
-            }
-            catch (Exception ex)
-            {
-                if (wait.WorkflowContainer != null)
-                {
-                    await wait.WorkflowContainer.OnError($"Cancel action failed for wait {wait.WaitName}: {ex.Message}", ex);
-                }
             }
         }
     }

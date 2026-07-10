@@ -33,7 +33,7 @@ namespace Workflows.Runner.Tests
             };
 
             var request = builder.CreateExecutionRequest<SubWorkflowTestWorkflow>(
-                Guid.Empty,
+                string.Empty,
                 "SubWorkflowTest",
                 stateObject: stateMachine);
 

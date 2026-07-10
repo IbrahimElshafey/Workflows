@@ -20,7 +20,7 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
         /// <summary>
         /// Recursively finds a wait DTO by ID in the wait tree.
         /// </summary>
-        protected static WaitInfrastructureDto FindWaitById(System.Collections.Generic.IEnumerable<WaitInfrastructureDto> waits, Guid id)
+        protected static WaitInfrastructureDto FindWaitById(System.Collections.Generic.IEnumerable<WaitInfrastructureDto> waits, string id)
         {
             if (waits == null) return null;
 

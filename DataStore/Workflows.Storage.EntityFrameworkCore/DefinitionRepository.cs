@@ -158,7 +158,18 @@ namespace Workflows.Storage.EntityFrameworkCore
                         if (result != null)
                         {
                             var instanceId = result.Id;
-                            var instance = await _dbContext.WorkflowInstances.FindAsync(instanceId);
+                            WorkflowInstance? instance = null;
+                            int retries = 0;
+                            while (instance == null && retries < 50)
+                            {
+                                instance = await _dbContext.WorkflowInstances.FindAsync(instanceId);
+                                if (instance == null)
+                                {
+                                    retries++;
+                                    await Task.Delay(100);
+                                }
+                            }
+
                             if (instance != null)
                             {
                                 // C. Validate that the first wait contains at least one SignalWait
@@ -177,11 +188,37 @@ namespace Workflows.Storage.EntityFrameworkCore
                                 // E. Set IsFirstWait = true inside the JSON column representation
                                 UpdateIsFirstWaitRecursive(instance.Waits);
 
-                                // Force EF Core to detect change by reassigning and setting state
-                                instance.Waits = instance.Waits.ToList();
-                                _dbContext.Entry(instance).State = EntityState.Modified;
+                                bool saved = false;
+                                int saveRetries = 0;
+                                while (!saved && saveRetries < 10)
+                                {
+                                    try
+                                    {
+                                        // Force EF Core to detect change by reassigning and setting state
+                                        instance.Waits = instance.Waits.ToList();
+                                        _dbContext.Entry(instance).State = EntityState.Modified;
 
-                                await _dbContext.SaveChangesAsync();
+                                        await _dbContext.SaveChangesAsync();
+                                        saved = true;
+                                    }
+                                    catch (DbUpdateConcurrencyException)
+                                    {
+                                        saveRetries++;
+                                        _dbContext.Entry(instance).State = EntityState.Detached;
+                                        await Task.Delay(100);
+                                        instance = await _dbContext.WorkflowInstances.FindAsync(instanceId);
+                                        if (instance != null)
+                                        {
+                                            UpdateIsFirstWaitRecursive(instance.Waits);
+                                        }
+                                    }
+                                }
+
+                                var cache = _serviceProvider.GetService<IWorkflowInstanceCache>();
+                                if (cache != null)
+                                {
+                                    cache.Remove(instanceId);
+                                }
                             }
                         }
                     }

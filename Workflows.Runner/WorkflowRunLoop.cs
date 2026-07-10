@@ -6,7 +6,6 @@ using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
 using Workflows.Abstraction.Runner;
 using Workflows.Runner.Pipeline;
-using Workflows.Runner.Pipeline.Processors;
 
 namespace Workflows.Runner
 {
@@ -26,26 +25,26 @@ namespace Workflows.Runner
     internal class WorkflowRunLoop
     {
         private readonly StateMachineAdvancer _stateMachineAdvancer;
-        private readonly CancelProcessor _cancelHandler;
-        private readonly ProcessorFactory _processorFactory;
+        private readonly CancelTokensHandler _cancelHandler;
         private readonly WorkflowExecutionContext _context;
         private readonly IWorkflowRegistry _workflowRegistry;
         private readonly IWorkflowHydrator _hydrator;
+        private readonly Mapper _mapper;
 
         public WorkflowRunLoop(
             StateMachineAdvancer stateMachineAdvancer,
-            CancelProcessor cancelHandler,
-            ProcessorFactory processorFactory,
+            CancelTokensHandler cancelHandler,
             WorkflowExecutionContext context,
             IWorkflowRegistry workflowRegistry,
-            IWorkflowHydrator hydrator)
+            IWorkflowHydrator hydrator,
+            Mapper mapper)
         {
             _stateMachineAdvancer = stateMachineAdvancer ?? throw new ArgumentNullException(nameof(stateMachineAdvancer));
             _cancelHandler = cancelHandler ?? throw new ArgumentNullException(nameof(cancelHandler));
-            _processorFactory = processorFactory ?? throw new ArgumentNullException(nameof(processorFactory));
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
             _hydrator = hydrator ?? throw new ArgumentNullException(nameof(hydrator));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
         /// <summary>
@@ -86,9 +85,34 @@ namespace Workflows.Runner
                     continue;
                 }
 
-                // Route to specific outgoing wait processor
-                var processor = _processorFactory.GetProcessor(yieldedWait);
-                _context.ContinueExecutionLoop = await processor.ProcessAsync(yieldedWait, _context);
+                // Intercept SubWorkflowWait directly to execute immediately
+                if (yieldedWait is SubWorkflowWait subWorkflowWait)
+                {
+                    var subWorkflowDto = _mapper.MapToDto(subWorkflowWait, mapChildren: false) as SubWorkflowWaitDto;
+                    if (subWorkflowDto == null)
+                    {
+                        throw new InvalidOperationException("Failed to map SubWorkflowWait to SubWorkflowWaitDto.");
+                    }
+
+                    SaveWaitStatesToMachineState(subWorkflowWait, _context.WorkflowState.StateObject);
+
+                    // Nest the sub-workflow DTO if executing under another sub-workflow
+                    if (_context.CurrentSubWorkflow != null)
+                    {
+                        subWorkflowDto.ParentWaitId = _context.CurrentSubWorkflow.Id;
+                        _context.CurrentSubWorkflow.ChildWaits.Add(subWorkflowDto);
+                    }
+                    else
+                    {
+                        _context.WorkflowState.Waits.Add(subWorkflowDto);
+                    }
+
+                    await ResumeSubWorkflowAsync(subWorkflowDto);
+                    continue;
+                }
+
+                // Materialize state and update context
+                await _context.SaveStateAsync(yieldedWait);
 
                 // Execute interruption logic and trigger attached OnCancel callbacks
                 await _cancelHandler.ProcessCancellationsWithCallbacksAsync(_context);
@@ -97,118 +121,125 @@ namespace Workflows.Runner
             return new ExecutionResult { CompletedNatively = false, FinalState = currentState };
         }
 
-        /// <summary>
-        /// Resumes execution of a sub-workflow, runs it to completion or suspension, and handles child state mapping/parent stream restoration.
-        /// </summary>
         public async Task ResumeSubWorkflowAsync(SubWorkflowWaitDto subWorkflowWaitDto)
         {
-            // Get workflow types
-            if (!_workflowRegistry.Workflows.TryGetValue(_context.WorkflowState.WorkflowType, out var workflowTypes))
+            var previousSub = _context.CurrentSubWorkflow;
+            _context.CurrentSubWorkflow = subWorkflowWaitDto;
+
+            try
             {
-                throw new InvalidOperationException($"Workflow {_context.WorkflowState.WorkflowType} not registered.");
-            }
-
-            var childKey = subWorkflowWaitDto.StateMachineObjectId.ToString();
-
-            // Restore or create child WorkflowStateObject from the unified Locals bag
-            if (!_context.WorkflowState.StateObject.Locals.TryGetValue(childKey, out var childRaw)
-                || childRaw is not WorkflowStateObject childState)
-            {
-                childState = new WorkflowStateObject();
-                _context.WorkflowState.StateObject.Locals[childKey] = childState;
-            }
-
-            var callerName = string.IsNullOrEmpty(subWorkflowWaitDto.CallerName) ? "Run" : subWorkflowWaitDto.CallerName;
-            
-            // Resolve sub-workflow parameter type dynamically from method signature
-            var methodInfo = workflowTypes.WorkflowContainer.GetMethod(
-                callerName,
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-
-            Type subStateType = typeof(object);
-            if (methodInfo != null && methodInfo.GetParameters().Length == 1)
-            {
-                subStateType = methodInfo.GetParameters()[0].ParameterType;
-            }
-
-            if (!childState.Locals.TryGetValue("state", out var childStateObj) || childStateObj == null)
-            {
-                if (subStateType != typeof(object))
+                // Get workflow types
+                if (!_workflowRegistry.Workflows.TryGetValue(_context.WorkflowState.WorkflowType, out var workflowTypes))
                 {
-                    childStateObj = Activator.CreateInstance(subStateType);
-                    childState.Locals["state"] = childStateObj;
+                    throw new InvalidOperationException($"Workflow {_context.WorkflowState.WorkflowType} not registered.");
                 }
-            }
 
-            var subWorkflowInvoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName, subStateType);
-            var subWorkflowStream = (IAsyncEnumerable<Wait>)subWorkflowInvoker(_context.WorkflowInstance, childStateObj);
+                var childKey = subWorkflowWaitDto.StateMachineObjectId.ToString();
 
-            // Execute using the unified loop
-            var result = await ExecuteAsync(subWorkflowStream, childState);
+                // Restore or create child WorkflowStateObject from the unified Locals bag
+                if (!_context.WorkflowState.StateObject.Locals.TryGetValue(childKey, out var childRaw)
+                    || childRaw is not WorkflowStateObject childState)
+                {
+                    childState = new WorkflowStateObject();
+                    _context.WorkflowState.StateObject.Locals[childKey] = childState;
+                }
 
-            if (!result.CompletedNatively)
-            {
-                // Sub-workflow suspended — store full WorkflowStateObject under its stable key
-                _context.WorkflowState.StateObject.Locals[childKey] = result.FinalState;
-                return;
-            }
-
-            // Sub-workflow completed successfully
-            subWorkflowWaitDto.Status = Abstraction.Enums.WaitStatus.Completed;
-
-            // Remove child state since sub-workflow is done
-            _context.WorkflowState.StateObject.Locals.Remove(childKey);
-
-            // Restore parent stream on context
-            Type parentStateType;
-            string parentMethodName;
-            var parentSub = FindParentSubWorkflow(subWorkflowWaitDto, _context.WorkflowState.Waits);
-            if (parentSub != null)
-            {
-                parentMethodName = string.IsNullOrEmpty(parentSub.CallerName) ? "Run" : parentSub.CallerName;
-                var parentMethodInfo = workflowTypes.WorkflowContainer.GetMethod(
-                    parentMethodName,
+                var callerName = string.IsNullOrEmpty(subWorkflowWaitDto.CallerName) ? "Run" : subWorkflowWaitDto.CallerName;
+                
+                // Resolve sub-workflow parameter type dynamically from method signature
+                var methodInfo = workflowTypes.WorkflowContainer.GetMethod(
+                    callerName,
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                parentStateType = typeof(object);
-                if (parentMethodInfo != null && parentMethodInfo.GetParameters().Length == 1)
-                {
-                    parentStateType = parentMethodInfo.GetParameters()[0].ParameterType;
-                }
-            }
-            else
-            {
-                parentMethodName = workflowTypes.StartMethod;
-                parentStateType = workflowTypes.StateType;
-            }
 
-            var parentInvoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, parentMethodName, parentStateType);
-            object? parentStateParam = null;
-            if (parentSub != null)
-            {
-                var parentKey = parentSub.StateMachineObjectId.ToString();
-                if (_context.WorkflowState.StateObject.Locals.TryGetValue(parentKey, out var parentRaw)
-                    && parentRaw is WorkflowStateObject parentState)
+                Type subStateType = typeof(object);
+                if (methodInfo != null && methodInfo.GetParameters().Length == 1)
                 {
-                    parentState.Locals.TryGetValue("state", out parentStateParam);
+                    subStateType = methodInfo.GetParameters()[0].ParameterType;
                 }
+
+                if (!childState.Locals.TryGetValue("state", out var childStateObj) || childStateObj == null)
+                {
+                    if (subStateType != typeof(object))
+                    {
+                        childStateObj = Activator.CreateInstance(subStateType);
+                        childState.Locals["state"] = childStateObj;
+                    }
+                }
+
+                var subWorkflowInvoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName, subStateType);
+                var subWorkflowStream = (IAsyncEnumerable<Wait>)subWorkflowInvoker(_context.WorkflowInstance, childStateObj);
+
+                // Execute using the unified loop
+                var result = await ExecuteAsync(subWorkflowStream, childState);
+
+                if (!result.CompletedNatively)
+                {
+                    // Sub-workflow suspended — store full WorkflowStateObject under its stable key
+                    _context.WorkflowState.StateObject.Locals[childKey] = result.FinalState;
+                    return;
+                }
+
+                // Sub-workflow completed successfully
+                subWorkflowWaitDto.Status = Abstraction.Enums.WaitStatus.Completed;
+
+                // Remove child state since sub-workflow is done
+                _context.WorkflowState.StateObject.Locals.Remove(childKey);
+
+                // Restore parent stream on context
+                Type parentStateType;
+                string parentMethodName;
+                var parentSub = FindParentSubWorkflow(subWorkflowWaitDto, _context.WorkflowState.Waits);
+                if (parentSub != null)
+                {
+                    parentMethodName = string.IsNullOrEmpty(parentSub.CallerName) ? "Run" : parentSub.CallerName;
+                    var parentMethodInfo = workflowTypes.WorkflowContainer.GetMethod(
+                        parentMethodName,
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                    parentStateType = typeof(object);
+                    if (parentMethodInfo != null && parentMethodInfo.GetParameters().Length == 1)
+                    {
+                        parentStateType = parentMethodInfo.GetParameters()[0].ParameterType;
+                    }
+                }
+                else
+                {
+                    parentMethodName = workflowTypes.StartMethod;
+                    parentStateType = workflowTypes.StateType;
+                }
+
+                var parentInvoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, parentMethodName, parentStateType);
+                object? parentStateParam = null;
+                if (parentSub != null)
+                {
+                    var parentKey = parentSub.StateMachineObjectId.ToString();
+                    if (_context.WorkflowState.StateObject.Locals.TryGetValue(parentKey, out var parentRaw)
+                        && parentRaw is WorkflowStateObject parentState)
+                    {
+                        parentState.Locals.TryGetValue("state", out parentStateParam);
+                    }
+                }
+                else
+                {
+                    _context.WorkflowState.StateObject.Locals.TryGetValue("state", out parentStateParam);
+                }
+                _context.WorkflowStream = (IAsyncEnumerable<Wait>)parentInvoker(_context.WorkflowInstance, parentStateParam);
             }
-            else
+            finally
             {
-                _context.WorkflowState.StateObject.Locals.TryGetValue("state", out parentStateParam);
+                _context.CurrentSubWorkflow = previousSub;
             }
-            _context.WorkflowStream = (IAsyncEnumerable<Wait>)parentInvoker(_context.WorkflowInstance, parentStateParam);
         }
 
         private SubWorkflowWaitDto FindParentSubWorkflow(WaitInfrastructureDto wait, List<WaitInfrastructureDto> waits)
         {
-            if (wait.ParentWaitId == null) return null;
-            var parent = FindWaitById(waits, wait.ParentWaitId.Value);
+            if (string.IsNullOrEmpty(wait.ParentWaitId)) return null;
+            var parent = FindWaitById(waits, wait.ParentWaitId);
             if (parent == null) return null;
             if (parent is SubWorkflowWaitDto parentSub) return parentSub;
             return FindParentSubWorkflow(parent, waits);
         }
 
-        private WaitInfrastructureDto FindWaitById(IEnumerable<WaitInfrastructureDto> waits, Guid id)
+        private WaitInfrastructureDto FindWaitById(IEnumerable<WaitInfrastructureDto> waits, string id)
         {
             if (waits == null) return null;
             var stack = new Stack<WaitInfrastructureDto>(System.Linq.Enumerable.Where(waits, w => w != null));
@@ -292,6 +323,23 @@ namespace Workflows.Runner
                 {
                     ValidateWaitTreeRecursive(child, seenNames, workflowType);
                 }
+            }
+        }
+
+        private void SaveWaitStatesToMachineState(Wait wait, WorkflowStateObject stateObject)
+        {
+            if (wait.ExplicitState == null) return;
+
+            stateObject.Locals ??= new Dictionary<string, object>();
+
+            if (wait.StateKey != Guid.Empty && !stateObject.Locals.ContainsKey(wait.StateKey.ToString()))
+            {
+                stateObject.Locals[wait.StateKey.ToString()] = wait.ExplicitState;
+            }
+
+            if (!stateObject.Locals.ContainsKey(wait.Id.ToString()))
+            {
+                stateObject.Locals[wait.Id.ToString()] = wait.ExplicitState;
             }
         }
     }

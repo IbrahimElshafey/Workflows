@@ -11,7 +11,7 @@ namespace Workflows.Abstraction.DTOs
         /// <summary>
         /// The wait ID that is being triggered (Signal, Command, TimeWait, etc.)
         /// </summary>
-        public Guid TriggeringWaitId { get; set; }
+        public string TriggeringWaitId { get; set; } = string.Empty;
 
         /// <summary>
         /// The persisted workflow state to resume.

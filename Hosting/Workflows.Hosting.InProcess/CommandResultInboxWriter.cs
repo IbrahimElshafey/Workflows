@@ -13,7 +13,7 @@ namespace Workflows.Hosting.InProcess
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         }
 
-        public async Task WriteAsync(Guid commandWaitId, object result, bool isSuccess)
+        public async Task WriteAsync(string commandWaitId, object result, bool isSuccess)
         {
             var entity = new CommandResultEntity
             {

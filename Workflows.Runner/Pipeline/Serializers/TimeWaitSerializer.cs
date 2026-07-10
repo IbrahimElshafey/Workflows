@@ -3,28 +3,28 @@ using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
 
-namespace Workflows.Runner.Pipeline.Processors
+namespace Workflows.Runner.Pipeline.Serializers
 {
     /// <summary>
     /// Handles TimeWait objects after state machine advancement.
     /// Calculates absolute target datetime offsets and registers them into the context for scheduling.
     /// Returns false to suspend execution.
     /// </summary>
-    internal class TimeWaitProcessor : WorkflowWaitProcessor
+    internal class TimeWaitSerializer : WaitSerializer
     {
         private readonly Mapper _mapper;
 
-        public TimeWaitProcessor(Mapper mapper)
+        public TimeWaitSerializer(Mapper mapper)
         {
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
-        public override Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
+        public override Task<bool> Serialize(Wait yieldedWait, WorkflowExecutionContext context)
         {
             var timeWait = yieldedWait as TimeWait;
             if (timeWait == null)
             {
-                throw new InvalidOperationException("TimeWaitProcessor requires a TimeWait.");
+                throw new InvalidOperationException("TimeWaitSerializer requires a TimeWait.");
             }
 
             // Calculate absolute target datetime offsets and register for scheduling

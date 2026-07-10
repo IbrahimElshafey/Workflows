@@ -68,7 +68,7 @@ namespace Workflows.Runner.Tests
 
             // Act: Resume fourth wait (TimeWait by ID)
             var delayWait = shell.ActiveWaits.First();
-            state = await shell.SimulateCommandResultAsync(delayWait.Id, null);
+            state = await shell.SimulateCommandResultByWaitIdAsync(delayWait.Id, null);
 
             // Assert fifth wait (Final Shipment Wait)
             shell.ActiveWaits.Should().ContainSingle(w => w.WaitName == "Final wait");
@@ -230,13 +230,13 @@ namespace Workflows.Runner.Tests
             shell.ExecutionLog.Should().HaveCount(2);
 
             var startLog = shell.ExecutionLog[0];
-            startLog.TriggeringWaitId.Should().Be(Guid.Empty);
+            startLog.TriggeringWaitId.Should().BeEmpty();
             startLog.ConsumedWaitIds.Should().BeEmpty();
             startLog.NewWaitIds.Should().HaveCount(1);
             startLog.SerializedStateSnapshot.Should().NotBeNullOrEmpty();
 
             var resumeLog = shell.ExecutionLog[1];
-            resumeLog.TriggeringWaitId.Should().NotBe(Guid.Empty);
+            resumeLog.TriggeringWaitId.Should().NotBeEmpty();
             resumeLog.ConsumedWaitIds.Should().ContainSingle();
             resumeLog.NewWaitIds.Should().HaveCount(1); // The next wait is ProcessPayment
         }

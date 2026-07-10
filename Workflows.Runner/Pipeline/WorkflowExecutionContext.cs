@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
+using Workflows.Runner.Pipeline.Serializers;
 
 namespace Workflows.Runner.Pipeline
 {
@@ -12,6 +15,13 @@ namespace Workflows.Runner.Pipeline
     /// </summary>
     internal class WorkflowExecutionContext
     {
+        private readonly SerializerFactory _serializerFactory;
+
+        public WorkflowExecutionContext(SerializerFactory serializerFactory)
+        {
+            _serializerFactory = serializerFactory ?? throw new ArgumentNullException(nameof(serializerFactory));
+        }
+
         /// <summary>
         /// The incoming trigger: either Signal or CommandResult (mutually exclusive).
         /// </summary>
@@ -27,7 +37,7 @@ namespace Workflows.Runner.Pipeline
         public WorkflowStateDto WorkflowState { get; set; }
 
         public WorkflowContainer WorkflowInstance { get; set; }
-        public Guid TriggeringWaitId { get; set; }
+        public string TriggeringWaitId { get; set; } = string.Empty;
 
         /// <summary>
         /// The stream to advance (parent or child workflow).
@@ -41,8 +51,46 @@ namespace Workflows.Runner.Pipeline
         public bool ContinueExecutionLoop { get; set; }
 
         /// <summary>
+        /// Indicates whether the workflow instance should be kept in the memory cache.
+        /// </summary>
+        public bool KeepInCache { get; set; }
+
+        /// <summary>
+        /// The currently active sub-workflow wait DTO being executed.
+        /// </summary>
+        public SubWorkflowWaitDto? CurrentSubWorkflow { get; set; }
+
+        /// <summary>
         /// Tracks IDs of waits that have been consumed/completed.
         /// </summary>
-        public List<Guid> ConsumedWaitsIds { get; } = new List<Guid>();
+        public List<string> ConsumedWaitsIds { get; } = new List<string>();
+
+        /// <summary>
+        /// Serializes the yielded wait and updates the context state.
+        /// </summary>
+        public async Task SaveStateAsync(Wait yieldedWait)
+        {
+            if (yieldedWait == null) throw new ArgumentNullException(nameof(yieldedWait));
+
+            var serializer = _serializerFactory.GetSerializer(yieldedWait);
+            
+            var originalWaitsCount = WorkflowState.Waits.Count;
+            
+            // Serialize wait and determine if it should be kept in the cache
+            KeepInCache = await serializer.Serialize(yieldedWait, this);
+            
+            // If we are inside a sub-workflow, nest the serialized DTO under the sub-workflow DTO
+            if (CurrentSubWorkflow != null && WorkflowState.Waits.Count > originalWaitsCount)
+            {
+                var newlyAddedDto = WorkflowState.Waits[WorkflowState.Waits.Count - 1];
+                WorkflowState.Waits.RemoveAt(WorkflowState.Waits.Count - 1);
+                
+                newlyAddedDto.ParentWaitId = CurrentSubWorkflow.Id;
+                CurrentSubWorkflow.ChildWaits.Add(newlyAddedDto);
+            }
+            
+            // All yielded waits suspend execution
+            ContinueExecutionLoop = false;
+        }
     }
 }

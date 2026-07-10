@@ -101,7 +101,22 @@ namespace Workflows.Runner.Tests
             await runner.StartWorkflow("ImmediateSubWorkflow");
 
             var response = builder.Client.SentResults.Last().Result;
-            var state = response.UpdatedState;
+
+            // Under the new design, the command wait is passive and suspends execution.
+            // We simulate the orchestrator by resuming the command wait.
+            var subWorkflowDto = response.UpdatedState.Waits.OfType<SubWorkflowWaitDto>().First();
+            var commandWaitDto = subWorkflowDto.ChildWaits.First();
+
+            var resumeRequest = new WorkflowExecutionRequest
+            {
+                TriggeringWaitId = commandWaitDto.Id,
+                CommandResult = new ReserveInventoryResult { ReservationId = "RES-IMM", Success = true },
+                WorkflowState = response.UpdatedState
+            };
+            await runner.RunWorkflowAsync(resumeRequest);
+
+            var finalResponse = builder.Client.SentResults.Last().Result;
+            var state = finalResponse.UpdatedState;
 
             // Assert — no WorkflowStateObject entries should remain (the sub-workflow completed, not suspended)
             var orphanedSubWorkflow = state.StateObject.Locals

@@ -6,28 +6,28 @@ using Workflows.Definition;
 using Workflows.Runner.Cache;
 using Workflows.Runner.ExpressionTransformers;
 
-namespace Workflows.Runner.Pipeline.Processors
+namespace Workflows.Runner.Pipeline.Serializers
 {
     /// <summary>
     /// Handles SignalWait objects after state machine advancement.
     /// Extracts and transforms new MatchExpression structures, updates exact-match template indexes,
     /// and appends the wait to the context. Returns false to suspend execution.
     /// </summary>
-    internal class SignalWaitProcessor : WorkflowWaitProcessor
+    internal class SignalWaitSerializer : WaitSerializer
     {
         private readonly Mapper _mapper;
 
-        public SignalWaitProcessor(Mapper mapper)
+        public SignalWaitSerializer(Mapper mapper)
         {
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
-        public override Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
+        public override Task<bool> Serialize(Wait yieldedWait, WorkflowExecutionContext context)
         {
             var signalWait = yieldedWait as ISignalWait;
             if (signalWait == null)
             {
-                throw new InvalidOperationException("SignalWaitProcessor requires an ISignalWait.");
+                throw new InvalidOperationException("SignalWaitSerializer requires an ISignalWait.");
             }
 
             // Map to DTO

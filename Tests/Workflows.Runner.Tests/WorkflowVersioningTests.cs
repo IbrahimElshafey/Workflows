@@ -131,7 +131,7 @@ namespace Workflows.Runner.Tests
 
             // Set up a V1 instance in the database
             var instanceId = Guid.NewGuid();
-            var waitId = Guid.NewGuid();
+            var waitId = Guid.NewGuid().ToString();
             var oldState = new WorkflowStateDto
             {
                 Id = instanceId,
@@ -171,7 +171,7 @@ namespace Workflows.Runner.Tests
             };
 
             var store = sp.GetRequiredService<IWorkflowStore>();
-            await store.SaveContextSyncAsync(oldState, Enumerable.Empty<Guid>());
+            await store.SaveContextSyncAsync(oldState, Enumerable.Empty<string>());
 
             // Write V2 schema sidecar file for manifest resolution
             var schema = new WorkflowVersionManifest

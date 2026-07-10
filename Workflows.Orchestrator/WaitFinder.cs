@@ -32,7 +32,7 @@ namespace Workflows.Orchestrator
             return null;
         }
 
-        public static CommandWaitDto? FindWaitingRecordForCommand(IEnumerable<WaitInfrastructureDto>? waits, Guid commandWaitId)
+        public static CommandWaitDto? FindWaitingRecordForCommand(IEnumerable<WaitInfrastructureDto>? waits, string commandWaitId)
         {
             if (waits == null) return null;
 
@@ -53,7 +53,7 @@ namespace Workflows.Orchestrator
             return null;
         }
 
-        public static WaitInfrastructureDto? FindWaitById(IEnumerable<WaitInfrastructureDto>? waits, Guid id)
+        public static WaitInfrastructureDto? FindWaitById(IEnumerable<WaitInfrastructureDto>? waits, string id)
         {
             if (waits == null) return null;
 

@@ -41,7 +41,7 @@ namespace Workflows.Runner.Pipeline
 
             // Find the triggering wait
             Abstraction.DTOs.Waits.WaitInfrastructureDto? triggeringWaitDto = null;
-            if (incomingRequest.TriggeringWaitId != Guid.Empty)
+            if (!string.IsNullOrEmpty(incomingRequest.TriggeringWaitId))
             {
                 triggeringWaitDto = FindWaitById(state.Waits, incomingRequest.TriggeringWaitId);
 
@@ -92,8 +92,8 @@ namespace Workflows.Runner.Pipeline
             }
 
             // Check if this wait belongs to a sub-workflow
-            var parentSubWorkflowDto = (triggeringWaitDto != null && triggeringWaitDto.ParentWaitId.HasValue)
-                ? FindWaitById(state.Waits, triggeringWaitDto.ParentWaitId.Value) as SubWorkflowWaitDto
+            var parentSubWorkflowDto = (triggeringWaitDto != null && !string.IsNullOrEmpty(triggeringWaitDto.ParentWaitId))
+                ? FindWaitById(state.Waits, triggeringWaitDto.ParentWaitId) as SubWorkflowWaitDto
                 : null;
 
             IAsyncEnumerable<Definition.Wait> workflowStream;
@@ -180,8 +180,14 @@ namespace Workflows.Runner.Pipeline
                 }
             }
 
+            // Assign wait paths recursively
+            foreach (var wait in state.Waits)
+            {
+                AssignIdsRecursive(wait, null, state);
+            }
+
             // Collect completed/canceled/in-error wait IDs recursively
-            var completedIds = new HashSet<Guid>();
+            var completedIds = new HashSet<string>();
             foreach (var wait in state.Waits)
             {
                 CollectCompletedWaitsRecursive(wait, completedIds);
@@ -211,7 +217,26 @@ namespace Workflows.Runner.Pipeline
                 DateTime.UtcNow);
         }
 
-        private void CollectCompletedWaitsRecursive(WaitInfrastructureDto wait, HashSet<Guid> completedIds)
+        private void AssignIdsRecursive(WaitInfrastructureDto dto, string? parentId, WorkflowStateDto state)
+        {
+            if (string.IsNullOrEmpty(dto.Id) || !dto.Id.Contains('/'))
+            {
+                state.WaitCounter++;
+                var localId = state.WaitCounter.ToString();
+                dto.Id = parentId != null ? $"{localId}/{parentId}" : $"{localId}/{state.Id}";
+            }
+            dto.ParentWaitId = parentId;
+
+            if (dto.ChildWaits != null)
+            {
+                foreach (var child in dto.ChildWaits)
+                {
+                    AssignIdsRecursive(child, dto.Id, state);
+                }
+            }
+        }
+
+        private void CollectCompletedWaitsRecursive(WaitInfrastructureDto wait, HashSet<string> completedIds)
         {
             if (wait == null) return;
 
@@ -233,7 +258,7 @@ namespace Workflows.Runner.Pipeline
             }
         }
 
-        private void CollectAllIdsRecursive(WaitInfrastructureDto wait, HashSet<Guid> ids)
+        private void CollectAllIdsRecursive(WaitInfrastructureDto wait, HashSet<string> ids)
         {
             if (wait == null) return;
             ids.Add(wait.Id);
@@ -246,7 +271,7 @@ namespace Workflows.Runner.Pipeline
             }
         }
 
-        public WaitInfrastructureDto FindWaitById(IEnumerable<WaitInfrastructureDto> waits, Guid id)
+        public WaitInfrastructureDto FindWaitById(IEnumerable<WaitInfrastructureDto> waits, string id)
         {
             if (waits == null) return null;
 
@@ -326,30 +351,56 @@ namespace Workflows.Runner.Pipeline
             // Copy public properties of the input object to the instantiated workflow container and/or state POCO
             if (input != null)
             {
-                var inputType = input.GetType();
-                var containerType = workflowInstance.GetType();
-                foreach (var inputProp in inputType.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                if (input is Newtonsoft.Json.Linq.JObject jObj)
                 {
-                    if (!inputProp.CanRead) continue;
-                    var containerProp = containerType.GetProperty(inputProp.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    if (containerProp != null && containerProp.CanWrite)
+                    foreach (var property in jObj.Properties())
                     {
-                        var value = inputProp.GetValue(input);
-                        containerProp.SetValue(workflowInstance, value);
+                        var containerProp = workflowInstance.GetType().GetProperty(property.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+                        if (containerProp != null && containerProp.CanWrite)
+                        {
+                            var val = property.Value.ToObject(containerProp.PropertyType);
+                            containerProp.SetValue(workflowInstance, val);
+                        }
+
+                        if (stateObj != null)
+                        {
+                            var stateProp = stateObj.GetType().GetProperty(property.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+                            if (stateProp != null && stateProp.CanWrite)
+                            {
+                                var val = property.Value.ToObject(stateProp.PropertyType);
+                                stateProp.SetValue(stateObj, val);
+                            }
+                        }
                     }
                 }
-
-                if (stateObj != null)
+                else
                 {
-                    var statePocoType = stateObj.GetType();
+                    var inputType = input.GetType();
+                    var containerType = workflowInstance.GetType();
                     foreach (var inputProp in inputType.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
                     {
                         if (!inputProp.CanRead) continue;
-                        var stateProp = statePocoType.GetProperty(inputProp.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                        if (stateProp != null && stateProp.CanWrite)
+                        var containerProp = containerType.GetProperty(inputProp.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                        var value = inputProp.GetValue(input);
+                        Console.WriteLine($"[PopulateNewWorkflowContext] Input Property = {inputProp.Name}, containerProp found = {containerProp != null}, Value = {value}");
+                        if (containerProp != null && containerProp.CanWrite)
                         {
-                            var value = inputProp.GetValue(input);
-                            stateProp.SetValue(stateObj, value);
+                            containerProp.SetValue(workflowInstance, value);
+                        }
+                    }
+
+                    if (stateObj != null)
+                    {
+                        var statePocoType = stateObj.GetType();
+                        foreach (var inputProp in inputType.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                        {
+                            if (!inputProp.CanRead) continue;
+                            var stateProp = statePocoType.GetProperty(inputProp.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                            if (stateProp != null && stateProp.CanWrite)
+                            {
+                                var value = inputProp.GetValue(input);
+                                stateProp.SetValue(stateObj, value);
+                            }
                         }
                     }
                 }

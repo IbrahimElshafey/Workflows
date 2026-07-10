@@ -30,8 +30,7 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
             {
                 SignalWaitDto _ => _serviceProvider.GetRequiredService<SignalCompletionChecker>(),
                 TimeWaitDto _ => _serviceProvider.GetRequiredService<TimeWaitMatcher>(),
-                CommandWaitDto cmd when cmd.ExecutionMode == CommandExecutionMode.Deferred 
-                    => _serviceProvider.GetRequiredService<CommandCompletionChecker>(),
+                CommandWaitDto _ => _serviceProvider.GetRequiredService<CommandCompletionChecker>(),
                 GroupWaitDto _ => _serviceProvider.GetRequiredService<GroupCompletionChecker>(),
                 SubWorkflowWaitDto _ => _serviceProvider.GetRequiredService<WorkflowCompletionChecker>(),
                 _ => throw new NotSupportedException($"No matcher found for wait type: {triggeringWait.GetType().Name}")
