@@ -13,34 +13,31 @@ using Workflows.Definition;
 using Workflows.Primitives;
 
 
-namespace Workflows.Runner.Pipeline.Matchers
+namespace Workflows.Runner.Pipeline.CompletionChecker
 {
     /// <summary>
     /// Evaluates compound boolean status trees for GroupWait (e.g., MatchAll, MatchAny).
     /// This matcher is ONLY called via parent propagation from child matchers, never directly by the runner.
     /// If fulfilled, handles downward pruning of remaining branches.
     /// </summary>
-    internal class GroupWaitMatcher : WorkflowWaitMatcher
+    internal class GroupCompletionChecker : WaitCompletionChecker
     {
         private readonly WorkflowExecutionContext _context;
-        private readonly MatcherFactory _matcherFactory;
         private readonly ICallbackRegistry _callbackRegistry;
         private readonly ITemplateRepository? _templateRepository;
         private static readonly ConcurrentDictionary<string, Func<object, object, bool>> _compiledFilters = new();
 
-        public GroupWaitMatcher(
+        public GroupCompletionChecker(
             WorkflowExecutionContext context, 
-            MatcherFactory matcherFactory,
             ICallbackRegistry callbackRegistry,
             ITemplateRepository? templateRepository = null)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
-            _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
             _callbackRegistry = callbackRegistry ?? throw new ArgumentNullException(nameof(callbackRegistry));
             _templateRepository = templateRepository;
         }
 
-        public override async Task<bool> MatchAsync(WaitInfrastructureDto waitDto)
+        public override async Task<bool> IsCompleted(WaitInfrastructureDto waitDto)
         {
             // NOTE: This matcher is only invoked via MatchParentAsync from child matchers.
             var groupWaitDto = waitDto as GroupWaitDto;
@@ -55,12 +52,6 @@ namespace Workflows.Runner.Pipeline.Matchers
             {
                 // No children means group is complete
                 groupWaitDto.Status = WaitStatus.Completed;
-
-                // Propagate to parent if present
-                if (groupWaitDto.ParentWaitId.HasValue)
-                {
-                    return await MatchParentAsync(groupWaitDto.ParentWaitId.Value, _context, _matcherFactory);
-                }
 
                 return true;
             }
@@ -103,12 +94,6 @@ namespace Workflows.Runner.Pipeline.Matchers
             {
                 // Mark group as completed
                 groupWaitDto.Status = WaitStatus.Completed;
-
-                // Propagate to parent if present
-                if (groupWaitDto.ParentWaitId.HasValue)
-                {
-                    return await MatchParentAsync(groupWaitDto.ParentWaitId.Value, _context, _matcherFactory);
-                }
             }
 
             return groupMatches;

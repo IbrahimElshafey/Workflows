@@ -8,9 +8,6 @@ namespace Workflows.Runner.Pipeline.Processors
 {
     /// <summary>
     /// Base class for wait processors that process yielded waits after state machine advancement.
-    /// Prepares out-bound footprints (indexes, schedules, command dispatches).
-    /// Returns true if the execution loop should continue immediately (active waits),
-    /// false if the workflow should suspend (passive waits).
     /// </summary>
     internal abstract class WorkflowWaitProcessor
     {

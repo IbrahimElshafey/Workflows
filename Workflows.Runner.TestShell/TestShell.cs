@@ -12,8 +12,8 @@ using Workflows.Abstraction.Runner;
 using Workflows.Definition;
 using Workflows.Definition.Registration;
 using Workflows.Runner.Pipeline;
+using Workflows.Runner.Pipeline.CompletionChecker;
 using Workflows.Runner;
-using Workflows.Runner.Pipeline.Matchers;
 using Workflows.Shared;
 
 namespace Workflows.TestShell
@@ -222,9 +222,9 @@ namespace Workflows.TestShell
             };
             context.WorkflowInstance = _currentState?.StateObject?.Instance as WorkflowContainer;
 
-            var matcherFactory = scope.ServiceProvider.GetRequiredService<MatcherFactory>();
-            var matcher = matcherFactory.GetMatcher(waitDto);
-            return await matcher.MatchAsync(waitDto);
+            var matcherFactory = scope.ServiceProvider.GetRequiredService<CompletionCheckerFactory>();
+            var matcher = matcherFactory.GetChecker(waitDto);
+            return await matcher.IsCompleted(waitDto);
         }
 
         /// <summary>
@@ -243,9 +243,9 @@ namespace Workflows.TestShell
             };
             context.WorkflowInstance = _currentState?.StateObject?.Instance as WorkflowContainer;
 
-            var matcherFactory = scope.ServiceProvider.GetRequiredService<MatcherFactory>();
-            var matcher = matcherFactory.GetMatcher(waitDto);
-            return await matcher.MatchAsync(waitDto);
+            var matcherFactory = scope.ServiceProvider.GetRequiredService<CompletionCheckerFactory>();
+            var matcher = matcherFactory.GetChecker(waitDto);
+            return await matcher.IsCompleted(waitDto);
         }
 
         private WaitInfrastructureDto? FindActiveWait(IEnumerable<WaitInfrastructureDto> waits, Func<WaitInfrastructureDto, bool> predicate)

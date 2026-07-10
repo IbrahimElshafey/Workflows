@@ -10,6 +10,7 @@ using Workflows.Definition;
 using Workflows.Definition.Helpers;
 using Workflows.Runner.DataObjects;
 using Workflows.Runner.ExpressionTransformers;
+using Workflows.Runner.Pipeline.CompletionChecker;
 using IExpressionSerializer = Workflows.Abstraction.Helpers.IExpressionSerializer;
 
 namespace Workflows.Runner
@@ -435,7 +436,7 @@ namespace Workflows.Runner
                     }
                 }
 
-                var record = Pipeline.Matchers.SignalWaitMatcher.SignalCache.GetOrAdd(templateHashKey, _ => new Cache.SignalTemplateCacheRecord
+                var record = SignalCompletionChecker.SignalCache.GetOrAdd(templateHashKey, _ => new Cache.SignalTemplateCacheRecord
                 {
                     CompiledMatchDelegate = compiledDelegate,
                     CompiledInstanceExactMatchExpression = compiledInstanceExpr,

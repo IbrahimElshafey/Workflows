@@ -9,33 +9,30 @@ using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Persistence;
 using Workflows.Definition;
 
-namespace Workflows.Runner.Pipeline.Matchers
+namespace Workflows.Runner.Pipeline.CompletionChecker
 {
     /// <summary>
     /// Evaluates deferred command results on integration callback return.
     /// Works purely with DTOs - no Wait object conversion needed.
     /// </summary>
-    internal class DeferredCommandMatcher : WorkflowWaitMatcher
+    internal class CommandCompletionChecker : WaitCompletionChecker
     {
         private readonly WorkflowExecutionContext _context;
-        private readonly MatcherFactory _matcherFactory;
         private readonly ICallbackRegistry _callbackRegistry;
         private readonly ITemplateRepository? _templateRepository;
         private static readonly ConcurrentDictionary<string, Action<object, object, object>> _compiledActions = new();
 
-        public DeferredCommandMatcher(
+        public CommandCompletionChecker(
             WorkflowExecutionContext context, 
-            MatcherFactory matcherFactory,
             ICallbackRegistry callbackRegistry,
             ITemplateRepository? templateRepository = null)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
-            _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
             _callbackRegistry = callbackRegistry ?? throw new ArgumentNullException(nameof(callbackRegistry));
             _templateRepository = templateRepository;
         }
 
-        public override async Task<bool> MatchAsync(WaitInfrastructureDto waitDto)
+        public override async Task<bool> IsCompleted(WaitInfrastructureDto waitDto)
         {
             var commandWaitDto = waitDto as CommandWaitDto;
             if (commandWaitDto == null)
@@ -78,12 +75,6 @@ namespace Workflows.Runner.Pipeline.Matchers
 
             // Mark this wait as completed
             commandWaitDto.Status = WaitStatus.Completed;
-
-            // Propagate matching to parent wait if present
-            if (commandWaitDto.ParentWaitId.HasValue)
-            {
-                return await MatchParentAsync(commandWaitDto.ParentWaitId.Value, _context, _matcherFactory);
-            }
 
             return true;
         }

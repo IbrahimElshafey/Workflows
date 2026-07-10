@@ -15,28 +15,26 @@ using Workflows.Runner.ExpressionTransformers;
 using IExpressionSerializer = Workflows.Abstraction.Helpers.IExpressionSerializer;
 using ExpressionCompiler = Workflows.Runner.ExpressionTransformers.ExpressionCompiler;
 
-namespace Workflows.Runner.Pipeline.Matchers
+namespace Workflows.Runner.Pipeline.CompletionChecker
 {
     /// <summary>
     /// Matches incoming signal events against SignalWait constraints.
     /// Works purely with DTOs - no Wait object conversion needed.
     /// </summary>
-    internal class SignalWaitMatcher : WorkflowWaitMatcher
+    internal class SignalCompletionChecker : WaitCompletionChecker
     {
         internal static readonly ConcurrentDictionary<string, SignalTemplateCacheRecord> SignalCache = new();
 
         private readonly IWorkflowRegistry _workflowRegistry;
         private readonly WorkflowExecutionContext _context;
-        private readonly MatcherFactory _matcherFactory;
         private readonly IExpressionSerializer _expressionSerializer;
         private readonly MatchExpressionTransformer _matchExpressionTransformer;
         private readonly ICallbackRegistry _callbackRegistry;
         private readonly ITemplateRepository? _templateRepository;
 
-        public SignalWaitMatcher(
+        public SignalCompletionChecker(
             IWorkflowRegistry workflowRegistry, 
             WorkflowExecutionContext context,
-            MatcherFactory matcherFactory,
             IExpressionSerializer expressionSerializer,
             MatchExpressionTransformer matchExpressionTransformer,
             ICallbackRegistry callbackRegistry,
@@ -44,14 +42,13 @@ namespace Workflows.Runner.Pipeline.Matchers
         {
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
             _context = context ?? throw new ArgumentNullException(nameof(context));
-            _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
             _expressionSerializer = expressionSerializer ?? throw new ArgumentNullException(nameof(expressionSerializer));
             _matchExpressionTransformer = matchExpressionTransformer ?? throw new ArgumentNullException(nameof(matchExpressionTransformer));
             _callbackRegistry = callbackRegistry ?? throw new ArgumentNullException(nameof(callbackRegistry));
             _templateRepository = templateRepository;
         }
 
-        public override async Task<bool> MatchAsync(WaitInfrastructureDto waitDto)
+        public override async Task<bool> IsCompleted(WaitInfrastructureDto waitDto)
         {
             var signalWaitDto = waitDto as SignalWaitDto;
             if (signalWaitDto == null)
@@ -83,12 +80,6 @@ namespace Workflows.Runner.Pipeline.Matchers
                 if (!string.IsNullOrWhiteSpace(signalWaitDto.TemplateHashKey))
                 {
                     ExecuteAfterMatchAction(signalWaitDto.TemplateHashKey, signal.Data, matchedExplicitState);
-                }
-
-                // Propagate matching to parent wait (e.g., GroupWait or SubWorkflowWait) if present
-                if (signalWaitDto.ParentWaitId.HasValue)
-                {
-                    return await MatchParentAsync(signalWaitDto.ParentWaitId.Value, _context, _matcherFactory);
                 }
 
                 return true;
@@ -156,12 +147,6 @@ namespace Workflows.Runner.Pipeline.Matchers
 
             // Mark this wait as completed
             signalWaitDto.Status = WaitStatus.Completed;
-
-            // Propagate matching to parent wait (e.g., GroupWait or SubWorkflowWait) if present
-            if (signalWaitDto.ParentWaitId.HasValue)
-            {
-                return await MatchParentAsync(signalWaitDto.ParentWaitId.Value, _context, _matcherFactory);
-            }
 
             return true;
         }

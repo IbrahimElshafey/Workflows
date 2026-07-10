@@ -11,7 +11,7 @@ using Workflows.Runner.ExpressionTransformers;
 using Workflows.Runner.Helpers;
 using Workflows.Runner.Migration;
 using Workflows.Runner.Pipeline;
-using Workflows.Runner.Pipeline.Matchers;
+using Workflows.Runner.Pipeline.CompletionChecker;
 using Workflows.Runner.Pipeline.Processors;
 
 namespace Workflows.Runner
@@ -25,17 +25,17 @@ namespace Workflows.Runner
             services.AddScoped<WorkflowStateService>();
             services.AddSingleton<CallbackRegistry>();
             services.AddSingleton<ICallbackRegistry>(sp => sp.GetRequiredService<CallbackRegistry>());
-            services.AddScoped<MatcherFactory>();
+            services.AddScoped<CompletionCheckerFactory>();
             services.AddScoped<ProcessorFactory>();
             services.AddSingleton<CancelProcessor>();
             services.AddSingleton<StateMachineAdvancer>();
             services.AddScoped<Mapper>();
 
-            services.AddScoped<SignalWaitMatcher>();
+            services.AddScoped<SignalCompletionChecker>();
             services.AddScoped<TimeWaitMatcher>();
-            services.AddScoped<DeferredCommandMatcher>();
-            services.AddScoped<GroupWaitMatcher>();
-            services.AddScoped<SubWorkflowWaitMatcher>();
+            services.AddScoped<CommandCompletionChecker>();
+            services.AddScoped<GroupCompletionChecker>();
+            services.AddScoped<WorkflowCompletionChecker>();
             services.AddScoped<WorkflowExecutionContext>();
             services.AddScoped<StateMachineAdvancer>();
             services.AddScoped<IWorkflowRunner, WorkflowRunner>();

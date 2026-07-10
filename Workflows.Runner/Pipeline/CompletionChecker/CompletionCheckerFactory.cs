@@ -3,23 +3,23 @@ using Microsoft.Extensions.DependencyInjection;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Primitives;
 
-namespace Workflows.Runner.Pipeline.Matchers
+namespace Workflows.Runner.Pipeline.CompletionChecker
 {
     /// <summary>
     /// Factory for resolving type-specific wait matchers.
     /// Matchers validate incoming events against wait conditions.
     /// Matchers are created per-request since they depend on scoped WorkflowExecutionContext.
     /// </summary>
-    internal class MatcherFactory
+    internal class CompletionCheckerFactory
     {
         private readonly IServiceProvider _serviceProvider;
 
-        public MatcherFactory(IServiceProvider serviceProvider)
+        public CompletionCheckerFactory(IServiceProvider serviceProvider)
         {
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         }
 
-        public WorkflowWaitMatcher GetMatcher(WaitInfrastructureDto triggeringWait)
+        public WaitCompletionChecker GetChecker(WaitInfrastructureDto triggeringWait)
         {
             if (triggeringWait == null)
             {
@@ -28,12 +28,12 @@ namespace Workflows.Runner.Pipeline.Matchers
 
             return triggeringWait switch
             {
-                SignalWaitDto _ => _serviceProvider.GetRequiredService<SignalWaitMatcher>(),
+                SignalWaitDto _ => _serviceProvider.GetRequiredService<SignalCompletionChecker>(),
                 TimeWaitDto _ => _serviceProvider.GetRequiredService<TimeWaitMatcher>(),
                 CommandWaitDto cmd when cmd.ExecutionMode == CommandExecutionMode.Deferred 
-                    => _serviceProvider.GetRequiredService<DeferredCommandMatcher>(),
-                GroupWaitDto _ => _serviceProvider.GetRequiredService<GroupWaitMatcher>(),
-                SubWorkflowWaitDto _ => _serviceProvider.GetRequiredService<SubWorkflowWaitMatcher>(),
+                    => _serviceProvider.GetRequiredService<CommandCompletionChecker>(),
+                GroupWaitDto _ => _serviceProvider.GetRequiredService<GroupCompletionChecker>(),
+                SubWorkflowWaitDto _ => _serviceProvider.GetRequiredService<WorkflowCompletionChecker>(),
                 _ => throw new NotSupportedException($"No matcher found for wait type: {triggeringWait.GetType().Name}")
             };
         }
