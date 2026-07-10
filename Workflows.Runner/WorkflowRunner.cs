@@ -1,11 +1,9 @@
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Runner;
 using Workflows.Runner.Pipeline;
 using Workflows.Runner.Pipeline.CompletionChecker;
-using Workflows.Runner.Pipeline.Processors;
 
 namespace Workflows.Runner
 {
@@ -16,29 +14,23 @@ namespace Workflows.Runner
     internal class WorkflowRunner : IWorkflowRunner
     {
         private readonly WorkflowStateService _stateService;
-        private readonly CompletionCheckerFactory _matcherFactory;
-        private readonly ProcessorFactory _processorFactory;
-        private readonly CancelProcessor _cancelHandler;
-        private readonly StateMachineAdvancer _stateMachineAdvancer;
+        private readonly CompletionCheckerFactory _completionChecker;
         private readonly IWorkflowRunnerClient _resultSender;
         private readonly WorkflowExecutionContext _context;
+        private readonly WorkflowRunLoop workflowRunLoop;
 
         public WorkflowRunner(
             WorkflowStateService stateService,
-            CompletionCheckerFactory matcherFactory,
-            ProcessorFactory processorFactory,
-            CancelProcessor cancelHandler,
-            StateMachineAdvancer stateMachineAdvancer,
+            CompletionCheckerFactory completionChecker,
             IWorkflowRunnerClient resultSender,
-            WorkflowExecutionContext context)
+            WorkflowExecutionContext context,
+            WorkflowRunLoop workflowRunLoop)
         {
             _stateService = stateService ?? throw new ArgumentNullException(nameof(stateService));
-            _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
-            _processorFactory = processorFactory ?? throw new ArgumentNullException(nameof(processorFactory));
-            _cancelHandler = cancelHandler ?? throw new ArgumentNullException(nameof(cancelHandler));
-            _stateMachineAdvancer = stateMachineAdvancer ?? throw new ArgumentNullException(nameof(stateMachineAdvancer));
+            _completionChecker = completionChecker ?? throw new ArgumentNullException(nameof(completionChecker));
             _resultSender = resultSender ?? throw new ArgumentNullException(nameof(resultSender));
             _context = context ?? throw new ArgumentNullException(nameof(context));
+            this.workflowRunLoop = workflowRunLoop ?? throw new ArgumentNullException(nameof(workflowRunLoop));
         }
 
         public async Task<AsyncResult> RunWorkflowAsync(WorkflowExecutionRequest incomingContext)
@@ -68,7 +60,7 @@ namespace Workflows.Runner
             }
 
             // 3. Check the leaf wait itself (no parent traversal)
-            var checker = _matcherFactory.GetChecker(triggeringWaitDto);
+            var checker = _completionChecker.GetChecker(triggeringWaitDto);
             if (!await checker.IsCompleted(triggeringWaitDto))
             {
                 // Leaf didn't match — check if it was at least partially matched
@@ -91,8 +83,26 @@ namespace Workflows.Runner
 
             while (targetNode != null)
             {
-                var parentChecker = _matcherFactory.GetChecker(targetNode);
-                if (!await parentChecker.IsCompleted(targetNode))
+                bool isCompleted;
+
+                switch (targetNode)
+                {
+                    case Abstraction.DTOs.Waits.GroupWaitDto groupWaitDto:
+                        var groupChecker = _completionChecker.GetChecker(groupWaitDto);
+                        isCompleted = await groupChecker.IsCompleted(groupWaitDto);
+                        break;
+
+                    case Abstraction.DTOs.Waits.SubWorkflowWaitDto subWorkflowWaitDto:
+                        // Execute/resume the sub-workflow
+                        await workflowRunLoop.ResumeSubWorkflowAsync(subWorkflowWaitDto);
+                        isCompleted = subWorkflowWaitDto.Status == Abstraction.Enums.WaitStatus.Completed;
+                        break;
+
+                    default:
+                        throw new InvalidOperationException($"Unknown parent wait type: {targetNode.GetType().Name}");
+                }
+
+                if (!isCompleted)
                 {
                     // Parent not yet complete — persist partial progress and yield
                     return await SendResultAsync(_context);
@@ -132,48 +142,13 @@ namespace Workflows.Runner
                 wait.ParentWaitId.Value);
         }
 
-        /// <summary>
-        /// Runs the core execution loop: advances the state machine, processes yielded waits,
-        /// handles cancellations, and sends the result for persistence.
-        /// Shared between RunWorkflowAsync (after matching) and StartWorkflow.
-        /// </summary>
         private async Task<AsyncResult> RunExecutionLoopAndSendResult()
         {
-            _context.ContinueExecutionLoop = true;
-
-            while (_context.ContinueExecutionLoop)
+            var result = await workflowRunLoop.ExecuteAsync(_context.WorkflowStream, _context.WorkflowState.StateObject);
+            _context.WorkflowState.StateObject = result.FinalState;
+            if (result.CompletedNatively)
             {
-                // Advance the underlying C# state machine
-                var advancerResult = await _stateMachineAdvancer.RunAsync(
-                    _context.WorkflowStream,
-                    _context.WorkflowState.StateObject);
-
-                Definition.Wait yieldedWait = advancerResult?.Wait;
-
-                if (yieldedWait == null)
-                {
-                    _context.WorkflowState.Status = Abstraction.Enums.WorkflowInstanceStatus.Completed;
-                    break;
-                }
-
-                ValidateExecutionWait(yieldedWait, _context.WorkflowState.Waits, _context.WorkflowState.WorkflowType);
-
-                _context.WorkflowState.StateObject = advancerResult.State;
-
-                // Check if this wait should be cancelled and skipped
-                bool wasCancelled = await _cancelHandler.CheckAndSkipCancelledWaitAsync(yieldedWait, _context);
-                if (wasCancelled)
-                {
-                    _context.ContinueExecutionLoop = true;
-                    continue;
-                }
-
-                // Route to specific outgoing wait processor
-                var processor = _processorFactory.GetProcessor(yieldedWait);
-                _context.ContinueExecutionLoop = await processor.ProcessAsync(yieldedWait, _context);
-
-                // Execute interruption logic and trigger attached OnCancel callbacks
-                await _cancelHandler.ProcessCancellationsWithCallbacksAsync(_context);
+                _context.WorkflowState.Status = Abstraction.Enums.WorkflowInstanceStatus.Completed;
             }
 
             return await SendResultAsync(_context);
@@ -188,75 +163,6 @@ namespace Workflows.Runner
                 ConsumedWaitsIds = context.ConsumedWaitsIds
             };
             return await _resultSender.SendWorkflowRunResultAsync(runResult, response);
-        }
-
-
-        private void ValidateExecutionWait(
-            Definition.Wait yieldedWait,
-            List<Abstraction.DTOs.Waits.WaitInfrastructureDto> existingWaits,
-            string workflowType)
-        {
-            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            if (existingWaits != null)
-            {
-                foreach (var existing in existingWaits)
-                {
-                    CollectActiveWaitNames(existing, seenNames);
-                }
-            }
-
-            ValidateWaitTreeRecursive(yieldedWait, seenNames, workflowType);
-        }
-
-        private void CollectActiveWaitNames(
-            Abstraction.DTOs.Waits.WaitInfrastructureDto waitDto,
-            HashSet<string> seenNames)
-        {
-            if (waitDto == null) return;
-            if (!string.IsNullOrWhiteSpace(waitDto.WaitName))
-            {
-                seenNames.Add(waitDto.WaitName);
-            }
-            if (waitDto.ChildWaits != null)
-            {
-                foreach (var child in waitDto.ChildWaits)
-                {
-                    CollectActiveWaitNames(child, seenNames);
-                }
-            }
-        }
-
-        private void ValidateWaitTreeRecursive(
-            Definition.Wait wait,
-            HashSet<string> seenNames,
-            string workflowType)
-        {
-            if (wait == null) return;
-
-            var name = wait.WaitName;
-            if (wait is Definition.CompensationWait compWait)
-            {
-                name = compWait.Token;
-            }
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                throw new InvalidOperationException($"Wait name is mandatory. A wait of type '{wait.GetType().Name}' in workflow '{workflowType}' is defined without a name.");
-            }
-
-            if (!seenNames.Add(name))
-            {
-                throw new InvalidOperationException($"Wait name '{name}' is duplicate in workflow '{workflowType}'. Wait names must be unique within a workflow.");
-            }
-
-            if (wait.ChildWaits != null)
-            {
-                foreach (var child in wait.ChildWaits)
-                {
-                    ValidateWaitTreeRecursive(child, seenNames, workflowType);
-                }
-            }
         }
     }
 }

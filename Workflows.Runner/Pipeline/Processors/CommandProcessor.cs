@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
+using Workflows.Primitives;
 
 namespace Workflows.Runner.Pipeline.Processors
 {
@@ -10,20 +11,20 @@ namespace Workflows.Runner.Pipeline.Processors
     /// Serializes the contract to an out-of-process messaging shape and bundles
     /// the dispatch payload into the execution context. Returns false to suspend execution.
     /// </summary>
-    internal class DeferredCommandProcessor : WorkflowWaitProcessor
+    internal class CommandProcessor : WorkflowWaitProcessor
     {
         private readonly Mapper _mapper;
 
-        public DeferredCommandProcessor(Mapper mapper)
+        public CommandProcessor(Mapper mapper)
         {
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
         public override Task<bool> ProcessAsync(Wait yieldedWait, WorkflowExecutionContext context)
         {
-            if (yieldedWait.WaitType != Workflows.Primitives.WaitType.Command)
+            if (yieldedWait.WaitType != WaitType.Command)
             {
-                throw new InvalidOperationException("DeferredCommandProcessor requires a CommandWait.");
+                throw new InvalidOperationException("CommandProcessor requires a CommandWait.");
             }
 
             // Get command data for serialization

@@ -30,6 +30,7 @@ namespace Workflows.Runner
             services.AddSingleton<CancelProcessor>();
             services.AddSingleton<StateMachineAdvancer>();
             services.AddScoped<Mapper>();
+            services.AddScoped<WorkflowRunLoop>();
 
             services.AddScoped<SignalCompletionChecker>();
             services.AddScoped<TimeWaitMatcher>();

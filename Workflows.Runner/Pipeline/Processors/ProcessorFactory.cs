@@ -18,7 +18,7 @@ namespace Workflows.Runner.Pipeline.Processors
         private readonly SignalWaitProcessor _signalWaitProcessor;
         private readonly TimeWaitProcessor _timeWaitProcessor;
         private readonly ImmediateCommandProcessor _immediateCommandProcessor;
-        private readonly DeferredCommandProcessor _deferredCommandProcessor;
+        private readonly CommandProcessor _deferredCommandProcessor;
         private readonly GroupWaitProcessor _groupWaitProcessor;
         private readonly CompensationProcessor _compensationProcessor;
 
@@ -40,7 +40,7 @@ namespace Workflows.Runner.Pipeline.Processors
             _signalWaitProcessor = new SignalWaitProcessor(_mapper);
             _timeWaitProcessor = new TimeWaitProcessor(_mapper);
             _immediateCommandProcessor = new ImmediateCommandProcessor(_commandHandlerFactory);
-            _deferredCommandProcessor = new DeferredCommandProcessor(_mapper);
+            _deferredCommandProcessor = new CommandProcessor(_mapper);
             _groupWaitProcessor = new GroupWaitProcessor(_mapper, _stateMachineAdvancer);
             _groupWaitProcessor.ProcessorFactory = this;
             _compensationProcessor = new CompensationProcessor();
