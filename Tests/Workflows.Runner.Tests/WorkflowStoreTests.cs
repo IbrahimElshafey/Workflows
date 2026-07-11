@@ -453,7 +453,66 @@ namespace Workflows.Runner.Tests
             }
         }
 
+        [Fact]
+        public async Task Idempotency_ShouldCorrectlyDeduplicateAndPruneSignals()
+        {
+            var instId = Guid.NewGuid();
+            var messageId = Guid.NewGuid();
+            var serializer = new Infrastructure.TestObjectSerializer();
+
+            var state = new WorkflowStateDto
+            {
+                Id = instId,
+                WorkflowType = "TestWorkflowType",
+                Status = WorkflowInstanceStatus.Running,
+                Created = DateTime.UtcNow,
+                Waits = new List<WaitInfrastructureDto>()
+            };
+
+
+            using (var context = new WorkflowsDbContext(_options))
+            {
+                var store = new WorkflowStore(context, serializer);
+
+                // Initially, HasSignalBeenProcessedAsync should return false
+                var processedBefore = await store.HasSignalBeenProcessedAsync(messageId);
+                processedBefore.Should().BeFalse();
+
+                // Save with the message/signal ID
+                await store.SaveContextSyncAsync(state, Enumerable.Empty<string>(), messageId);
+
+                // HasSignalBeenProcessedAsync should now return true
+                var processedAfter = await store.HasSignalBeenProcessedAsync(messageId);
+                processedAfter.Should().BeTrue();
+
+                // Saving with the same message/signal ID again should fail
+                Func<Task> duplicateAct = () => store.SaveContextSyncAsync(state, Enumerable.Empty<string>(), messageId);
+                await duplicateAct.Should().ThrowAsync<InvalidOperationException>()
+                    .WithMessage("*Duplicate signal message detected*");
+            }
+
+            // Pruning old processed signals
+            using (var context = new WorkflowsDbContext(_options))
+            {
+                var store = new WorkflowStore(context, serializer);
+                
+                // Modify the ProcessedAt date in the database to simulate expiration (e.g. 10 days ago)
+                var inboxRecord = await context.SignalInbox.FirstOrDefaultAsync(x => x.MessageId == messageId.ToString());
+                inboxRecord.Should().NotBeNull();
+                inboxRecord!.ProcessedAt = DateTime.UtcNow.AddDays(-10);
+                await context.SaveChangesAsync();
+
+                // Prune records older than 7 days ago
+                await store.PruneProcessedSignalsAsync(DateTime.UtcNow.AddDays(-7));
+
+                // Verification: HasSignalBeenProcessedAsync should now return false
+                var processedAfterPrune = await store.HasSignalBeenProcessedAsync(messageId);
+                processedAfterPrune.Should().BeFalse();
+            }
+        }
+
         private class TestWorkflowInstance
+
         {
             public string Value { get; set; }
         }

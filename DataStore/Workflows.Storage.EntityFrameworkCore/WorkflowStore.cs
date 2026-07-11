@@ -38,7 +38,8 @@ namespace Workflows.Storage.EntityFrameworkCore
 
         public async Task SaveContextSyncAsync(
             WorkflowStateDto state,
-            IEnumerable<string> completedWaitIds)
+            IEnumerable<string> completedWaitIds,
+            Guid? triggeringSignalId = null)
         {
             if (state == null) throw new ArgumentNullException(nameof(state));
 
@@ -53,6 +54,24 @@ namespace Workflows.Storage.EntityFrameworkCore
             {
                 try
                 {
+                    if (triggeringSignalId.HasValue)
+                    {
+                        var msgIdStr = triggeringSignalId.Value.ToString();
+                        var alreadyProcessed = await _dbContext.SignalInbox.AnyAsync(x => x.MessageId == msgIdStr);
+                        if (alreadyProcessed)
+                        {
+                            throw new InvalidOperationException($"Duplicate signal message detected during save: {triggeringSignalId.Value}");
+                        }
+
+                        _dbContext.SignalInbox.Add(new SignalInboxEntity
+                        {
+                            MessageId = msgIdStr,
+                            WorkflowInstanceId = state.Id,
+                            ProcessedAt = DateTime.UtcNow,
+                            Created = DateTime.UtcNow
+                        });
+                    }
+
                     // 1. Update/Create WorkflowInstance
                     var dbInstance = await _dbContext.WorkflowInstances.FindAsync(state.Id);
                     if (dbInstance == null)
@@ -765,6 +784,23 @@ namespace Workflows.Storage.EntityFrameworkCore
                     await transaction.RollbackAsync(ct);
                     throw;
                 }
+            }
+        }
+        public async Task<bool> HasSignalBeenProcessedAsync(Guid messageId)
+        {
+            var msgIdStr = messageId.ToString();
+            return await _dbContext.SignalInbox.AnyAsync(x => x.MessageId == msgIdStr);
+        }
+
+        public async Task PruneProcessedSignalsAsync(DateTime threshold)
+        {
+            var oldRecords = await _dbContext.SignalInbox
+                .Where(x => x.ProcessedAt < threshold)
+                .ToListAsync();
+            if (oldRecords.Any())
+            {
+                _dbContext.SignalInbox.RemoveRange(oldRecords);
+                await _dbContext.SaveChangesAsync();
             }
         }
     }

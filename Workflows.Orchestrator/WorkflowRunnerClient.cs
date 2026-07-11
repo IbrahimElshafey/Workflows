@@ -47,7 +47,9 @@ namespace Workflows.Orchestrator
             // 2. Commit the state updates, new/active waits, and completed wait IDs atomically
             await _workflowStore.SaveContextSyncAsync(
                 result.UpdatedState,
-                result.ConsumedWaitsIds);
+                result.ConsumedWaitsIds,
+                result.TriggeringSignalId);
+
 
             // 3. Scan the active waits recursively for any waiting TimeWaitDto and schedule them
             var activeWaits = result.UpdatedState.Waits ?? new List<WaitInfrastructureDto>();

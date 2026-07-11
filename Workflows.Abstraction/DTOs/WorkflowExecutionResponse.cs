@@ -11,5 +11,7 @@ namespace Workflows.Abstraction.DTOs
     {
         public WorkflowStateDto UpdatedState { get; set; } // The new JSON snapshot
         public List<string> ConsumedWaitsIds { get; set; } = new(); // To be removed from SQL
+        public Guid? TriggeringSignalId { get; set; }
+
     }
 }

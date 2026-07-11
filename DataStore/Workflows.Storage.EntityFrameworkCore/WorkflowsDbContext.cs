@@ -25,6 +25,8 @@ namespace Workflows.Storage.EntityFrameworkCore
         public DbSet<TemplateCacheEntity> TemplateCache { get; set; }
         public DbSet<OutboxMessageEntity> OutboxMessages { get; set; }
         public DbSet<CommandResultEntity> CommandResults { get; set; }
+        public DbSet<SignalInboxEntity> SignalInbox { get; set; }
+
 
         public WorkflowsDbContext(DbContextOptions<WorkflowsDbContext> options) : this(options, null)
         {
@@ -259,6 +261,13 @@ namespace Workflows.Storage.EntityFrameworkCore
                 entity.HasIndex(e => e.GlobalId).IsUnique();
                 entity.HasIndex(e => e.CommandWaitId).IsUnique();
                 entity.HasIndex(e => new { e.Status, e.ReceivedAt });
+            });
+
+            modelBuilder.Entity<SignalInboxEntity>(entity =>
+            {
+                entity.ToTable("SignalInbox");
+                entity.HasKey(e => e.MessageId);
+                entity.HasIndex(e => e.WorkflowInstanceId);
             });
         }
 

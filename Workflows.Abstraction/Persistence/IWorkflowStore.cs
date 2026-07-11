@@ -14,7 +14,13 @@ namespace Workflows.Abstraction.Persistence
         /// </summary>
         Task SaveContextSyncAsync(
             WorkflowStateDto state,
-            IEnumerable<string> completedWaitIds);
+            IEnumerable<string> completedWaitIds,
+            Guid? triggeringSignalId = null);
+
+        Task<bool> HasSignalBeenProcessedAsync(Guid messageId);
+
+        Task PruneProcessedSignalsAsync(DateTime threshold);
+
 
         /// <summary>
         /// Retrieves the "Source of Truth" JSON document.

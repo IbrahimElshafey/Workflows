@@ -134,6 +134,18 @@ namespace Workflows.Orchestrator
             if (signalDto == null) throw new ArgumentNullException(nameof(signalDto));
             if (string.IsNullOrEmpty(signalDto.SignalIdentifier)) throw new ArgumentException("SignalIdentifier must be provided.", nameof(signalDto));
 
+            if (signalDto.Id == Guid.Empty)
+            {
+                signalDto.Id = Guid.NewGuid();
+            }
+
+            if (await _workflowStore.HasSignalBeenProcessedAsync(signalDto.Id))
+            {
+                Console.WriteLine($"[IDEMPOTENCE] Signal {signalDto.Id} has already been processed. Discarding duplicate.");
+                return;
+            }
+
+
             object rawData = signalDto.Data;
 
             if (rawData is string || rawData is JsonElement || rawData is System.Text.Json.JsonDocument)

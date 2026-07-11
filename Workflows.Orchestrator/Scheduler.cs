@@ -117,6 +117,7 @@ namespace Workflows.Orchestrator
                                         var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
                                         await orchestrator.ProcessSignalAsync(new Workflows.Abstraction.DTOs.SignalDto
                                         {
+                                            Id = Guid.NewGuid(),
                                             SignalIdentifier = timer.SignalIdentifier,
                                             Data = timer.Payload
                                         });

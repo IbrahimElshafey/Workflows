@@ -160,8 +160,10 @@ namespace Workflows.Runner
             var response = new WorkflowExecutionResponse
             {
                 UpdatedState = context.WorkflowState,
-                ConsumedWaitsIds = context.ConsumedWaitsIds
+                ConsumedWaitsIds = context.ConsumedWaitsIds,
+                TriggeringSignalId = context.Signal?.Id
             };
+
             return await _resultSender.SendWorkflowRunResultAsync(runResult, response);
         }
     }
