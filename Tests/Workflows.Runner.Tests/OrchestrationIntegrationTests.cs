@@ -122,9 +122,17 @@ namespace Workflows.Runner.Tests
             {
                 var defRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
                 var syncResult = await defRepo.SyncDefinitionsAsync(package);
+                if (!syncResult.Success)
+                {
+                    foreach (var err in syncResult.Errors)
+                    {
+                        Console.WriteLine($"[SYNC ERROR] {err.EntityName} ({err.ErrorType}): {err.Message}");
+                    }
+                }
                 syncResult.Success.Should().BeTrue();
             }
         }
+
 
         [Fact]
         public async Task FullWorkflowLifecycle_ShouldPersist_Hydrate_Prune_AndSucceed()

@@ -16,6 +16,13 @@ namespace Workflows.Storage.EntityFrameworkCore
         public string WorkflowType { get; set; } = string.Empty;
         public int WorkflowVersion { get; set; } = 1;
 
+        // Distributed instance-level lock fields.
+        // LockedBy holds the node identifier that currently owns the lock.
+        // LockExpiresAt is the absolute UTC time at which the lock expires (TTL safety).
+        public string? LockedBy { get; set; }
+        public DateTime? LockedAt { get; set; }
+        public DateTime? LockExpiresAt { get; set; }
+
         // JSON Owned property
         public WorkflowStateObject StateObject { get; set; } = new();
 

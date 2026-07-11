@@ -11,9 +11,16 @@
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)Architecture\Architectural Reference Guide.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Command Execution Modes.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Distributed Lock Registry.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Idempotent Signal Processing.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Poison Message &amp; DLQ Handling.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Runner Clustering &amp; Work Partitioning.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Runner Evaluation Logic.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\State Payload Encryption.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Telemetry &amp; OpenTelemetry Integration.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Workflow Engine Storage Architecture.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Workflow Messaging Architecture.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Workflow Schema Compatibility Verification.md" />
     <None Include="$(MSBuildThisFileDirectory)Archive\PIPELINE_IMPLEMENTATION_COMPLETE.md" />
     <None Include="$(MSBuildThisFileDirectory)Archive\Refactored_Runner_Review_Report.md" />
     <None Include="$(MSBuildThisFileDirectory)Design_Patterns\Recursive Matcher Pattern.md" />

@@ -26,8 +26,25 @@ namespace Workflows.Hosting.InProcess
         {
             if (result == null) throw new ArgumentNullException(nameof(result));
 
-            var delta = new StateDelta(runResult, result, _session.CompletionSource);
+            // Create a per-call TCS so this method blocks until CoordinatorCommitWorker
+            // finishes the DB commit. This ensures state is visible to callers immediately
+            // after StartWorkflow or RunWorkflow returns.
+            var tcs = new TaskCompletionSource<AsyncResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            // If the session already has a completion source (set by RunnerWorker for the ingress path),
+            // chain it: when the coordinator commits, signal both.
+            var outerTcs = _session.CompletionSource;
+            TaskCompletionSource<AsyncResult> coordinatorTcs = outerTcs != null ? outerTcs : tcs;
+
+            // When outer == null, we only have our local tcs; re-point coordinatorTcs to it.
+            var delta = new StateDelta(runResult, result, outerTcs ?? tcs);
             await _channel.EgressWriter.WriteAsync(delta, cancellationToken);
+
+            // If this call supplied its own TCS (no outer), wait for coordinator acknowledgment.
+            if (outerTcs == null)
+            {
+                return await tcs.Task;
+            }
 
             return runResult;
         }

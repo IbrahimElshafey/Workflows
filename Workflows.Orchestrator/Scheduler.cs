@@ -22,11 +22,11 @@ namespace Workflows.Orchestrator
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         }
 
-        public Task ScheduleSignalAsync(string signalIdentifier, object payload, DateTime executeAt)
+        public Task ScheduleSignalAsync(Guid timerId, string signalIdentifier, object payload, DateTime executeAt)
         {
             var record = new TimerRecord
             {
-                Id = Guid.NewGuid(),
+                Id = timerId,
                 SignalIdentifier = signalIdentifier,
                 Payload = payload,
                 ExecuteAt = executeAt
@@ -34,6 +34,14 @@ namespace Workflows.Orchestrator
             _timers.TryAdd(record.Id, record);
             return Task.CompletedTask;
         }
+
+        public Task CancelScheduledSignalAsync(Guid timerId)
+        {
+            _timers.TryRemove(timerId, out _);
+            return Task.CompletedTask;
+        }
+
+
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
@@ -50,15 +58,19 @@ namespace Workflows.Orchestrator
                         var pendingTimers = await store.GetPendingTimeWaitsAsync();
                         foreach (var timer in pendingTimers)
                         {
-                            var record = new TimerRecord
+                            if (Guid.TryParse(timer.Id, out var timerGuid))
                             {
-                                Id = Guid.NewGuid(),
-                                SignalIdentifier = timer.UniqueMatchId,
-                                Payload = null!,
-                                ExecuteAt = timer.ExecutionTime
-                            };
-                            _timers.TryAdd(record.Id, record);
+                                var record = new TimerRecord
+                                {
+                                    Id = timerGuid,
+                                    SignalIdentifier = timer.UniqueMatchId,
+                                    Payload = null!,
+                                    ExecuteAt = timer.ExecutionTime
+                                };
+                                _timers.TryAdd(record.Id, record);
+                            }
                         }
+
                     }
                 }
             }
@@ -117,7 +129,7 @@ namespace Workflows.Orchestrator
                                         var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
                                         await orchestrator.ProcessSignalAsync(new Workflows.Abstraction.DTOs.SignalDto
                                         {
-                                            Id = Guid.NewGuid(),
+                                            Id = timer.Id,
                                             SignalIdentifier = timer.SignalIdentifier,
                                             Data = timer.Payload
                                         });

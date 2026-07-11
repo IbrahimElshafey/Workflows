@@ -25,6 +25,17 @@ namespace Workflows.Orchestrator
         private readonly ISignalPreFilter _signalPreFilter;
         private readonly ITemplateRepository? _templateRepository;
         private readonly IOutboxNotificationDispatcher? _outboxNotificationDispatcher;
+        private readonly IInstanceLockManager? _instanceLockManager;
+
+        /// <summary>
+        /// Unique identifier for this orchestrator node. Used as the owner of instance locks.
+        /// </summary>
+        private readonly string _nodeId = Environment.MachineName + "-" + Guid.NewGuid().ToString("N");
+
+        /// <summary>
+        /// Default TTL for instance locks. Prevents permanent lockout if a node crashes mid-processing.
+        /// </summary>
+        private static readonly TimeSpan DefaultLockTtl = TimeSpan.FromMinutes(5);
 
         public Orchestrator(
             IWorkflowStore workflowStore,
@@ -35,7 +46,8 @@ namespace Workflows.Orchestrator
             IWorkflowCloner workflowCloner,
             ISignalPreFilter signalPreFilter,
             ITemplateRepository? templateRepository = null,
-            IOutboxNotificationDispatcher? outboxNotificationDispatcher = null)
+            IOutboxNotificationDispatcher? outboxNotificationDispatcher = null,
+            IInstanceLockManager? instanceLockManager = null)
         {
             _workflowStore = workflowStore ?? throw new ArgumentNullException(nameof(workflowStore));
             _definitionRepository = definitionRepository ?? throw new ArgumentNullException(nameof(definitionRepository));
@@ -46,6 +58,7 @@ namespace Workflows.Orchestrator
             _signalPreFilter = signalPreFilter ?? throw new ArgumentNullException(nameof(signalPreFilter));
             _templateRepository = templateRepository;
             _outboxNotificationDispatcher = outboxNotificationDispatcher;
+            _instanceLockManager = instanceLockManager;
         }
 
         public async Task ProcessCommandResultAsync(CommandResultDto commandResultDto)
