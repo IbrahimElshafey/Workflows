@@ -44,7 +44,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
             ExecutionLog.Add("SubWorkflow1: Start");
 
             // Sub-workflow can have its own waits
-            yield return ExecuteCommand<ReserveInventoryCommand, ReserveInventoryResult>(
+            yield return ExecuteImmediate<ReserveInventoryCommand, ReserveInventoryResult>(
                 "ReserveInventory",
                 new ReserveInventoryCommand { ProductId = "SUB-PROD1", Quantity = 1 })
                 .OnResult((result) =>

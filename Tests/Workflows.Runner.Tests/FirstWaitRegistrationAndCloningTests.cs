@@ -234,10 +234,9 @@ namespace Workflows.Runner.Tests
     {
         public async IAsyncEnumerable<Wait> Run()
         {
-            yield return ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
+            yield return ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPayment",
-                new ProcessPaymentCommand { OrderId = "ORD-001", Amount = 100 })
-                .WithExecutionMode(CommandExecutionMode.Deferred);
+                new ProcessPaymentCommand { OrderId = "ORD-001", Amount = 100 });
         }
     }
 

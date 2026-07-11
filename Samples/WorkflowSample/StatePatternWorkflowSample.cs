@@ -47,7 +47,7 @@ namespace WorkflowSample
                     return ValueTask.CompletedTask;
                 });
 
-            yield return ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
+            yield return ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                     "ProcessPayment",
                     new ProcessPaymentCommand
                     {

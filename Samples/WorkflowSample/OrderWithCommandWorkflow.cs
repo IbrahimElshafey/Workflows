@@ -28,7 +28,7 @@ namespace WorkflowSample
                 });
 
             // Command 1: Send confirmation email with retry and compensation
-            yield return ExecuteCommand<SendEmailCommand, SendEmailResult>(
+            yield return ExecuteImmediate<SendEmailCommand, SendEmailResult>(
                 "SendConfirmationEmail",
                 new SendEmailCommand
                 {
@@ -49,7 +49,7 @@ namespace WorkflowSample
                 });
 
             // Command 2: Process payment with async compensation
-            yield return ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
+            yield return ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPayment",
                 new ProcessPaymentCommand
                 {
@@ -71,7 +71,7 @@ namespace WorkflowSample
                 });
 
             // Command 3: Send thank you email
-            yield return ExecuteCommand<SendEmailCommand, SendEmailResult>(
+            yield return ExecuteImmediate<SendEmailCommand, SendEmailResult>(
                 "SendThankYouEmail",
                 new SendEmailCommand
                 {

@@ -107,10 +107,9 @@ namespace InProcessSqliteSample
             //   Only reached after BOTH verifications pass.
             // ---------------------------------------------------------------
             ExecutionLog.Add($"Verifications passed. Authorizing payment of {Amount:C}.");
-            yield return ExecuteCommand<PaymentRequest, PaymentResult>(
+            yield return ExecuteDeferred<PaymentRequest, PaymentResult>(
                 "AuthorizePayment",
                 new PaymentRequest { OrderId = OrderId, Amount = Amount })
-                .WithExecutionMode(CommandExecutionMode.Deferred)
                 .OnResult(
                     result =>
                     {
@@ -131,11 +130,10 @@ namespace InProcessSqliteSample
             // Step 4: Ship the order.
             // ---------------------------------------------------------------
             ExecutionLog.Add("Payment confirmed. Dispatching shipping command.");
-            yield return ExecuteCommand<ShipOrderCommand, ShipOrderResult>(
+            yield return ExecuteDeferred<ShipOrderCommand, ShipOrderResult>(
                 "ShipOrder",
                 new ShipOrderCommand { OrderId = OrderId, ShippingAddress = ShippingAddress })
                 .WithState(state)
-                .WithExecutionMode(CommandExecutionMode.Deferred)
                 .OnResult(
                     (result, st) =>
                     {

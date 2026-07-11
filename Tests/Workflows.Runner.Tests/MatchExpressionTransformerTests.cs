@@ -5,6 +5,7 @@ using System.Linq.Expressions;
 using FluentAssertions;
 using Xunit;
 using Workflows.Definition;
+using Workflows.Primitives;
 using Workflows.Runner.ExpressionTransformers;
 using Workflows.Runner.Tests.TestData;
 
@@ -551,6 +552,71 @@ namespace Workflows.Runner.Tests
             values.Should().HaveCount(2);
             values.Should().Contain("CORR-777");
             values.Should().Contain("TGT-999");
+        }
+
+        private class ImmediateTestCommand : Workflows.Abstraction.Runner.IImmediateCommand<ImmediateTestCommand, TestCommandResult>
+        {
+            public string CorrelationId { get; set; } = "";
+        }
+
+        private class DeferredTestCommand : Workflows.Abstraction.Runner.IDeferredCommand<DeferredTestCommand, TestCommandResult>
+        {
+            public string CorrelationId { get; set; } = "";
+            Expression<Func<DeferredTestCommand, TestCommandResult, bool>> Workflows.Abstraction.Runner.IDeferredCommand<DeferredTestCommand, TestCommandResult>.MatchingFunction =>
+                (input, result) => result.CorrelationId == input.CorrelationId;
+        }
+
+        [Workflow("TypedCommandWorkflow", 1)]
+        private class TypedCommandWorkflow : WorkflowContainer
+        {
+            public async IAsyncEnumerable<Wait> Run()
+            {
+                yield break;
+            }
+
+            public Wait GetImmediateWait()
+            {
+                return ExecuteImmediate<ImmediateTestCommand, TestCommandResult>(
+                    "ImmediateCmd",
+                    new ImmediateTestCommand { CorrelationId = "IMMED-123" });
+            }
+
+            public Wait GetDeferredWait()
+            {
+                return ExecuteDeferred<DeferredTestCommand, TestCommandResult>(
+                    "DeferredCmd",
+                    new DeferredTestCommand { CorrelationId = "DEFER-456" });
+            }
+        }
+
+        [Fact]
+        public void ExecuteImmediate_ShouldAutoDetectExecutionMode()
+        {
+            // Arrange
+            var workflow = new TypedCommandWorkflow();
+
+            // Act
+            var wait = workflow.GetImmediateWait() as ImmediateCommandWait<ImmediateTestCommand, TestCommandResult>;
+
+            // Assert
+            wait.Should().NotBeNull();
+            wait!.ExecutionMode.Should().Be(CommandExecutionMode.Immediate);
+        }
+
+        [Fact]
+        public void ExecuteDeferred_ShouldAutoDetectExecutionModeAndMatchFunction()
+        {
+            // Arrange
+            var workflow = new TypedCommandWorkflow();
+
+            // Act
+            var wait = workflow.GetDeferredWait() as DeferredCommandWait<DeferredTestCommand, TestCommandResult>;
+
+            // Assert
+            wait.Should().NotBeNull();
+            wait!.ExecutionMode.Should().Be(CommandExecutionMode.Deferred);
+            wait.MatchExpression.Should().NotBeNull();
+            wait.MatchTemplateHashKey.Should().NotBeNullOrEmpty();
         }
     }
 }

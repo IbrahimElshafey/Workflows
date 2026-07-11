@@ -65,27 +65,27 @@ These features are documented across various roadmap files in this directory but
 
 ---
 
-## 2. Unplanned but "Must-Have" Features for Production
+### 2. Planned & Documented Production Features (New Architectural Specifications)
 
-These features are missing from both the current implementation and the existing roadmap documents, but are vital for a resilient production system.
+These features have been designed and documented to ensure the Workflows engine is production-ready, secure, and horizontally scalable.
 
-### 2.1 Distributed Lock Registry (Inter-Instance Mutual Exclusion)
-* **Why**: Separate workflow instances often need to modify or interact with the same external resource. A native way to acquire/release distributed locks (e.g., Redis or SQL-backed locks) within the workflow DSL is needed to prevent race conditions *across* instances.
+### 2.1 [Distributed Lock Registry](file:///d:/MySrc/Workflows/_Documents/Architecture/Distributed%20Lock%20Registry.md) (Inter-Instance Mutual Exclusion)
+*   **Why**: Separate workflow instances often need to modify or interact with the same external resource. A native way to acquire/release distributed locks (e.g., Redis or SQL-backed locks) within the workflow DSL prevents race conditions across instances.
 
-### 2.2 Idempotent Signal/Command Processing (Deduplication)
-* **Why**: Messaging infrastructures (like RabbitMQ, Kafka, or Service Bus) generally guarantee "at-least-once" delivery. Duplicate signals or command results could advance the workflow state twice or run duplicate side effects unless there is an out-of-the-box idempotency tracking log at the database layer.
+### 2.2 [Idempotent Signal Processing](file:///d:/MySrc/Workflows/_Documents/Architecture/Idempotent%20Signal%20Processing.md) (Event & Signal Deduplication)
+*   **Why**: Messaging infrastructures generally guarantee "at-least-once" delivery. Duplicate signals or command results could advance the workflow state twice or run duplicate side effects unless there is deduplication tracking at the database layer.
 
-### 2.3 Dead Letter Queue (DLQ) & Poison Message Handling
-* **Why**: If a signal or command payload fails validation, throws during runner rehydration, or repeatedly errors on serialization, the system needs a way to move it to a DLQ so it doesn't block processing queues or crash the engine indefinitely.
+### 2.3 [Poison Message & DLQ Handling](file:///d:/MySrc/Workflows/_Documents/Architecture/Poison%20Message%20&%20DLQ%20Handling.md) (Error Isolation & Retries)
+*   **Why**: If a signal or command payload fails validation, throws during runner rehydration, or repeatedly errors on serialization, the system needs a way to isolate and move it to a DLQ/error store so it doesn't block processing queues.
 
-### 2.4 State Payload Encryption at Rest
-* **Why**: The serialized JSON state in the database frequently contains sensitive business data (PII, credentials, financial records). Under compliance mandates (GDPR, HIPAA, SOC 2), a production system must support encrypting this data before storing it.
+### 2.4 [State Payload Encryption](file:///d:/MySrc/Workflows/_Documents/Architecture/State%20Payload%20Encryption.md) (Symmetric Envelope Security)
+*   **Why**: The serialized JSON state in the database frequently contains sensitive business data (PII, credentials, financial records). A production system must support encrypting this data before storing it.
 
-### 2.5 Telemetry, Distributed Tracing & OpenTelemetry Integration
-* **Why**: Debugging distributed systems requires trace context propagation. The system should natively emit OpenTelemetry span data so that incoming API requests, workflow execution cycles, runner dispatches, and command handler executions can be correlated in tools like Jaeger or Datadog.
+### 2.5 [Telemetry & OpenTelemetry Integration](file:///d:/MySrc/Workflows/_Documents/Architecture/Telemetry%20&%20OpenTelemetry%20Integration.md) (Distributed Tracing & Logs)
+*   **Why**: Debugging distributed systems requires trace context propagation. The system should natively emit OpenTelemetry span data so that incoming API requests, workflow execution cycles, runner dispatches, and command handler executions can be correlated.
 
-### 2.6 Workflow Schema Compatibility Verification Tools
-* **Why**: Developers deploying a new version of a workflow might inadvertently break compatibility with currently running instances (e.g. by removing or renaming wait points). A CLI tool or registration check is needed to analyze compile-time ASTs and ensure a new deployment doesn't break in-flight state rehydration.
+### 2.6 [Workflow Schema Compatibility Verification](file:///d:/MySrc/Workflows/_Documents/Architecture/Workflow%20Schema%20Compatibility%20Verification.md) (Roslyn AST CLI Tool)
+*   **Why**: Developers deploying a new version of a workflow might inadvertently break compatibility with currently running instances (e.g., by inserting or renaming wait points). A CLI tool is needed to analyze compile-time ASTs and ensure a new deployment doesn't break in-flight state rehydration.
 
-### 2.7 Runner Instance Coordination & Work Partitioning (Clustering)
-* **Why**: In a multi-node deployment, runners need to avoid resource contention. A partition strategy (e.g., consistent hashing on instance IDs) or leader election is required so that runner nodes process distinct subsets of active workflows without overloading the orchestrator or database.
+### 2.7 [Runner Clustering & Work Partitioning](file:///d:/MySrc/Workflows/_Documents/Architecture/Runner%20Clustering%20&%20Work%20Partitioning.md) (Horizontal Scaling)
+*   **Why**: In a multi-node deployment, runners need to avoid resource contention. A partition strategy (e.g., consistent hashing on instance IDs and SQL leases) is required so that runner nodes process distinct subsets of active workflows without double-execution conflicts.

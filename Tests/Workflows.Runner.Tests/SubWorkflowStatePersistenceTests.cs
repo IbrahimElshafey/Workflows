@@ -261,7 +261,7 @@ namespace Workflows.Runner.Tests
         private async IAsyncEnumerable<Wait> ImmediateChild()
         {
             // A single immediate (active) command wait — runs synchronously and completes.
-            yield return ExecuteCommand<ReserveInventoryCommand, ReserveInventoryResult>(
+            yield return ExecuteImmediate<ReserveInventoryCommand, ReserveInventoryResult>(
                 "ReserveInventory",
                 new ReserveInventoryCommand { ProductId = "IMM-1", Quantity = 1 });
             // No further passive waits → sub-workflow finishes

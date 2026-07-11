@@ -7,6 +7,9 @@ using Workflows.Primitives;
 
 namespace Workflows.Definition
 {
+    // ==========================================
+    // 1. TYPED IMMEDIATE BUILDERS
+    // ==========================================
     public readonly struct ImmediateCommandBuilder<TCommand, TResult>
     {
         private readonly ImmediateCommandWait<TCommand, TResult> _wait;
@@ -127,6 +130,9 @@ namespace Workflows.Definition
         public static implicit operator Wait(StatefulImmediateCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
     }
 
+    // ==========================================
+    // 2. TYPED DEFERRED BUILDERS
+    // ==========================================
     public readonly struct DeferredCommandBuilder<TCommand, TResult>
     {
         private readonly DeferredCommandWait<TCommand, TResult> _wait;
@@ -287,6 +293,9 @@ namespace Workflows.Definition
         public static implicit operator Wait(StatefulDeferredCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
     }
 
+    // ==========================================
+    // 3. Wait classes
+    // ==========================================
     public abstract class CommandWait<TCommand, TResult> : Wait
     {
         internal bool IsCompensated { get; set; }

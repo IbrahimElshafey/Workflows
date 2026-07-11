@@ -31,6 +31,7 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
         private readonly IObjectSerializer? _objectSerializer;
         private readonly IExpressionSerializer? _expressionSerializer;
         private readonly CommandRegistryOptions? _registryOptions;
+        private readonly IWorkflowRegistry? _workflowRegistry;
 
         private static readonly ConcurrentDictionary<string, Action<object, object, object>> _compiledActions = new();
 
@@ -40,7 +41,8 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
             ITemplateRepository? templateRepository = null,
             IObjectSerializer? objectSerializer = null,
             IExpressionSerializer? expressionSerializer = null,
-            CommandRegistryOptions? registryOptions = null)
+            CommandRegistryOptions? registryOptions = null,
+            IWorkflowRegistry? workflowRegistry = null)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _callbackRegistry = callbackRegistry ?? throw new ArgumentNullException(nameof(callbackRegistry));
@@ -48,6 +50,7 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
             _objectSerializer = objectSerializer;
             _expressionSerializer = expressionSerializer;
             _registryOptions = registryOptions;
+            _workflowRegistry = workflowRegistry;
         }
 
         public override async Task<bool> IsCompleted(WaitInfrastructureDto waitDto)
@@ -89,10 +92,20 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
                         {
                             if (commandWaitDto.CommandData is string serialized && _objectSerializer != null)
                             {
-                                var metadata = _registryOptions?.Commands.GetValueOrDefault(commandWaitDto.HandlerKey);
-                                if (metadata != null)
+                                Type? inputType = null;
+                                if (_workflowRegistry != null && _workflowRegistry.CommandTypes.TryGetValue(commandWaitDto.HandlerKey, out var types))
                                 {
-                                    commandData = _objectSerializer.Deserialize(serialized, metadata.InputType);
+                                    inputType = types.CommandPayloadType;
+                                }
+                                else
+                                {
+                                    var metadata = _registryOptions?.Commands.GetValueOrDefault(commandWaitDto.HandlerKey);
+                                    inputType = metadata?.InputType;
+                                }
+
+                                if (inputType != null)
+                                {
+                                    commandData = _objectSerializer.Deserialize(serialized, inputType);
                                 }
                                 else
                                 {

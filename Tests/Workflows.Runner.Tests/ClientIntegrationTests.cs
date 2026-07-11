@@ -34,9 +34,12 @@ using Workflows.Storage.EntityFrameworkCore;
 
 namespace Workflows.Runner.Tests
 {
-    public class TestCommand 
+    public class TestCommand : IDeferredCommand<TestCommand, TestResult>
     { 
         public string Message { get; set; } = string.Empty;
+
+        System.Linq.Expressions.Expression<Func<TestCommand, TestResult, bool>> IDeferredCommand<TestCommand, TestResult>.MatchingFunction =>
+            (input, result) => result.Response == "hello-echo";
     }
 
     public class TestResult 
@@ -61,11 +64,10 @@ namespace Workflows.Runner.Tests
         {
             yield return WaitGroup(new Wait[]
             {
-                ExecuteCommand<TestCommand, TestResult>(
+                ExecuteDeferred<TestCommand, TestResult>(
                     "test-handler",
                     new TestCommand { Message = "hello" }
                 )
-                .WithExecutionMode(CommandExecutionMode.Deferred)
                 .OnResult(result =>
                 {
                     CommandResponse = result.Response;

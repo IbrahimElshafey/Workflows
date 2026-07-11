@@ -259,8 +259,8 @@ public sealed class TestWorkflow : WorkflowContainer
 
     public CommandWait<ProcessPaymentCommand, ProcessPaymentResult> CreateCommandWait()
     {
-        return (CommandWait<ProcessPaymentCommand, ProcessPaymentResult>)
-            ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
+        return (DeferredCommandWait<ProcessPaymentCommand, ProcessPaymentResult>)
+            ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPayment",
                 new ProcessPaymentCommand { OrderId = "123", Amount = 100 }
             );
@@ -268,8 +268,8 @@ public sealed class TestWorkflow : WorkflowContainer
 
     public CommandWait<ProcessPaymentCommand, ProcessPaymentResult> CreateStatefulCommandWait()
     {
-        return (CommandWait<ProcessPaymentCommand, ProcessPaymentResult>)
-            ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
+        return (DeferredCommandWait<ProcessPaymentCommand, ProcessPaymentResult>)
+            ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPaymentStateful",
                 new ProcessPaymentCommand { OrderId = "123", Amount = 100 }
             )
@@ -288,8 +288,8 @@ public sealed class TestWorkflow : WorkflowContainer
 
     public CommandWait<ProcessPaymentCommand, ProcessPaymentResult> CreateCommandWaitWithOnResult()
     {
-        return (CommandWait<ProcessPaymentCommand, ProcessPaymentResult>)
-            ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
+        return (DeferredCommandWait<ProcessPaymentCommand, ProcessPaymentResult>)
+            ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPaymentOnResult",
                 new ProcessPaymentCommand { OrderId = "123", Amount = 100 }
             )

@@ -31,10 +31,9 @@ namespace Workflows.Runner.Tests.TestWorkflows
             ResumeCount++;
 
             // Second wait - test resumption after state restoration
-            yield return ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
+            yield return ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPayment",
                 new ProcessPaymentCommand { OrderId = "ORD-001", Amount = 100 })
-                .WithExecutionMode(CommandExecutionMode.Deferred)
                 .WithState("PaymentState")
                 .OnResult((result, state) =>
                 {

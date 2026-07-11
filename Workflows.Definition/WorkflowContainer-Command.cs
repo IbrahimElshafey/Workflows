@@ -8,7 +8,7 @@ namespace Workflows.Definition
 {
     public abstract partial class WorkflowContainer
     {
-        protected ImmediateCommandBuilder<TCommand, TResult> ExecuteCommand<TCommand, TResult>(
+        protected ImmediateCommandBuilder<TCommand, TResult> ExecuteImmediate<TCommand, TResult>(
             string commandName,
             TCommand data,
             [CallerFilePath] string callerFilePath = "",
@@ -35,7 +35,7 @@ namespace Workflows.Definition
             return new ImmediateCommandBuilder<TCommand, TResult>(commandWait);
         }
 
-        protected DeferredCommandBuilder<TCommand, TResult> ExecuteCommand<TCommand, TResult>(
+        protected DeferredCommandBuilder<TCommand, TResult> ExecuteDeferred<TCommand, TResult>(
             string commandName,
             TCommand data,
             [CallerFilePath] string callerFilePath = "",
