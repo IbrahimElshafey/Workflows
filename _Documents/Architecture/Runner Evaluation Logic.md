@@ -6,9 +6,9 @@ The Workflows engine uses a **100% stateless** execution model. The **Runner** a
 
 The Runner's lifecycle is structured as a **Two-Phase Pipeline**:
 1. **Incoming Phase (Matchers)**: Validates incoming events (signals, timer triggers, command results) against the pending wait conditions.
-2. **Execution Cycle (Processors)**: Advances the C# compiler-generated state machine and prepares newly yielded wait points.
+2. **Execution Cycle (Serializers)**: Advances the C# compiler-generated state machine and prepares newly yielded wait points.
 
-Logically, the Runner sits in a fast-forward execution loop, deciding: **"Do I execute this instruction immediately and continue, or do I pause, serialize the state, and hand it back to the Orchestrator?"**
+All yielded waits suspend execution of the C# state machine run loop. However, wait serializers can flag whether the instance context should be preserved in the memory cache (`KeepInCache = true`) or unloaded from the cache (`KeepInCache = false`).
 
 ---
 
@@ -27,24 +27,15 @@ When an external trigger arrives, the Orchestrator loads the workflow instance's
 
 ---
 
-## 2. The Execution Phase: Processors
+## 2. The Execution Phase: Serializers (`WaitSerializer`)
 
-Once the matching phase completes successfully, the Runner loops, calling `StateMachineAdvancer.RunAsync()` to advance the state machine to the next `yield return`. The returned `Wait` object is routed through the `ProcessorFactory` to resolve the corresponding `WorkflowWaitProcessor`:
+Once the matching phase completes successfully, the Runner loops, calling `StateMachineAdvancer.RunAsync()` to advance the state machine to the next `yield return`. The returned `Wait` object is resolved to a corresponding `WaitSerializer` subclass:
 
-### Active Processors (Loop Continues)
-Active operations do not pause execution. They run synchronously in-memory, mutating the context, and return `true` to instruct the Runner loop to advance immediately to the next C# instruction.
-
-* **`ImmediateCommandProcessor`**: Resolves the command handler, executes the command, records the execution in the saga history, and invokes the `OnResultAction` or `OnFailureAction` callback.
-* **`CompensationProcessor`**: Triggered when a workflow yields a compensation command (e.g. `Compensate("TokenA")`). Because the Runner holds the full history of executed commands in the state snapshot, it retrieves all commands matching `"TokenA"` and executes their registered compensation delegates in LIFO (Last-In, First-Out) order in RAM.
-
-### Passive Processors (Loop Suspends)
-Passive processors prepare the environment for external event subscriptions, map wait DTOs with routing keys, and return `false` to suspend the Runner loop.
-
-* **`SignalWaitProcessor`**: Extracts the match expression, compiles the match delegates, updates template caches, and registers wait details to be indexed by the Orchestrator.
-* **`TimeWaitProcessor`**: Calculates the absolute target datetime offset based on delay durations or targets, creating routing DTOs for the Orchestrator to register with its scheduler.
-* **`DeferredCommandProcessor`**: Prepares out-of-process commands for dispatch by serializing payloads and generating keys so the Orchestrator can publish the command to an external bus.
-* **`GroupWaitProcessor`**: Unfolds nested composite layers, validating that children contain only passive waits. It populates parent-child DTO relationships for relational index mapping.
-* **`SubWorkflowProcessor`**: Initializes a new child execution context, advances it to its first wait point, and registers the child wait under the parent sub-workflow scope.
+* **`CommandSerializer`**: Handles command yields. It serializes the command contract into the wait DTO structure. If the command's execution mode is `Immediate`, it returns `true` for `KeepInCache` so the orchestrator runs it and resumes immediately. If `Deferred`, it returns `false`.
+* **`CompensationWaitSerializer`**: Handles compensation waits. It suspends execution (`ContinueExecutionLoop = false`, `KeepInCache = false`) and maps a `CompensationWaitDto` so the Orchestrator/Saga worker can execute registered rollback handlers sequentially.
+* **`SignalWaitSerializer`**: Extracts the match expression, compiles match delegates, updates template caches, and prepares wait details to be indexed by the Orchestrator. Returns `false` for `KeepInCache`.
+* **`TimeWaitSerializer`**: Calculates the absolute target datetime offset based on delay durations or targets, creating routing DTOs for the Orchestrator to register with its scheduler. Returns `false` for `KeepInCache`.
+* **`GroupWaitSerializer`**: Unfolds nested composite layers, validating that children contain only passive waits. It populates parent-child DTO relationships for relational index mapping. Returns `false` for `KeepInCache`.
 
 ---
 
@@ -53,14 +44,16 @@ Passive processors prepare the environment for external event subscriptions, map
 Cancellation is integrated directly into the runner's execution cycle to handle timeouts, business aborts, or alternate execution branches:
 
 * **Token Registration**: When a workflow calls `CancelToken("TokenName")`, the token is added to the execution history.
-* **Fast-Forward Check (`CheckAndSkipCancelledWaitAsync`)**: Before processing any yielded wait, the Runner checks if its cancel tokens intersect with the cancellation history. If so, it invokes the wait's `OnCanceled` callback, cancels the wait, and skips directly to the next state machine statement without suspending.
-* **Sub-Tree Pruning**: When a branch finishes (e.g. in `MatchAny` groups), the `CancelProcessor` recursively finds all incomplete sibling waits and prunes them from active tables, ensuring no stale signals are routed to them in the future.
+* **Fast-Forward Check (`CheckAndSkipCancelledWaitAsync`)**: Before processing any yielded wait, the Runner checks if its cancel tokens intersect with the cancellation history. If so, the Runner marks the wait as `Canceled` and fast-forwards directly to the next state machine statement without suspending.
+* **Outbox Delegation**: The actual invocation of the `OnCanceled` callback delegate is handled asynchronously by the Orchestrator using the database outbox, rather than execution within the Runner.
+* **Sub-Tree Pruning**: When a branch finishes (e.g. in `MatchAny` groups), the Orchestrator recursively finds all incomplete sibling waits and prunes them from active tables, ensuring no stale signals are routed to them in the future.
 
 ---
 
 ## The Runner's "Single Tick" Lifecycle
 
 When a request arrives, the Runner runs a single compute tick:
+
 ```
 1. Hydrate Execution Context (Populate state, closures, and local variables)
 2. Run Matcher (Evaluate incoming event -> update matching wait statuses)
@@ -68,12 +61,13 @@ When a request arrives, the Runner runs a single compute tick:
      while (ContinueExecutionLoop)
      {
          a. Advance C# State Machine (MoveNextAsync)
-         b. If yielded wait is cancelled -> Run OnCanceled callback, skip, and loop again
-         c. Resolve Processor (Active vs Passive)
-         d. Run Processor:
-             - Active (Command/Compensate) -> Execute in RAM, set loop = true
-             - Passive (Signal/Time/Group/SubWorkflow) -> Map DTOs, set loop = false
-         e. Process pending cancellations & prune database indexes
+         b. If yielded wait is cancelled -> Mark as Canceled, skip, and loop again
+         c. Resolve Serializer (WaitSerializer)
+         d. Run Serializer:
+             - Maps wait to DTO
+             - Sets KeepInCache based on wait characteristics (e.g. True for Immediate Commands)
+             - Sets ContinueExecutionLoop = false (suspends execution loop)
+         e. Prune database indexes and handle cancellations
      }
-4. Snapshot and Return (Map final state/DTOs and dispatch back to Orchestrator)
+4. Snapshot and Return (Map final state/DTOs, return KeepInCache, and dispatch back to Orchestrator)
 ```

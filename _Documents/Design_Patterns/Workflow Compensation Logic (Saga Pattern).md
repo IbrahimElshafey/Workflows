@@ -1,9 +1,3 @@
-My apologies! In my haste to correct the architectural flow, I left out the code samples and real-world scenarios we had built. 
-
-Here is the **complete, finalized documentation**, combining the rich code examples with the strictly correct, disconnected Runner architecture.
-
-***
-
 # Workflow Compensation Logic (Saga Pattern)
 
 ## 1. Why We Introduced Token-Based Compensation
@@ -55,7 +49,7 @@ Unlike traditional sagas that fail on timeout due to in-memory locks, this engin
 ```csharp
 yield return WaitSignal("ManagerApproval"); // Engine serializes state and shuts down for 2 weeks
 // ... 2 weeks later, manager rejects via webhook ...
-yield return Compensate("OrderProcess"); // Runner re-hydrates and executes compiled delegates as if no time passed
+yield return Compensate("OrderProcess"); // Background worker re-hydrates and executes compiled delegates as if no time passed
 ```
 
 ### D. The `goto` Statement for State Machine Replay
@@ -73,30 +67,26 @@ if (paymentFailed)
 
 ---
 
-## 3. Architecture: How the Disconnected Runner Handles Compensation
+## 3. Architecture: How the Background Compensation Worker Handles Rollbacks
 
-The most critical architectural constraint of the engine is that **the Orchestrator is purely for I/O and persistence**, and **the Runner is a pure, disconnected compute unit**. 
+Sagas and rollbacks are executed asynchronously and decoupled from the Runner's C# execution path. The system splits the lifecycle into:
+1. **Runner (Compute Node):** Evaluates when a rollback is requested and yields a placeholder wait.
+2. **Orchestrator (IO Node):** Enqueues and persists the rollback intent.
+3. **Compensation Worker (Background Service):** Processes the saga rollback out-of-process.
 
-Because the `WorkflowExecutionRequest` provides the Runner with the complete `WorkflowStateDto` (including the full active Wait Tree and serialized state), the Runner processes rollbacks entirely in-memory without ever querying the database during execution.
+### Phase 1: Compensation Registration (Forward Path)
+1. **Wait Serialization:** As the Runner executes sequential commands (e.g., `ProcessPayment`), the yielded `CommandWait` contains compensation delegate references.
+2. **DTO Generation:** The `CommandSerializer` maps the compensation metadata, tokens, and handler keys into the `CommandWaitDto`.
+3. **Persistence:** The Orchestrator saves the DTOs into the SQL database. When a command completes successfully, its result payload and compensation tokens are persisted on the wait entity.
 
-### Phase 1: Registration (Building the Local Tree)
-1.  **Execution:** As the Runner executes sequential commands (e.g., `ProcessPayment`), it evaluates `.RegisterCompensation(delegate)`.
-2.  **State Mutation:** The Runner does *not* execute this delegate. Instead, it attaches the compensation blueprint (the compiled delegate identifier and the actual `CommandResult` payload) directly to that specific command's node within its in-memory **Wait Tree**.
-3.  **Persistence:** When the Runner finishes its forward execution and hits a passive wait, it returns the mutated wait tree to the Orchestrator. The Orchestrator blindly saves this rich tree to the database.
+### Phase 2: Triggering the Rollback (The Yield)
+1. **The Yield:** The C# state machine hits a failure path and yields `yield return Compensate("CarRentalSaga_123")`.
+2. **Suspension:** The `CompensationWaitSerializer` interceptor creates a `CompensationWaitDto` for the token, updates the instance status to `InError` (or failed state), and suspends execution (`ContinueExecutionLoop = false`, `KeepInCache = false`).
+3. **Persistence:** The Orchestrator commits the updated context, registers the compensation wait in the `CompensationWaits` index table, and notifies the channel.
 
-### Phase 2: Triggering the Unwind (Local Traversal)
-1.  **The Yield:** A failure occurs, and the workflow evaluates `yield return Compensate("CarRentalSaga_123")`.
-2.  **Runner Interception:** The Runner identifies this as an active command. Instead of halting and going to the database, the Runner immediately begins a reverse traversal of its in-memory Wait Tree.
-3.  **Locating Targets:** It scans the tree for any completed command nodes that contain the `"CarRentalSaga_123"` token in their token array. 
-
-### Phase 3: The Double-Undo Fix & Execution (Runner-Side)
-Because a command might belong to multiple scopes (e.g., `["Global", "Local"]`), the Runner must natively ensure idempotency before executing anything.
-1.  **Checking Status:** For every matched node in the wait tree, the Runner checks an internal `IsCompensated` boolean flag on that node.
-2.  **LIFO Execution:** The Runner sorts the valid, uncompensated nodes in **Last-In, First-Out (reverse chronological)** order.
-3.  **Execution:** The Runner invokes the compiled compensation delegates sequentially, injecting the historical results directly into them from the local node data.
-4.  **Marking Complete:** As each delegate succeeds, the Runner immediately updates the node's flag to `IsCompensated = true` within the local wait tree.
-
-### Phase 4: Finalizing and Orchestrator Persistence
-1.  **State Advancement:** Once the compensation stack for that specific token is fully unwound, the Runner advances the C# state machine to the next line of code after the `Compensate()` yield.
-2.  **Return to Orchestrator:** When the workflow finally reaches a new passive wait (or completes), the Runner packages the updated `WorkflowStateDto` (which now contains the `IsCompensated = true` flags).
-3.  **Dumb Persistence:** The Runner sends this finalized DTO back to the Orchestrator. The Orchestrator does no business logic; it simply commits the mutated wait tree and state snapshot to the database in a single transaction.
+### Phase 3: Out-of-Process Execution (Compensation Worker)
+A background hosted service (`CompensationWorker.cs`) consumes the channel notifications and periodically sweeps the database for instances with status `InError` containing active `CompensationWaits`:
+1. **LIFO Filtering:** The worker retrieves all completed command waits for that instance that match the target token. It reverses them to ensure **Last-In, First-Out** rollback ordering.
+2. **Delegate Resolution:** Using `ICallbackRegistry` and the command DTO's `HandlerKey`, the worker loads the registered compensation handler and its delegate.
+3. **Asynchronous Invocation:** The worker deserializes the historical command result payload and executes the compensation handler, passing the command result and the hydrated state object.
+4. **Finalizing:** Once the stack is unwound, the worker marks the compensation wait as `Completed` and commits the updated state back to the database, resuming or finalizing the workflow execution.

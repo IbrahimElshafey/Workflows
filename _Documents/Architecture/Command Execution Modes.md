@@ -1,91 +1,71 @@
 # Architecture Guide: Command Execution Modes
 
-The `CommandExecutionMode` dictates whether the Runner should execute a command instantly in RAM (blocking the state machine momentarily) or suspend the workflow entirely and delegate the execution to the Orchestrator's I/O layer.
+The `CommandExecutionMode` dictates how a command's execution and result are handled by the Runner and Orchestrator. Regardless of the mode, all command yields suspend the Runner's in-memory C# execution loop to permit persistence, outbox message queuing, and proper tracking.
 
-There are two primary modes:
-1. **`CommandExecutionMode.Direct`** (Fast Commands)
-2. **`CommandExecutionMode.Dispatched` / `Deferred`** (Slow Commands / Request-Response)
-
-## 1. `CommandExecutionMode.Direct` (The "Fast" Path)
-**Use Case:** Internal calculations, local state updates, fast synchronous validations, or fire-and-forget messaging where the workflow *does not* need to wait for a reply.
-
-**The Philosophy:** If a command takes less than a few milliseconds, it is an absolute waste of resources to serialize the workflow, save it to the database, and wake it back up just to do math. The Runner handles it immediately.
-
-### Step-by-Step Lifecycle (`Direct`)
-1. **Yield:** The C# workflow hits `yield return ExecuteCommand(new CalculateTaxCommand(), ExecutionMode.Direct)`.
-2. **Runner Intercepts:** The Runner pulls the yielded `CommandWait` object inside its evaluation `while` loop.
-3. **Execution in RAM:** The Runner checks the mode. Seeing `Direct`, it asks the `ICommandHandlerFactory` for the local handler.
-4. **Synchronous Compute:** The Runner executes the compiled delegate/handler instantly in memory.
-5. **State Update:** The result of the command is injected directly into the workflow's local variables (closure).
-6. **Immediate Advance:** The Runner calls `.MoveNextAsync()` to advance the state machine to the next line of code without ever breaking the `while` loop or talking to the database.
-
-*Result: Zero database I/O. Lightning fast.*
+The two execution modes are:
+1. **`CommandExecutionMode.Immediate`** (Fast/In-Memory Caching Path)
+2. **`CommandExecutionMode.Deferred`** (Asynchronous/Out-of-Process Path)
 
 ---
 
-## 2. `CommandExecutionMode.Dispatched` (The "Slow" Path)
+## 1. `CommandExecutionMode.Immediate` (The Caching Path)
+**Use Case:** Internal calculations, local state updates, fast synchronous validations, or database writes where the workflow wants to execute the handler immediately but keep the context hot in memory for consecutive steps.
+
+**The Philosophy:** Although immediate commands suspend the C# execution loop to allow the orchestrator to orchestrate transactions, the workflow container does not need to be unloaded from memory. The Runner indicates that it should keep the instance context in cache.
+
+### Step-by-Step Lifecycle (`Immediate`)
+1. **Yield:** The C# workflow yields `yield return ExecuteCommand(new CalculateTaxCommand(), CommandExecutionMode.Immediate)`.
+2. **Serialization & Suspension:** The Runner maps the yielded `CommandWait` to a `CommandWaitDto`. The `CommandSerializer` marks `KeepInCache = true` and suspends the execution loop (`ContinueExecutionLoop = false`).
+3. **Orchestrator Execution:** The Orchestrator receives the execution response, identifies the command mode as `Immediate`, and invokes the local `ICommandHandler` immediately in the same transaction block.
+4. **Immediate Resumption:** The Orchestrator calls `ProcessCommandResultAsync` with the result. Since the instance is still flagged to be kept in cache, the Runner processes the next step without incurring state loading and deserialization overhead.
+
+*Result: Immediate execution with minimal caching overhead.*
+
+---
+
+## 2. `CommandExecutionMode.Deferred` (The Asynchronous Path)
 **Use Case:** External API calls (e.g., Stripe, SendGrid), long-running microservice tasks, or any interaction where the workflow must send a message and wait for an asynchronous reply.
 
-**The Philosophy:** The Runner is a pure compute unit; it should never sit idle waiting for an external HTTP call or message queue to return. If a command requires a callback, the Runner must safely pack up the workflow and hand it back to the Orchestrator.
+**The Philosophy:** The Runner is a pure compute unit; it should never block thread execution waiting for external systems. If a command requires a remote callback, the Runner suspends execution, unloads the state from cache, and lets the Orchestrator handle asynchronous dispatching.
 
-### Step-by-Step Lifecycle (`Dispatched`)
+### Step-by-Step Lifecycle (`Deferred`)
 
 #### Phase A: Suspension (Compute -> IO)
-1. **Yield:** The workflow hits `yield return ExecuteCommand(new ChargeCreditCardCommand(), ExecutionMode.Dispatched)`.
-2. **Runner Intercepts & Halts:** The Runner sees the `Dispatched` mode. It **breaks** its `while` loop. It packages the current `WorkflowRunContext` (state snapshot) and the `CommandWait` request, sending them back to the Orchestrator.
-3. **Persistence:** The Orchestrator receives the payload. It saves the `WorkflowRunContext` to the NoSQL document store and inserts the `CommandWait` into the SQL database, generating a unique `WaitId` (Correlation ID).
+1. **Yield:** The workflow yields `yield return ExecuteCommand(new ChargeCreditCardCommand(), CommandExecutionMode.Deferred)`.
+2. **Runner Halts:** The Runner serializes the wait. `CommandSerializer` sets `KeepInCache = false` and breaks the run loop. It packages the state snapshot and DTOs, returning them to the Orchestrator.
+3. **Persistence:** The Orchestrator commits the updated state snapshot to the document store and inserts the `CommandWait` metadata into the SQL database, generating a unique `WaitId`.
 
-#### Phase B: Dispatch (IO -> External World)
-4. **Message Broker:** The Orchestrator wraps the `ChargeCreditCardCommand` in an envelope, stamps the header with the `WaitId`, and pushes it to RabbitMQ/Kafka.
-5. **External Processing:** The external Billing Microservice picks up the message, charges the card, and eventually publishes a `ChargeCardResult` back to the broker, explicitly including the `WaitId`.
+#### Phase B: Dispatch & Execution
+4. **Outbox/Message Broker:** The Orchestrator pushes the `ChargeCreditCardCommand` into the Outbox table. A background dispatcher picks it up and publishes it to RabbitMQ/Kafka.
+5. **External Processing:** The external microservice processes the request and returns a `ChargeCardResult` containing the correlation `WaitId`.
 
-#### Phase C: Resumption (IO -> Compute)
-6. **O(1) Lookup:** The Orchestrator receives the result from the broker. It uses the `WaitId` to run a blazing-fast SQL query: `SELECT WorkflowInstanceId FROM CommandWaits WHERE Id = @WaitId`.
-7. **Wake Up:** The Orchestrator loads the sleeping `WorkflowRunContext` and sends it, along with the `ChargeCardResult`, to an available Runner.
-8. **Hydration & Advance:** The Runner uses the `StateMachineAdvancer` to force-feed the state back into the C# class, injects the payment result, and calls `.MoveNextAsync()`. The workflow wakes up on the exact next line of code.
+#### Phase C: Resumption
+6. **Lookup:** The Orchestrator receives the result and runs a fast SQL lookup by `WaitId` to find the corresponding `WorkflowInstanceId`.
+7. **Wake Up:** The Orchestrator loads the sleeping state snapshot from the document store and dispatches it along with the result payload to an available Runner.
+8. **Hydration:** The Runner hydrates the state, feeds the result into the workflow container, and resumes execution.
 
 ---
 
 ### Summary Checklist for Workflow Authors
-* If it **returns instantly** (Math, formatting, local DB reads) ➔ Use **`Direct`**.
-* If it **talks to the outside world** (APIs, Queues, Microservices) ➔ Use **`Dispatched`**.
+* If it **completes instantly** (e.g., local DB write, calculations, logging) ➔ Use **`CommandExecutionMode.Immediate`**.
+* If it **talks to external systems or queues** (e.g., remote microservices, external APIs) ➔ Use **`CommandExecutionMode.Deferred`**.
 
------------
-Here are the four major architectural benefits of using `ExecutionMode.Direct`:
+---
+
+### Comparison of Options
 
 ```csharp
-// Option A: Direct C# Call (Invisible to Engine)
+// Option A: Direct C# Method Call (Invisible to Engine)
 var tax = CalculateTax(orderAmount);
 
-// Option B: Engine Command (ExecutionMode.Direct)
-yield return ExecuteCommand(new CalculateTaxCommand(orderAmount), ExecutionMode.Direct);
+// Option B: Engine Command (CommandExecutionMode.Immediate)
+yield return ExecuteCommand(new CalculateTaxCommand(orderAmount), CommandExecutionMode.Immediate);
 ```
 
-### 1. The Audit Trail (Observability)
-When you call a method directly (Option A), the workflow engine has no idea it happened. If the workflow crashes or you need to debug a state transition, that calculation is missing from the logs. 
-When you yield it as a `Direct` command (Option B), the Runner can log the exact intent, the input parameters (`CalculateTaxCommand`), and the result into your telemetry or database. You get a perfect, step-by-step history of the business logic.
-
-### 2. Saga Tracking & Compensation
-This is the most critical benefit. As we discussed in the Saga architecture, the Runner tracks completed commands by their `Tokens` so it knows what to undo if something fails later.
-* **If you use Option A:** The engine doesn't know the action happened, so it cannot automatically compensate for it.
-* **If you use Option B:** The Runner records that this command succeeded. If the workflow later yields `Compensate("TaxToken")`, the engine automatically knows to fire the exact rollback logic for that specific tax calculation.
-
-### 3. Engine Middleware (Retries & Error Handling)
-If a fast, synchronous command involves something fragile (like reading a local file or querying a fast local Redis cache), calling it directly means you have to write manual `try/catch` and `while` loops to handle transient errors.
-By yielding it to the Runner, you get to use the engine's fluent configuration for free:
-```csharp
-yield return ExecuteCommand(new ReadLocalConfigCommand(), ExecutionMode.Direct)
-    .WithRetries(maxAttempts: 3, backoff: TimeSpan.FromSeconds(1));
-```
-The Runner handles the `try/catch` and retry logic internally, keeping the workflow code beautiful and flat.
-
-### 4. Dependency Injection & Decoupling
-If your workflow class calls methods directly, you have to inject all the required services (e.g., `ITaxCalculator`, `ILocalCache`, `IDiscountService`) directly into your `WorkflowContainer`'s constructor. Over time, your workflow class becomes bloated with 20 different dependencies.
-By using `ExecutionMode.Direct`, the workflow only yields a POCO (Plain Old C# Object) representing the *intent*. The Runner's `ICommandHandlerFactory` takes over, resolves the correct handler from the DI container, and executes it. The workflow remains 100% decoupled from the implementation details.
-
-### The Verdict: When to use which?
-* **Use Direct C# Calls (`x = 5`, `list.Add()`)** for completely trivial internal logic, string formatting, or basic math where logging and retries don't matter.
-* **Use `ExecutionMode.Direct`** for domain-significant actions (e.g., updating a local database, applying complex business rules, generating a critical document) where you want logging, error handling, decoupling, or the ability to undo the action later via the Saga pattern.
+1. **Observability & Auditing:** Option A is invisible to the engine. Option B serializes the command and results, preserving a perfect step-by-step history of inputs and outputs in the database.
+2. **Saga Tracking & Compensation:** The Runner tracks completed commands by their tokens. Option B allows the engine to automatically execute corresponding rollback/undo delegates if a workflow fails later and calls `Compensate`.
+3. **Engine Middleware:** Option B allows applying engine-level policies like retries and error handling configurations.
+4. **Dependency Injection:** Option B keeps the workflow decoupled from concrete service implementation details by yielding a POCO that is routed to the corresponding handler by the engine's handler resolver.
 
 ```mermaid
 sequenceDiagram
@@ -104,26 +84,27 @@ sequenceDiagram
     
     participant Ext as External System
 
-    %% DIRECT MODE
+    %% IMMEDIATE MODE
     rect rgb(230, 255, 230)
-    note right of WF: Phase 1: ExecutionMode.Direct (Fast Command)
+    note right of WF: Phase 1: CommandExecutionMode.Immediate (Caching Path)
     WF->>Runner: yield return ExecuteCommand(new CalcTax())
-    Runner->>Runner: Instantiate CommandHandler
-    Runner->>Runner: Execute Synchronously in RAM
-    Runner->>WF: Inject Result & MoveNextAsync() (Zero IO)
+    Runner->>Orch: Suspend with KeepInCache = true
+    Orch->>Orch: Run Handler immediately in same transaction
+    Orch->>Runner: Resume Workflow Execution in RAM cache
+    Runner->>WF: Inject Result & MoveNextAsync()
     end
 
-    %% DISPATCHED MODE
-    note right of WF: Phase 2: ExecutionMode.Dispatched (Slow Command)
+    %% DEFERRED MODE
+    note right of WF: Phase 2: CommandExecutionMode.Deferred (Asynchronous Path)
     
     rect rgb(255, 235, 235)
     WF->>Runner: yield return ExecuteCommand(new ChargeCard())
-    Runner->>Orch: Suspend & Send [WorkflowContext + Command]
-    Orch->>DB: Save Context & Create WaitId (Guid)
-    Orch->>Bus: Publish Request (Header: WaitId)
+    Runner->>Orch: Suspend with KeepInCache = false
+    Orch->>DB: Save Context, Create WaitId & write Outbox
     end
     
     rect rgb(255, 245, 230)
+    Orch->>Bus: Publish Request (Header: WaitId)
     Bus->>Ext: Consume Request
     note right of Ext: Processing... (Seconds to Hours)
     Ext->>Bus: Publish Response (Header: WaitId)
@@ -131,9 +112,8 @@ sequenceDiagram
     
     rect rgb(235, 235, 255)
     Bus->>Orch: Consume Response
-    Orch->>DB: O(1) Lookup by WaitId
-    DB-->>Orch: Return sleeping WorkflowContext
-    Orch->>Runner: Dispatch [WorkflowContext + Result]
-    Runner->>WF: Hydrate State, Inject Result & MoveNextAsync()
+    Orch->>DB: Lookup WaitId & load WorkflowContext
+    Orch->>Runner: Hydrate & Resume
+    Runner->>WF: Inject Result & MoveNextAsync()
     end
 ```
