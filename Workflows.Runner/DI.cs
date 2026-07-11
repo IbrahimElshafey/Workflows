@@ -150,6 +150,31 @@ namespace Workflows.Runner
             return services;
         }
 
+        public static IServiceCollection AddDeferredCommand<TInput, TOutput, TDispatcher, TReceiver>(
+            this IServiceCollection services, string commandKey)
+            where TInput : class, IDeferredCommand<TInput, TOutput>
+            where TDispatcher : class, IDispatcher<TInput>
+            where TReceiver : class, IReceiver<TOutput>
+        {
+            services.AddKeyedTransient<IDispatcher<TInput>, TDispatcher>(commandKey);
+            services.AddKeyedTransient<IReceiver<TOutput>, TReceiver>(commandKey);
+
+            LambdaExpression? matchExpr = null;
+            try
+            {
+                var instance = (IDeferredCommand<TInput, TOutput>)Activator.CreateInstance(typeof(TInput))!;
+                matchExpr = instance.MatchingFunction;
+            }
+            catch
+            {
+                // Fall back if parameterless constructor is not available
+            }
+
+            services.AddOrUpdateCommandRegistry(commandKey,
+                new CommandMetadata(typeof(TInput), typeof(TOutput), IsAsync: true, IsExternal: true, matchExpr));
+            return services;
+        }
+
         private static IServiceCollection AddOrUpdateCommandRegistry(
             this IServiceCollection services, string key, CommandMetadata metadata)
         {

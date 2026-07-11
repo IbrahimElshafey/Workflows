@@ -56,5 +56,16 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// Tokens associated with this command wait for compensation scoping.
         /// </summary>
         public string[] CompensationTokens { get; set; } = Array.Empty<string>();
+
+        /// <summary>
+        /// Hash key for the deferred match expression template.
+        /// Null for immediate commands.
+        /// </summary>
+        public string? MatchTemplateHashKey { get; set; }
+
+        /// <summary>
+        /// Instance-specific exact match values evaluated at registration time.
+        /// </summary>
+        public string? MatchExactMatchPart { get; set; }
     }
 }

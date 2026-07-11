@@ -240,6 +240,145 @@ namespace Workflows.Runner
                 }
             }
 
+            string? matchTemplateHashKey = null;
+            if (commandWait.MatchExpression != null)
+            {
+                if (!string.IsNullOrEmpty(commandWait.MatchTemplateHashKey))
+                {
+                    matchTemplateHashKey = $"Cmd_{commandWait.HandlerKey}:{commandWait.MatchTemplateHashKey}";
+                }
+                else
+                {
+                    var hash = WorkflowHashCalculator.CalculateHash(
+                        commandWait.MatchExpressionAsText,
+                        commandWait.CallerName,
+                        "Match_" + commandWait.HandlerKey);
+                    matchTemplateHashKey = $"Cmd_{commandWait.HandlerKey}:{hash}";
+                }
+            }
+
+            MatchTransformationResult? transformResult = null;
+            TemplateCacheRecordDto? dbCached = null;
+
+            if (commandWait.MatchExpression != null && !string.IsNullOrEmpty(matchTemplateHashKey))
+            {
+                dbCached = _templateRepository?.GetTemplate(matchTemplateHashKey);
+
+                if (dbCached == null)
+                {
+                    transformResult = _matchExpressionTransformer.TransformCommandMatch(
+                        commandWait.MatchExpression,
+                        commandWait.WorkflowContainer);
+
+                    if (_templateRepository != null)
+                    {
+                        var templateDto = new TemplateCacheRecordDto
+                        {
+                            TemplateHashKey = matchTemplateHashKey,
+                            SignalExactMatchPathsJson = System.Text.Json.JsonSerializer.Serialize(transformResult.SignalExactMatchPaths),
+                            IsExactMatchFullMatch = transformResult.IsExactMatchFullMatch,
+                            IsGenericMatchFullMatch = transformResult.IsGenericMatchFullMatch,
+                            GenericMatchExpressionJson = transformResult.GenericMatchExpression != null ? _expressionSerializer.Serialize(transformResult.GenericMatchExpression) as string : null,
+                            InstanceExactMatchExpressionJson = (transformResult.SignalExactMatchPaths == null || transformResult.SignalExactMatchPaths.Count == 0)
+                                 ? null
+                                 : (transformResult.InstanceExactMatchExpression != null ? _expressionSerializer.Serialize(transformResult.InstanceExactMatchExpression) as string : null),
+                            NormalizedMatchExpressionJson = transformResult.MatchExpression != null ? _expressionSerializer.Serialize(transformResult.MatchExpression) as string : null,
+                            AfterMatchAction = GetFullMethodName(commandWait.OnResultAction),
+                            CancelAction = null
+                        };
+                        _templateRepository.SaveTemplate(templateDto);
+                    }
+                }
+            }
+
+            LambdaExpression? instanceExactMatchExpr = null;
+            if (dbCached != null)
+            {
+                if (dbCached.InstanceExactMatchExpressionJson != null)
+                {
+                    instanceExactMatchExpr = _expressionSerializer.Deserialize(dbCached.InstanceExactMatchExpressionJson);
+                }
+            }
+            else
+            {
+                instanceExactMatchExpr = (transformResult?.SignalExactMatchPaths == null || transformResult.SignalExactMatchPaths.Count == 0)
+                    ? null
+                    : transformResult?.InstanceExactMatchExpression;
+            }
+
+            string? matchExactMatchPart = null;
+            if (instanceExactMatchExpr != null)
+            {
+                var compiler = new ExpressionCompiler();
+                var exactMatchFunc = compiler.CompiledInstanceExactMatchExpression(instanceExactMatchExpr);
+                var exactMatchParts = exactMatchFunc(commandWait.WorkflowContainer, commandWait.ExplicitState);
+                if (exactMatchParts != null && exactMatchParts.Length > 0)
+                {
+                    matchExactMatchPart = System.Text.Json.JsonSerializer.Serialize(exactMatchParts);
+                }
+            }
+
+            // Populate in-memory CommandCache
+            if (!string.IsNullOrEmpty(matchTemplateHashKey))
+            {
+                LambdaExpression? normalizedExprToCache = null;
+                LambdaExpression? instanceExprToCache = null;
+
+                if (commandWait.MatchExpression != null)
+                {
+                    if (dbCached != null)
+                    {
+                        if (dbCached.NormalizedMatchExpressionJson != null)
+                        {
+                            normalizedExprToCache = _expressionSerializer.Deserialize(dbCached.NormalizedMatchExpressionJson);
+                        }
+                        if (dbCached.InstanceExactMatchExpressionJson != null)
+                        {
+                            instanceExprToCache = _expressionSerializer.Deserialize(dbCached.InstanceExactMatchExpressionJson);
+                        }
+                    }
+                    else
+                    {
+                        normalizedExprToCache = transformResult?.MatchExpression;
+                        instanceExprToCache = (transformResult?.SignalExactMatchPaths == null || transformResult.SignalExactMatchPaths.Count == 0)
+                            ? null
+                            : transformResult?.InstanceExactMatchExpression;
+                    }
+                }
+
+                var serializedResultAction = GetFullMethodName(commandWait.OnResultAction);
+
+                Func<object, object, object, bool>? compiledDelegate = null;
+                Func<object, object, string[]>? compiledInstanceExpr = null;
+
+                if (normalizedExprToCache != null)
+                {
+                    var compiler = new ExpressionCompiler();
+                    compiledDelegate = compiler.CompiledMatchExpression(normalizedExprToCache);
+                    if (instanceExprToCache != null)
+                    {
+                        compiledInstanceExpr = compiler.CompiledInstanceExactMatchExpression(instanceExprToCache);
+                    }
+                }
+
+                var record = Pipeline.CompletionChecker.CommandCompletionChecker.CommandCache.GetOrAdd(matchTemplateHashKey, _ => new Cache.CommandTemplateCacheRecord
+                {
+                    CompiledMatchDelegate = compiledDelegate,
+                    CompiledInstanceExactMatchExpression = compiledInstanceExpr,
+                    ResultAction = serializedResultAction
+                });
+
+                if (record.ResultAction == null && serializedResultAction != null)
+                {
+                    record.ResultAction = serializedResultAction;
+                }
+                if (record.CompiledMatchDelegate == null && compiledDelegate != null)
+                {
+                    record.CompiledMatchDelegate = compiledDelegate;
+                    record.CompiledInstanceExactMatchExpression = compiledInstanceExpr;
+                }
+            }
+
             CommandWaitDto? dto = new CommandWaitDto
             {
                 CommandData = _objectSerializer.Serialize(commandWait.CommandData, SerializationScope.Standard),
@@ -250,7 +389,9 @@ namespace Workflows.Runner
                 ResultAction = commandWait.HandlerKey + ":OnResult",
                 HandlerKey = commandWait.HandlerKey,
                 ExecutionMode = commandWait.ExecutionMode,
-                CompensationTokens = commandWait.CompensationTokens ?? Array.Empty<string>()
+                CompensationTokens = commandWait.CompensationTokens ?? Array.Empty<string>(),
+                MatchTemplateHashKey = matchTemplateHashKey,
+                MatchExactMatchPart = matchExactMatchPart
             };
 
             CopyBase(commandWait, dto);

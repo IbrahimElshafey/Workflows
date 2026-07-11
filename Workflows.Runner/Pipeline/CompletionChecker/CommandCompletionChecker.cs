@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
 using FastExpressionCompiler;
@@ -7,7 +8,12 @@ using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Persistence;
+using Workflows.Abstraction.Runner;
 using Workflows.Definition;
+using Workflows.Runner.Cache;
+using Workflows.Runner.ExpressionTransformers;
+using ExpressionCompiler = Workflows.Runner.ExpressionTransformers.ExpressionCompiler;
+using IExpressionSerializer = Workflows.Abstraction.Helpers.IExpressionSerializer;
 
 namespace Workflows.Runner.Pipeline.CompletionChecker
 {
@@ -17,19 +23,31 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
     /// </summary>
     internal class CommandCompletionChecker : WaitCompletionChecker
     {
+        internal static readonly ConcurrentDictionary<string, CommandTemplateCacheRecord> CommandCache = new(StringComparer.Ordinal);
+
         private readonly WorkflowExecutionContext _context;
         private readonly ICallbackRegistry _callbackRegistry;
         private readonly ITemplateRepository? _templateRepository;
+        private readonly IObjectSerializer? _objectSerializer;
+        private readonly IExpressionSerializer? _expressionSerializer;
+        private readonly CommandRegistryOptions? _registryOptions;
+
         private static readonly ConcurrentDictionary<string, Action<object, object, object>> _compiledActions = new();
 
         public CommandCompletionChecker(
             WorkflowExecutionContext context, 
             ICallbackRegistry callbackRegistry,
-            ITemplateRepository? templateRepository = null)
+            ITemplateRepository? templateRepository = null,
+            IObjectSerializer? objectSerializer = null,
+            IExpressionSerializer? expressionSerializer = null,
+            CommandRegistryOptions? registryOptions = null)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _callbackRegistry = callbackRegistry ?? throw new ArgumentNullException(nameof(callbackRegistry));
             _templateRepository = templateRepository;
+            _objectSerializer = objectSerializer;
+            _expressionSerializer = expressionSerializer;
+            _registryOptions = registryOptions;
         }
 
         public override async Task<bool> IsCompleted(WaitInfrastructureDto waitDto)
@@ -41,6 +59,66 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
             }
 
             var result = _context.CommandResult;
+            if (result == null)
+            {
+                return false;
+            }
+
+            // Check if there is a match function defined for the command
+            if (!string.IsNullOrEmpty(commandWaitDto.MatchTemplateHashKey))
+            {
+                var compiledMatch = GetOrBuildCompiledMatch(commandWaitDto);
+                if (compiledMatch != null)
+                {
+                    bool matchResult = false;
+                    try
+                    {
+                        // Retrieve explicitState
+                        object explicitState = null;
+                        if (_context.WorkflowState?.StateObject?.Locals != null)
+                        {
+                            if (!_context.WorkflowState.StateObject.Locals.TryGetValue(commandWaitDto.StateKey.ToString(), out explicitState))
+                            {
+                                _context.WorkflowState.StateObject.Locals.TryGetValue(commandWaitDto.Id.ToString(), out explicitState);
+                            }
+                        }
+
+                        // Retrieve input command data
+                        object? commandData = null;
+                        if (commandWaitDto.CommandData != null)
+                        {
+                            if (commandWaitDto.CommandData is string serialized && _objectSerializer != null)
+                            {
+                                var metadata = _registryOptions?.Commands.GetValueOrDefault(commandWaitDto.HandlerKey);
+                                if (metadata != null)
+                                {
+                                    commandData = _objectSerializer.Deserialize(serialized, metadata.InputType);
+                                }
+                                else
+                                {
+                                    commandData = commandWaitDto.CommandData;
+                                }
+                            }
+                            else
+                            {
+                                commandData = commandWaitDto.CommandData;
+                            }
+                        }
+
+                        // Evaluate: param0 = result, param1 = commandData, param2 = explicitState
+                        matchResult = compiledMatch(result, commandData!, explicitState!);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[CommandCompletionChecker] Evaluation threw exception: {ex}");
+                    }
+
+                    if (!matchResult)
+                    {
+                        return false; // Match expression failed
+                    }
+                }
+            }
 
             // Handle failure scenarios
             if (result is Exception exception)
@@ -77,6 +155,44 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
             commandWaitDto.Status = WaitStatus.Completed;
 
             return true;
+        }
+
+        private Func<object, object, object, bool>? GetOrBuildCompiledMatch(CommandWaitDto dto)
+        {
+            if (dto.MatchTemplateHashKey is string hashKey)
+            {
+                if (CommandCache.TryGetValue(hashKey, out var cached) && cached?.CompiledMatchDelegate != null)
+                {
+                    return cached.CompiledMatchDelegate;
+                }
+
+                // Try to load template from SQLite DB cache first
+                if (_templateRepository != null)
+                {
+                    var dbTemplate = _templateRepository.GetTemplate(hashKey);
+                    if (dbTemplate != null && dbTemplate.NormalizedMatchExpressionJson != null && _expressionSerializer != null)
+                    {
+                        var normalizedExpr = _expressionSerializer.Deserialize(dbTemplate.NormalizedMatchExpressionJson);
+                        var compiler = new ExpressionCompiler();
+                        var compiled = compiler.CompiledMatchExpression(normalizedExpr);
+
+                        Func<object, object, string[]>? compiledInstanceExpr = null;
+                        if (dbTemplate.InstanceExactMatchExpressionJson != null)
+                        {
+                            compiledInstanceExpr = compiler.CompiledInstanceExactMatchExpression(
+                                _expressionSerializer.Deserialize(dbTemplate.InstanceExactMatchExpressionJson));
+                        }
+
+                        var record = CommandCache.GetOrAdd(hashKey, _ => new CommandTemplateCacheRecord());
+                        record.CompiledMatchDelegate = compiled;
+                        record.CompiledInstanceExactMatchExpression = compiledInstanceExpr;
+
+                        return compiled;
+                    }
+                }
+            }
+
+            return null;
         }
 
         private string? GetDeferredCommandAction(string key)
@@ -156,4 +272,3 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
         }
     }
 }
-

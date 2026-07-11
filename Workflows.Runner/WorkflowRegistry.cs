@@ -50,6 +50,11 @@ namespace Workflows.Runner
             CommandExecutionMode mode = CommandExecutionMode.Immediate)
         {
             _commands[commandIdentifier] = (typeof(TCommand), typeof(TResult));
+
+            bool isDeferred = typeof(IDeferredCommand<TCommand, TResult>).IsAssignableFrom(typeof(TCommand));
+            bool isImmediate = typeof(IImmediateCommand<TCommand, TResult>).IsAssignableFrom(typeof(TCommand));
+            var resolvedMode = isDeferred ? CommandExecutionMode.Deferred : (isImmediate ? CommandExecutionMode.Immediate : mode);
+
             registrationPackage.Commands.Add(new CommandDefinition
             {
                 CommandName = commandIdentifier,
@@ -58,7 +63,8 @@ namespace Workflows.Runner
                 ResultTypeName = typeof(TResult).AssemblyQualifiedName,
                 ResultSchema = _schemaGenerator.Generate(typeof(TResult)).ToString(),
                 DefaultTimeout = timeout,
-                ExecutionMode = mode
+                ExecutionMode = resolvedMode,
+                HasMatchingFunction = isDeferred
             });
             return this;
         }

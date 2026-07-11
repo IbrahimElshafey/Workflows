@@ -1,142 +1,293 @@
 using System;
+using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Workflows.Definition.Helpers;
 using Workflows.Primitives;
 
 namespace Workflows.Definition
 {
-    public readonly struct CommandBuilder<TCommand, TResult>
+    public readonly struct ImmediateCommandBuilder<TCommand, TResult>
     {
-        private readonly CommandWait<TCommand, TResult> _wait;
+        private readonly ImmediateCommandWait<TCommand, TResult> _wait;
 
-        internal CommandBuilder(CommandWait<TCommand, TResult> wait) => _wait = wait;
+        internal ImmediateCommandBuilder(ImmediateCommandWait<TCommand, TResult> wait) => _wait = wait;
 
-        public CommandBuilder<TCommand, TResult> WithRetries(int maxAttempts, TimeSpan? backoff = null)
+        public ImmediateCommandBuilder<TCommand, TResult> WithRetries(int maxAttempts, TimeSpan? backoff = null)
         {
             _wait.WithRetries(maxAttempts, backoff);
             return this;
         }
 
-        public CommandBuilder<TCommand, TResult> OnResult(Action<TResult> onSuccess)
+        public ImmediateCommandBuilder<TCommand, TResult> OnResult(Action<TResult> onSuccess)
         {
             _wait.OnResult(onSuccess);
             return this;
         }
 
-        public CommandBuilder<TCommand, TResult> OnFailure(Func<Exception, ValueTask> failureAction)
+        public ImmediateCommandBuilder<TCommand, TResult> OnFailure(Func<Exception, ValueTask> failureAction)
         {
             _wait.OnFailure(failureAction);
             return this;
         }
 
-        public CommandBuilder<TCommand, TResult> RegisterCompensation(Func<TResult, ValueTask> compensationAction)
+        public ImmediateCommandBuilder<TCommand, TResult> RegisterCompensation(Func<TResult, ValueTask> compensationAction)
         {
             _wait.RegisterCompensation(compensationAction);
             return this;
         }
 
-        public CommandBuilder<TCommand, TResult> WithToken(params string[] tokens)
+        public ImmediateCommandBuilder<TCommand, TResult> WithToken(params string[] tokens)
         {
             _wait.WithToken(tokens);
             return this;
         }
 
-        public CommandBuilder<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Immediate)
+        public ImmediateCommandBuilder<TCommand, TResult> WithHandlerKey(string key)
         {
-            _wait.WithHandlerKey(key, mode);
+            _wait.WithHandlerKey(key);
             return this;
         }
 
-        public CommandBuilder<TCommand, TResult> WithExecutionMode(CommandExecutionMode mode)
-        {
-            _wait.WithExecutionMode(mode);
-            return this;
-        }
-
-        public StatefulCommandBuilder<TCommand, TResult, TState> WithState<TState>(TState state)
+        public StatefulImmediateCommandBuilder<TCommand, TResult, TState> WithState<TState>(TState state)
         {
             _wait.SetState(state);
-            return new StatefulCommandBuilder<TCommand, TResult, TState>(_wait);
+            return new StatefulImmediateCommandBuilder<TCommand, TResult, TState>(_wait);
         }
 
-        public CommandWait<TCommand, TResult> Build() => _wait;
+        public ImmediateCommandWait<TCommand, TResult> Build() => _wait;
 
-        public static implicit operator CommandWait<TCommand, TResult>(CommandBuilder<TCommand, TResult> builder) => builder._wait;
-        public static implicit operator Wait(CommandBuilder<TCommand, TResult> builder) => builder._wait;
+        public static implicit operator ImmediateCommandWait<TCommand, TResult>(ImmediateCommandBuilder<TCommand, TResult> builder) => builder._wait;
+        public static implicit operator Wait(ImmediateCommandBuilder<TCommand, TResult> builder) => builder._wait;
     }
 
-    public readonly struct StatefulCommandBuilder<TCommand, TResult, TState>
+    public readonly struct StatefulImmediateCommandBuilder<TCommand, TResult, TState>
     {
-        private readonly CommandWait<TCommand, TResult> _wait;
+        private readonly ImmediateCommandWait<TCommand, TResult> _wait;
 
-        internal StatefulCommandBuilder(CommandWait<TCommand, TResult> wait) => _wait = wait;
+        internal StatefulImmediateCommandBuilder(ImmediateCommandWait<TCommand, TResult> wait) => _wait = wait;
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> WithRetries(int maxAttempts, TimeSpan? backoff = null)
+        public StatefulImmediateCommandBuilder<TCommand, TResult, TState> WithRetries(int maxAttempts, TimeSpan? backoff = null)
         {
             _wait.WithRetries(maxAttempts, backoff);
             return this;
         }
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> OnResult(Action<TResult, TState> onSuccess)
+        public StatefulImmediateCommandBuilder<TCommand, TResult, TState> OnResult(Action<TResult, TState> onSuccess)
         {
             _wait.OnResult(onSuccess);
             return this;
         }
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> OnResult(Action<TResult> onSuccess)
+        public StatefulImmediateCommandBuilder<TCommand, TResult, TState> OnResult(Action<TResult> onSuccess)
         {
             _wait.OnResult(onSuccess);
             return this;
         }
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> OnFailure(Func<Exception, TState, ValueTask> failureAction)
+        public StatefulImmediateCommandBuilder<TCommand, TResult, TState> OnFailure(Func<Exception, TState, ValueTask> failureAction)
         {
             _wait.OnFailure(failureAction);
             return this;
         }
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> OnFailure(Func<Exception, ValueTask> failureAction)
+        public StatefulImmediateCommandBuilder<TCommand, TResult, TState> OnFailure(Func<Exception, ValueTask> failureAction)
         {
             _wait.OnFailure(failureAction);
             return this;
         }
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> RegisterCompensation(Func<TResult, TState, ValueTask> compensationAction)
+        public StatefulImmediateCommandBuilder<TCommand, TResult, TState> RegisterCompensation(Func<TResult, TState, ValueTask> compensationAction)
         {
             _wait.RegisterCompensation(compensationAction);
             return this;
         }
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> RegisterCompensation(Func<TResult, ValueTask> compensationAction)
+        public StatefulImmediateCommandBuilder<TCommand, TResult, TState> RegisterCompensation(Func<TResult, ValueTask> compensationAction)
         {
             _wait.RegisterCompensation(compensationAction);
             return this;
         }
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> WithToken(params string[] tokens)
+        public StatefulImmediateCommandBuilder<TCommand, TResult, TState> WithToken(params string[] tokens)
         {
             _wait.WithToken(tokens);
             return this;
         }
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Immediate)
+        public StatefulImmediateCommandBuilder<TCommand, TResult, TState> WithHandlerKey(string key)
         {
-            _wait.WithHandlerKey(key, mode);
+            _wait.WithHandlerKey(key);
             return this;
         }
 
-        public StatefulCommandBuilder<TCommand, TResult, TState> WithExecutionMode(CommandExecutionMode mode)
-        {
-            _wait.WithExecutionMode(mode);
-            return this;
-        }
+        public ImmediateCommandWait<TCommand, TResult> Build() => _wait;
 
-        public CommandWait<TCommand, TResult> Build() => _wait;
-
-        public static implicit operator CommandWait<TCommand, TResult>(StatefulCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
-        public static implicit operator Wait(StatefulCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
+        public static implicit operator ImmediateCommandWait<TCommand, TResult>(StatefulImmediateCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
+        public static implicit operator Wait(StatefulImmediateCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
     }
 
-    public class CommandWait<TCommand, TResult> : Wait
+    public readonly struct DeferredCommandBuilder<TCommand, TResult>
+    {
+        private readonly DeferredCommandWait<TCommand, TResult> _wait;
+
+        internal DeferredCommandBuilder(DeferredCommandWait<TCommand, TResult> wait) => _wait = wait;
+
+        public DeferredCommandBuilder<TCommand, TResult> WithRetries(int maxAttempts, TimeSpan? backoff = null)
+        {
+            _wait.WithRetries(maxAttempts, backoff);
+            return this;
+        }
+
+        public DeferredCommandBuilder<TCommand, TResult> OnResult(Action<TResult> onSuccess)
+        {
+            _wait.OnResult(onSuccess);
+            return this;
+        }
+
+        public DeferredCommandBuilder<TCommand, TResult> OnFailure(Func<Exception, ValueTask> failureAction)
+        {
+            _wait.OnFailure(failureAction);
+            return this;
+        }
+
+        public DeferredCommandBuilder<TCommand, TResult> RegisterCompensation(Func<TResult, ValueTask> compensationAction)
+        {
+            _wait.RegisterCompensation(compensationAction);
+            return this;
+        }
+
+        public DeferredCommandBuilder<TCommand, TResult> WithToken(params string[] tokens)
+        {
+            _wait.WithToken(tokens);
+            return this;
+        }
+
+        public DeferredCommandBuilder<TCommand, TResult> WithHandlerKey(string key)
+        {
+            _wait.WithHandlerKey(key);
+            return this;
+        }
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> WithState<TState>(TState state)
+        {
+            _wait.SetState(state);
+            return new StatefulDeferredCommandBuilder<TCommand, TResult, TState>(_wait);
+        }
+
+        public DeferredCommandBuilder<TCommand, TResult> MatchIf(
+            Expression<Func<TCommand, TResult, bool>> matchExpression,
+            [CallerMemberName] string callerName = "",
+            [CallerLineNumber] int callerLineNumber = 0,
+            [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
+        {
+            _wait.MatchIf(matchExpression, callerName, callerLineNumber, expression);
+            return this;
+        }
+
+        public DeferredCommandBuilder<TCommand, TResult> MatchIf<TState>(
+            Expression<Func<TCommand, TResult, TState, bool>> matchExpression,
+            [CallerMemberName] string callerName = "",
+            [CallerLineNumber] int callerLineNumber = 0,
+            [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
+        {
+            _wait.MatchIf(matchExpression, callerName, callerLineNumber, expression);
+            return this;
+        }
+
+        public DeferredCommandWait<TCommand, TResult> Build() => _wait;
+
+        public static implicit operator DeferredCommandWait<TCommand, TResult>(DeferredCommandBuilder<TCommand, TResult> builder) => builder._wait;
+        public static implicit operator Wait(DeferredCommandBuilder<TCommand, TResult> builder) => builder._wait;
+    }
+
+    public readonly struct StatefulDeferredCommandBuilder<TCommand, TResult, TState>
+    {
+        private readonly DeferredCommandWait<TCommand, TResult> _wait;
+
+        internal StatefulDeferredCommandBuilder(DeferredCommandWait<TCommand, TResult> wait) => _wait = wait;
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> WithRetries(int maxAttempts, TimeSpan? backoff = null)
+        {
+            _wait.WithRetries(maxAttempts, backoff);
+            return this;
+        }
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> OnResult(Action<TResult, TState> onSuccess)
+        {
+            _wait.OnResult(onSuccess);
+            return this;
+        }
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> OnResult(Action<TResult> onSuccess)
+        {
+            _wait.OnResult(onSuccess);
+            return this;
+        }
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> OnFailure(Func<Exception, TState, ValueTask> failureAction)
+        {
+            _wait.OnFailure(failureAction);
+            return this;
+        }
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> OnFailure(Func<Exception, ValueTask> failureAction)
+        {
+            _wait.OnFailure(failureAction);
+            return this;
+        }
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> RegisterCompensation(Func<TResult, TState, ValueTask> compensationAction)
+        {
+            _wait.RegisterCompensation(compensationAction);
+            return this;
+        }
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> RegisterCompensation(Func<TResult, ValueTask> compensationAction)
+        {
+            _wait.RegisterCompensation(compensationAction);
+            return this;
+        }
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> WithToken(params string[] tokens)
+        {
+            _wait.WithToken(tokens);
+            return this;
+        }
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> WithHandlerKey(string key)
+        {
+            _wait.WithHandlerKey(key);
+            return this;
+        }
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> MatchIf(
+            Expression<Func<TCommand, TResult, bool>> matchExpression,
+            [CallerMemberName] string callerName = "",
+            [CallerLineNumber] int callerLineNumber = 0,
+            [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
+        {
+            _wait.MatchIf(matchExpression, callerName, callerLineNumber, expression);
+            return this;
+        }
+
+        public StatefulDeferredCommandBuilder<TCommand, TResult, TState> MatchIf(
+            Expression<Func<TCommand, TResult, TState, bool>> matchExpression,
+            [CallerMemberName] string callerName = "",
+            [CallerLineNumber] int callerLineNumber = 0,
+            [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
+        {
+            _wait.MatchIf(matchExpression, callerName, callerLineNumber, expression);
+            return this;
+        }
+
+        public DeferredCommandWait<TCommand, TResult> Build() => _wait;
+
+        public static implicit operator DeferredCommandWait<TCommand, TResult>(StatefulDeferredCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
+        public static implicit operator Wait(StatefulDeferredCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
+    }
+
+    public abstract class CommandWait<TCommand, TResult> : Wait
     {
         internal bool IsCompensated { get; set; }
         internal TCommand CommandData { get; set; }
@@ -147,17 +298,16 @@ namespace Workflows.Definition
         internal int MaxRetryAttempts { get; set; } = 1;
         internal TimeSpan? RetryBackoff { get; set; }
         internal string HandlerKey { get; set; }
-        internal CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.Immediate;
+        public abstract CommandExecutionMode ExecutionMode { get; }
+        internal virtual LambdaExpression? MatchExpression { get; set; }
+        internal virtual string? MatchExpressionAsText { get; set; }
+        internal virtual string? MatchTemplateHashKey { get; set; }
 
-        internal CommandWait(string commandName, TCommand data, int inCodeLine, string caller, string callerFilePath)
+        protected CommandWait(string commandName, TCommand data, int inCodeLine, string caller, string callerFilePath)
             : base(WaitType.Command, commandName, inCodeLine, caller, callerFilePath)
         {
             CommandData = data;
             HandlerKey = commandName;
-        }
-
-        internal CommandWait()
-        {
         }
 
         internal CommandWait<TCommand, TResult> WithState<TState>(TState state)
@@ -178,7 +328,6 @@ namespace Workflows.Definition
             return this;
         }
 
-
         internal CommandWait<TCommand, TResult> WithRetries(int maxAttempts, TimeSpan? backoff = null)
         {
             if (maxAttempts < 1)
@@ -189,6 +338,7 @@ namespace Workflows.Definition
             RetryBackoff = backoff;
             return this;
         }
+
         internal CommandWait<TCommand, TResult> OnFailure(Func<Exception, ValueTask> failureAction)
         {
             OnFailureAction = failureAction;
@@ -206,7 +356,8 @@ namespace Workflows.Definition
             CompensationTokens = tokens;
             return this;
         }
-        internal CommandWait<TCommand, TResult> RegisterCompensation(Func<TResult,ValueTask> compensationAction)
+
+        internal CommandWait<TCommand, TResult> RegisterCompensation(Func<TResult, ValueTask> compensationAction)
         {
             CompensationAction = compensationAction;
             return this;
@@ -218,69 +369,59 @@ namespace Workflows.Definition
             return this;
         }
 
-        internal CommandWait<TCommand, TResult> WithHandlerKey(string key, CommandExecutionMode mode = CommandExecutionMode.Immediate)
+        internal CommandWait<TCommand, TResult> WithHandlerKey(string key)
         {
             HandlerKey = key;
-            ExecutionMode = mode;
+            return this;
+        }
+    }
+
+    public class ImmediateCommandWait<TCommand, TResult> : CommandWait<TCommand, TResult>
+    {
+        public override CommandExecutionMode ExecutionMode => CommandExecutionMode.Immediate;
+
+        internal ImmediateCommandWait(string commandName, TCommand data, int inCodeLine, string caller, string callerFilePath)
+            : base(commandName, data, inCodeLine, caller, callerFilePath)
+        {
+        }
+    }
+
+    public class DeferredCommandWait<TCommand, TResult> : CommandWait<TCommand, TResult>
+    {
+        public override CommandExecutionMode ExecutionMode => CommandExecutionMode.Deferred;
+        internal override LambdaExpression? MatchExpression { get; set; }
+        internal override string? MatchExpressionAsText { get; set; }
+        internal override string? MatchTemplateHashKey { get; set; }
+
+        internal DeferredCommandWait(string commandName, TCommand data, int inCodeLine, string caller, string callerFilePath)
+            : base(commandName, data, inCodeLine, caller, callerFilePath)
+        {
+        }
+
+        internal DeferredCommandWait<TCommand, TResult> MatchIf(
+            Expression<Func<TCommand, TResult, bool>> matchExpression,
+            string callerName = "",
+            int callerLineNumber = 0,
+            string? expression = default)
+        {
+            MatchExpression = matchExpression;
+            InCodeLine = callerLineNumber;
+            MatchExpressionAsText = expression;
+            MatchTemplateHashKey = WorkflowHashCalculator.CalculateHash(expression, callerName, "Match_" + HandlerKey);
             return this;
         }
 
-        internal CommandWait<TCommand, TResult> WithExecutionMode(CommandExecutionMode mode)
+        internal DeferredCommandWait<TCommand, TResult> MatchIf<TState>(
+            Expression<Func<TCommand, TResult, TState, bool>> matchExpression,
+            string callerName = "",
+            int callerLineNumber = 0,
+            string? expression = default)
         {
-            ExecutionMode = mode;
+            MatchExpression = matchExpression;
+            InCodeLine = callerLineNumber;
+            MatchExpressionAsText = expression;
+            MatchTemplateHashKey = WorkflowHashCalculator.CalculateHash(expression, callerName, "Match_" + HandlerKey);
             return this;
-        }
-
-        private sealed class StatefulOnResultInvoker<TState>
-        {
-            private readonly CommandWait<TCommand, TResult> _wait;
-            private readonly Action<TResult, TState> _action;
-
-            public StatefulOnResultInvoker(CommandWait<TCommand, TResult> wait, Action<TResult, TState> action)
-            {
-                _wait = wait;
-                _action = action;
-            }
-
-            public void Invoke(TResult result)
-            {
-                _action(result, (TState)_wait.ExplicitState);
-            }
-        }
-
-        //private sealed class StatefulOnFailureInvoker<TState>
-        //{
-        //    private readonly CommandWait<TCommand, TResult> _wait;
-        //    private readonly Func<Exception, TState, ValueTask> _action;
-
-        //    public StatefulOnFailureInvoker(CommandWait<TCommand, TResult> wait, Func<Exception, TState, ValueTask> action)
-        //    {
-        //        _wait = wait;
-        //        _action = action;
-        //    }
-
-        //    public ValueTask Invoke(Exception exception)
-        //    {
-        //        return _action(exception, (TState)_wait.ExplicitState);
-        //    }
-        //}
-
-        private sealed class StatefulCompensationInvoker<TState>
-        {
-            private readonly CommandWait<TCommand, TResult> _wait;
-            private readonly Func<TResult, TState, ValueTask> _action;
-
-            public StatefulCompensationInvoker(CommandWait<TCommand, TResult> wait, Func<TResult, TState, ValueTask> action)
-            {
-                _wait = wait;
-                _action = action;
-            }
-
-            public ValueTask Invoke(TResult result)
-            {
-                return _action(result, (TState)_wait.ExplicitState);
-            }
         }
     }
 }
-

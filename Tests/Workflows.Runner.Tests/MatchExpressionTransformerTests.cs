@@ -480,6 +480,78 @@ namespace Workflows.Runner.Tests
             result.IsGenericMatchFullMatch.Should().BeFalse(); // Unsupported due to .Date access on DateTime
             result.GenericMatchExpression.Should().BeNull();
         }
+
+        private class TestCommand
+        {
+            public string CorrelationId { get; set; } = "";
+        }
+
+        private class TestCommandResult
+        {
+            public string CorrelationId { get; set; } = "";
+            public string TargetId { get; set; } = "";
+        }
+
+        private class TestWorkflowState
+        {
+            public string TargetId { get; set; } = "";
+        }
+
+        [Fact]
+        public void TransformCommandMatch_StandardDeferredCommandMatch_ShouldSucceed()
+        {
+            // Arrange
+            var transformer = new MatchExpressionTransformer();
+            var workflow = new TestWorkflow();
+            Expression<Func<TestCommand, TestCommandResult, bool>> matchExpression =
+                (input, result) => result.CorrelationId == input.CorrelationId;
+
+            // Act
+            var result = transformer.TransformCommandMatch(matchExpression, workflow);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.IsExactMatchFullMatch.Should().BeTrue();
+            result.SignalExactMatchPaths.Should().ContainSingle().Which.Should().Be("CorrelationId");
+            result.IsGenericMatchFullMatch.Should().BeTrue();
+
+            // Verify compiled exact match evaluates correctly
+            var compiledInstanceExpr = result.InstanceExactMatchExpression.Compile();
+            var commandData = new TestCommand { CorrelationId = "CORR-777" };
+            // For command match: param 0 is state, param 1 is input command data
+            var values = compiledInstanceExpr(null, commandData);
+            values.Should().ContainSingle().Which.Should().Be("CORR-777");
+        }
+
+        [Fact]
+        public void TransformCommandMatch_StatefulDeferredCommandMatch_ShouldSucceed()
+        {
+            // Arrange
+            var transformer = new MatchExpressionTransformer();
+            var workflow = new TestWorkflow();
+            Expression<Func<TestCommand, TestCommandResult, TestWorkflowState, bool>> matchExpression =
+                (input, result, state) => result.CorrelationId == input.CorrelationId && result.TargetId == state.TargetId;
+
+            // Act
+            var result = transformer.TransformCommandMatch(matchExpression, workflow);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.IsExactMatchFullMatch.Should().BeTrue();
+            result.SignalExactMatchPaths.Should().HaveCount(2);
+            result.SignalExactMatchPaths.Should().Contain("CorrelationId");
+            result.SignalExactMatchPaths.Should().Contain("TargetId");
+
+            // Verify compiled exact match evaluates correctly
+            var compiledInstanceExpr = result.InstanceExactMatchExpression.Compile();
+            var commandData = new TestCommand { CorrelationId = "CORR-777" };
+            var state = new TestWorkflowState { TargetId = "TGT-999" };
+            // For command match: param 0 is state, param 1 is input command data
+            var values = compiledInstanceExpr(state, commandData);
+            values.Should().HaveCount(2);
+            values.Should().Contain("CORR-777");
+            values.Should().Contain("TGT-999");
+        }
     }
 }
 
