@@ -479,11 +479,11 @@ namespace Workflows.Runner.Tests
         }
 
         // ── Helper: register FanOut workflows and sync to DB ─────────────────
-        private async Task SyncFanOutDefinitions(ServiceProvider provider)
+        private async Task SyncFanOutDefinitions<TWorkflow>(ServiceProvider provider, string wfName)
+            where TWorkflow : WorkflowContainer, new()
         {
             var registry = provider.GetRequiredService<IWorkflowBuilder>();
-            registry.RegisterWorkflow<FanOutManyIntegrationWorkflow>("FanOutManyIntegration", 1);
-            registry.RegisterWorkflow<FanOutAnyIntegrationWorkflow>("FanOutAnyIntegration", 1);
+            registry.RegisterWorkflow<TWorkflow>(wfName, 1);
             registry.RegisterSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal");
 
             var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -506,7 +506,7 @@ namespace Workflows.Runner.Tests
 
             var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
             using var provider = CreateServiceProvider(dbName, out var connection);
-            await SyncFanOutDefinitions(provider);
+            await SyncFanOutDefinitions<FanOutManyIntegrationWorkflow>(provider, "FanOutManyIntegration");
 
             using var mainScope = provider.CreateScope();
             var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
@@ -602,7 +602,7 @@ namespace Workflows.Runner.Tests
         {
             var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
             using var provider = CreateServiceProvider(dbName, out var connection);
-            await SyncFanOutDefinitions(provider);
+            await SyncFanOutDefinitions<FanOutAnyIntegrationWorkflow>(provider, "FanOutAnyIntegration");
 
             using var mainScope = provider.CreateScope();
             var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
@@ -652,6 +652,59 @@ namespace Workflows.Runner.Tests
                 .ToListAsync();
             finalChildRows.Count(c => c.Status == (int)WaitStatus.Completed).Should().Be(1);
             finalChildRows.Count(c => c.Status == (int)WaitStatus.Canceled).Should().Be(2);
+
+            connection.Close();
+        }
+
+        [Fact]
+        public async Task ConcurrencyRetry_ShouldSuccessfullyRetryAndSucceed_OnConflict()
+        {
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            var connectionString = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+
+            using var provider = CreateServiceProvider(dbName, out var connection);
+
+            // Sync definitions
+            var registry = provider.GetRequiredService<IWorkflowBuilder>();
+            registry.RegisterWorkflow<ConcurrencyRetryTestWorkflow>("ConcurrencyRetryTest", 1);
+            registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
+
+            var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
+            var package = (BulkRegistrationPackage)packageField!.GetValue(registry)!;
+
+            using (var scope = provider.CreateScope())
+            {
+                var defRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
+                await defRepo.SyncDefinitionsAsync(package);
+            }
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+
+            // Start workflow
+            var instanceId = await orchestrator.StartWorkflowAsync("ConcurrencyRetryTest", 1, null);
+            instanceId.Should().NotBeEmpty();
+
+            // Setup static conflict parameters
+            Workflows.Storage.EntityFrameworkCore.WorkflowStore.MockConcurrencyRetryCount = 2; // Conflict twice, succeed on 3rd attempt
+
+            // Send Signal to trigger wait
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "OrderReceived",
+                Data = new OrderReceivedSignal { OrderId = "ORD-CONC", Amount = 100 }
+            });
+
+            // Verify instance completed successfully
+            var state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            state!.Status.Should().Be(WorkflowInstanceStatus.Completed);
+
+            var instance = state.StateObject.Instance as ConcurrencyRetryTestWorkflow;
+            instance.Should().NotBeNull();
+            instance!.Completed.Should().BeTrue();
+            Workflows.Storage.EntityFrameworkCore.WorkflowStore.MockConcurrencyRetryCount.Should().Be(0);
 
             connection.Close();
         }
@@ -752,6 +805,22 @@ namespace Workflows.Runner.Tests
                 .AfterMatch(signal =>
                 {
                     this.Completed = true;
+                });
+        }
+    }
+
+    [Workflow("ConcurrencyRetryTest", 1)]
+    public sealed class ConcurrencyRetryTestWorkflow : WorkflowContainer
+    {
+        public bool Completed { get; set; }
+        public static Guid InstanceId { get; set; }
+
+        public async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "WaitA")
+                .AfterMatch(signal =>
+                {
+                    Completed = true;
                 });
         }
     }

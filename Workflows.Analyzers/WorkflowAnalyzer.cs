@@ -363,6 +363,25 @@ namespace Workflows.Analyzers
             return false;
         }
 
+        internal static bool IsRawWorkflowMethod(IMethodSymbol? methodSymbol)
+        {
+            if (methodSymbol == null) return false;
+
+            var returnType = methodSymbol.ReturnType as INamedTypeSymbol;
+            if (returnType == null) return false;
+
+            if (returnType.ConstructedFrom?.ToDisplayString() == "System.Collections.Generic.IAsyncEnumerable<T>" ||
+                returnType.Name == "IAsyncEnumerable")
+            {
+                var typeArg = returnType.TypeArguments.FirstOrDefault();
+                if (typeArg != null && (InheritsFromWait(typeArg) || typeArg.Name == "Wait"))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         internal static bool ImplementsDisposable(ITypeSymbol typeSymbol)
         {
             foreach (var iface in typeSymbol.AllInterfaces)

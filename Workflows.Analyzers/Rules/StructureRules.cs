@@ -13,10 +13,14 @@ namespace Workflows.Analyzers.Rules
             var typeSymbol = (INamedTypeSymbol)context.Symbol;
             if (typeSymbol.TypeKind != TypeKind.Class) return;
 
-            if (WorkflowAnalyzer.InheritsFromWorkflowContainer(typeSymbol))
+            bool inherits = WorkflowAnalyzer.InheritsFromWorkflowContainer(typeSymbol);
+            var members = typeSymbol.GetMembers().OfType<IMethodSymbol>().ToList();
+            bool hasRunMethod = members.Any(m => m.Name == "Run" && WorkflowAnalyzer.IsRawWorkflowMethod(m));
+
+            if (inherits || hasRunMethod)
             {
                 // WF201: Sealed class check
-                if (!typeSymbol.IsSealed)
+                if (inherits && !typeSymbol.IsSealed)
                 {
                     var syntax = typeSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as ClassDeclarationSyntax;
                     if (syntax != null)
@@ -44,7 +48,7 @@ namespace Workflows.Analyzers.Rules
                 }
 
                 // WF210: Missing Run Method check
-                if (!typeSymbol.IsAbstract && typeSymbol.Name != "TestWorkflow")
+                if (inherits && !typeSymbol.IsAbstract && typeSymbol.Name != "TestWorkflow")
                 {
                     var workflowAttr = typeSymbol.GetAttributes().FirstOrDefault(a => 
                         a.AttributeClass?.ToDisplayString() == "Workflows.Definition.WorkflowAttribute" ||
@@ -61,12 +65,12 @@ namespace Workflows.Analyzers.Rules
                     }
 
                     var stateType = WorkflowAnalyzer.GetWorkflowStateType(typeSymbol);
-                    var hasRunMethod = typeSymbol.GetMembers()
+                    var hasActualRunMethod = typeSymbol.GetMembers()
                         .OfType<IMethodSymbol>()
                         .Any(m => m.Name == startMethodName && 
                                   WorkflowAnalyzer.IsWorkflowMethod(m) &&
                                   (m.Parameters.Length == 0 || (stateType != null && m.Parameters.Length == 1 && SymbolEqualityComparer.Default.Equals(m.Parameters[0].Type, stateType))));
-                    if (!hasRunMethod)
+                    if (!hasActualRunMethod)
                     {
                         var syntax = typeSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as ClassDeclarationSyntax;
                         if (syntax != null)
@@ -78,26 +82,29 @@ namespace Workflows.Analyzers.Rules
                 }
 
                 // WF202: No overloaded workflow methods
-                var workflowMethods = typeSymbol.GetMembers()
-                    .OfType<IMethodSymbol>()
-                    .Where(WorkflowAnalyzer.IsWorkflowMethod)
-                    .ToList();
-
-                var overloadedNames = workflowMethods
-                    .GroupBy(m => m.Name)
-                    .Where(g => g.Count() > 1)
-                    .Select(g => g.Key)
-                    .ToImmutableHashSet();
-
-                foreach (var method in workflowMethods)
+                if (inherits)
                 {
-                    if (overloadedNames.Contains(method.Name))
+                    var workflowMethods = typeSymbol.GetMembers()
+                        .OfType<IMethodSymbol>()
+                        .Where(WorkflowAnalyzer.IsWorkflowMethod)
+                        .ToList();
+
+                    var overloadedNames = workflowMethods
+                        .GroupBy(m => m.Name)
+                        .Where(g => g.Count() > 1)
+                        .Select(g => g.Key)
+                        .ToImmutableHashSet();
+
+                    foreach (var method in workflowMethods)
                     {
-                        var syntax = method.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as MethodDeclarationSyntax;
-                        if (syntax != null)
+                        if (overloadedNames.Contains(method.Name))
                         {
-                            var diagnostic = Diagnostic.Create(wf202, syntax.Identifier.GetLocation(), method.Name);
-                            context.ReportDiagnostic(diagnostic);
+                            var syntax = method.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as MethodDeclarationSyntax;
+                            if (syntax != null)
+                            {
+                                var diagnostic = Diagnostic.Create(wf202, syntax.Identifier.GetLocation(), method.Name);
+                                context.ReportDiagnostic(diagnostic);
+                            }
                         }
                     }
                 }

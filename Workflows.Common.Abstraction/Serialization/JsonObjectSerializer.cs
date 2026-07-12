@@ -137,6 +137,64 @@ namespace Workflows.Shared.Serialization
             if (obj == null) return null;
             return JsonConvert.SerializeObject(obj, GetSettings(scope));
         }
+
+        private class ArrayPoolWrapper : Newtonsoft.Json.IArrayPool<char>
+        {
+            public static readonly ArrayPoolWrapper Instance = new ArrayPoolWrapper();
+
+            public char[] Rent(int minLength)
+            {
+                return System.Buffers.ArrayPool<char>.Shared.Rent(minLength);
+            }
+
+            public void Return(char[] array)
+            {
+                if (array != null)
+                {
+                    System.Buffers.ArrayPool<char>.Shared.Return(array);
+                }
+            }
+        }
+
+        public void Serialize(object obj, System.IO.Stream stream, SerializationScope scope = SerializationScope.Standard)
+        {
+            if (obj == null) return;
+            var settings = GetSettings(scope);
+            var serializer = JsonSerializer.Create(settings);
+            using (var writer = new System.IO.StreamWriter(stream, System.Text.Encoding.UTF8, 1024, leaveOpen: true))
+            using (var jsonWriter = new JsonTextWriter(writer))
+            {
+                jsonWriter.ArrayPool = ArrayPoolWrapper.Instance;
+                serializer.Serialize(jsonWriter, obj);
+                jsonWriter.Flush();
+            }
+        }
+
+        public T Deserialize<T>(System.IO.Stream stream, SerializationScope scope = SerializationScope.Standard)
+        {
+            if (stream == null) return default;
+            var settings = GetSettings(scope);
+            var serializer = JsonSerializer.Create(settings);
+            using (var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8, true, 1024, leaveOpen: true))
+            using (var jsonReader = new JsonTextReader(reader))
+            {
+                jsonReader.ArrayPool = ArrayPoolWrapper.Instance;
+                return serializer.Deserialize<T>(jsonReader);
+            }
+        }
+
+        public object Deserialize(System.IO.Stream stream, Type type, SerializationScope scope = SerializationScope.Standard)
+        {
+            if (stream == null) return null;
+            var settings = GetSettings(scope);
+            var serializer = JsonSerializer.Create(settings);
+            using (var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8, true, 1024, leaveOpen: true))
+            using (var jsonReader = new JsonTextReader(reader))
+            {
+                jsonReader.ArrayPool = ArrayPoolWrapper.Instance;
+                return serializer.Deserialize(jsonReader, type);
+            }
+        }
     }
 
     public class ObjectIntConverter : JsonConverter

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
@@ -132,14 +133,52 @@ namespace Workflows.Orchestrator
 
             commandResultDto.Result = rawResult;
 
-            var request = new WorkflowExecutionRequest
-            {
-                TriggeringWaitId = commandResultDto.CommandWaitId,
-                WorkflowState = state,
-                CommandResult = commandResultDto.Result
-            };
+            int maxAttempts = 5;
+            int baseDelayMs = 50;
+            Random rand = new Random();
+            var runState = state;
 
-            await _runner.RunWorkflowAsync(request);
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    var request = new WorkflowExecutionRequest
+                    {
+                        TriggeringWaitId = commandResultDto.CommandWaitId,
+                        WorkflowState = runState,
+                        CommandResult = commandResultDto.Result
+                    };
+
+                    await _runner.RunWorkflowAsync(request);
+                    break;
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    if (attempt == maxAttempts)
+                    {
+                        throw;
+                    }
+
+                    int delay = baseDelayMs * (int)Math.Pow(2, attempt - 1) + rand.Next(0, baseDelayMs);
+                    await Task.Delay(delay);
+
+                    // Re-fetch state
+                    var freshState = await _workflowStore.GetInstanceStateAsync(instanceId);
+                    if (freshState == null)
+                    {
+                        break;
+                    }
+
+                    // Verify the command wait is still active (Waiting status)
+                    var freshCommandWait = WaitFinder.FindWaitingRecordForCommand(freshState.Waits, commandResultDto.CommandWaitId);
+                    if (freshCommandWait == null)
+                    {
+                        break; // Already completed/progressed
+                    }
+
+                    runState = freshState;
+                }
+            }
         }
 
         public async Task ProcessSignalAsync(SignalDto signalDto)
@@ -283,8 +322,65 @@ namespace Workflows.Orchestrator
                         Signal = signalDto
                     };
 
-                    var runResult = await _runner.RunWorkflowAsync(request);
-                    if (runResult != null && runResult.Status != "Unmatched")
+                    int maxAttempts = 5;
+                    int baseDelayMs = 50;
+                    Random rand = new Random();
+                    bool matched = false;
+
+                    for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                    {
+                        try
+                        {
+                            var runResult = await _runner.RunWorkflowAsync(request);
+                            if (runResult != null && runResult.Status != "Unmatched")
+                            {
+                                matched = true;
+                            }
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[RETRY DEBUG] Attempt {attempt} failed with exception: {ex.GetType().Name}: {ex.Message}");
+                            if (attempt == maxAttempts)
+                            {
+                                throw;
+                            }
+
+                            int delay = baseDelayMs * (int)Math.Pow(2, attempt - 1) + rand.Next(0, baseDelayMs);
+                            await Task.Delay(delay);
+
+                            // Re-fetch fresh state
+                            var freshState = await _workflowStore.GetInstanceStateAsync(state.Id);
+                            if (freshState == null)
+                            {
+                                Console.WriteLine("[RETRY DEBUG] freshState is null!");
+                                break; // Instance was deleted
+                            }
+
+                            // Re-evaluate if it's still waiting on the signal
+                            var freshTriggeringWait = WaitFinder.FindWaitingRecordForSignal(freshState.Waits, signalDto.SignalIdentifier);
+                            if (freshTriggeringWait == null)
+                            {
+                                Console.WriteLine($"[RETRY DEBUG] freshTriggeringWait is null! Waits count: {freshState.Waits?.Count}");
+                                break; // It already progressed or is no longer waiting for this signal
+                            }
+
+                            if (freshTriggeringWait is SignalWaitDto swDto && !_signalPreFilter.IsMatch(swDto, signalDto, freshState))
+                            {
+                                break; // No longer matches pre-filter
+                            }
+
+                            // Rebuild request
+                            request = new WorkflowExecutionRequest
+                            {
+                                TriggeringWaitId = freshTriggeringWait.Id,
+                                WorkflowState = freshState,
+                                Signal = signalDto
+                            };
+                        }
+                    }
+
+                    if (matched)
                     {
                         break; // Stop evaluating further candidate instances for this workflow type
                     }

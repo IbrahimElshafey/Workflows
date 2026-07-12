@@ -9,6 +9,7 @@ using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
 using Workflows.Storage.EntityFrameworkCore;
+using Workflows.Shared.Serialization;
 using Xunit;
 
 namespace Workflows.Runner.Tests
@@ -508,6 +509,25 @@ namespace Workflows.Runner.Tests
                 // Verification: HasSignalBeenProcessedAsync should now return false
                 var processedAfterPrune = await store.HasSignalBeenProcessedAsync(messageId);
                 processedAfterPrune.Should().BeFalse();
+            }
+        }
+
+        [Fact]
+        public void StreamSerialization_ShouldRoundtripCorrectly()
+        {
+            var serializer = new JsonObjectSerializer();
+            var testObj = new { Id = Guid.NewGuid(), Name = "StreamTest", Value = 123 };
+
+            using (var stream = new System.IO.MemoryStream())
+            {
+                serializer.Serialize(testObj, stream);
+                stream.Position = 0;
+
+                var result = serializer.Deserialize<Dictionary<string, object>>(stream);
+                result.Should().NotBeNull();
+                result["Id"].ToString().Should().Be(testObj.Id.ToString());
+                result["Name"].Should().Be(testObj.Name);
+                result["Value"].Should().Be(123);
             }
         }
 

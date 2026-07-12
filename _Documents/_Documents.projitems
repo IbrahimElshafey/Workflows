@@ -13,6 +13,7 @@
     <None Include="$(MSBuildThisFileDirectory)Architecture\Command Execution Modes.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Distributed Lock Registry.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Idempotent Signal Processing.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Orchestrator-Side Distributed Timer Scheduling.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Poison Message &amp; DLQ Handling.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Runner Clustering &amp; Work Partitioning.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Runner Evaluation Logic.md" />
@@ -34,6 +35,8 @@
     <None Include="$(MSBuildThisFileDirectory)Archive\Deterministic Callback Registry to Eliminate.md" />
     <None Include="$(MSBuildThisFileDirectory)HowTo\index.md" />
     <None Include="$(MSBuildThisFileDirectory)HowTo\Migrating_Workflows_By_Sample.md" />
+    <None Include="$(MSBuildThisFileDirectory)ProjectDependencies.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Task List.md" />
     <None Include="$(MSBuildThisFileDirectory)_todo.md" />
     <None Include="$(MSBuildThisFileDirectory)README.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Commands System Specifications- draft 2.md" />

@@ -16,6 +16,8 @@ namespace Workflows.Storage.EntityFrameworkCore
 {
     public class WorkflowStore : IWorkflowStore
     {
+        public static int MockConcurrencyRetryCount { get; set; } = 0;
+
         private readonly WorkflowsDbContext _dbContext;
         private readonly IObjectSerializer _serializer;
         private readonly ITemplateRepository? _templateRepository;
@@ -43,7 +45,6 @@ namespace Workflows.Storage.EntityFrameworkCore
         {
             if (state == null) throw new ArgumentNullException(nameof(state));
 
-            // Extract new waits that are not yet persisted before we change their flag to true
             var newWaitsList = new List<WaitInfrastructureDto>();
             CollectNewWaitsRecursive(state.Waits, newWaitsList);
 
@@ -84,7 +85,9 @@ namespace Workflows.Storage.EntityFrameworkCore
 
                         foreach (var candidate in candidates)
                         {
-                            if (HasFirstWait(candidate.Waits))
+                            bool hasFirstWait = await _dbContext.SignalWaits.AnyAsync(sw => sw.WorkflowInstanceId == candidate.Id && sw.IsFirstWait) ||
+                                                await _dbContext.ExternalChildWaits.AnyAsync(ec => ec.WorkflowInstanceId == candidate.Id && ec.IsFirstWait);
+                            if (hasFirstWait)
                             {
                                 continue;
                             }
@@ -182,6 +185,12 @@ namespace Workflows.Storage.EntityFrameworkCore
                         }
                     }
 
+                    if (state.WorkflowType == "ConcurrencyRetryTest" && MockConcurrencyRetryCount > 0)
+                    {
+                        MockConcurrencyRetryCount--;
+                        throw new DbUpdateConcurrencyException("Mock concurrency conflict");
+                    }
+
                     await _dbContext.SaveChangesAsync();
                     await transaction.CommitAsync();
 
@@ -225,10 +234,6 @@ namespace Workflows.Storage.EntityFrameworkCore
                 if (wait.ChildWaits != null)
                 {
                     CollectNewWaitsRecursive(wait.ChildWaits, result);
-                }
-                if (wait is ExternalGroupWaitDto externalGroup)
-                {
-                    CollectNewWaitsRecursive(externalGroup.ExternalChildWaits, result);
                 }
             }
         }
@@ -428,7 +433,7 @@ namespace Workflows.Storage.EntityFrameworkCore
 
             var waits = dbInstance.Waits ?? new();
             MarkWaitsAsPersistedRecursive(waits);
-            await HydrateExternalChildWaitsAsync(instanceId, waits);
+            await HydrateExternalChildWaitsAsync(_dbContext, instanceId, waits);
 
             return new WorkflowStateDto
             {
@@ -443,14 +448,14 @@ namespace Workflows.Storage.EntityFrameworkCore
             };
         }
 
-        private async Task HydrateExternalChildWaitsAsync(Guid instanceId, List<WaitInfrastructureDto> waits)
+        internal static async Task HydrateExternalChildWaitsAsync(WorkflowsDbContext dbContext, Guid instanceId, List<WaitInfrastructureDto> waits)
         {
             if (waits == null) return;
             foreach (var wait in waits)
             {
                 if (wait is ExternalGroupWaitDto externalGroup)
                 {
-                    var childEntities = await _dbContext.ExternalChildWaits
+                    var childEntities = await dbContext.ExternalChildWaits
                         .Where(e => e.WorkflowInstanceId == instanceId && e.ParentWaitId == externalGroup.Id)
                         .ToListAsync();
 
@@ -459,12 +464,12 @@ namespace Workflows.Storage.EntityFrameworkCore
 
                 if (wait.ChildWaits != null)
                 {
-                    await HydrateExternalChildWaitsAsync(instanceId, wait.ChildWaits);
+                    await HydrateExternalChildWaitsAsync(dbContext, instanceId, wait.ChildWaits);
                 }
             }
         }
 
-        private static WaitInfrastructureDto MapToWaitDto(ExternalChildWaitEntity entity)
+        internal static WaitInfrastructureDto MapToWaitDto(ExternalChildWaitEntity entity)
         {
             WaitInfrastructureDto dto;
             if (entity.ExecutionTime.HasValue)
@@ -505,6 +510,10 @@ namespace Workflows.Storage.EntityFrameworkCore
             dto.Status = (WaitStatus)entity.Status;
             dto.Created = entity.Created;
             dto.IsPersisted = true;
+            if (dto is SignalWaitDto signalWaitDto)
+            {
+                signalWaitDto.IsFirstWait = entity.IsFirstWait;
+            }
             return dto;
         }
 
@@ -692,6 +701,7 @@ namespace Workflows.Storage.EntityFrameworkCore
             {
                 externalChild.Status = (int)status;
                 _dbContext.ExternalChildWaits.Update(externalChild);
+                return;
             }
         }
 

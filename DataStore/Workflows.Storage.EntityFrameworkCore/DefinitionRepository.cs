@@ -172,6 +172,9 @@ namespace Workflows.Storage.EntityFrameworkCore
 
                             if (instance != null)
                             {
+                                // Hydrate external child waits if any
+                                await WorkflowStore.HydrateExternalChildWaitsAsync(_dbContext, instanceId, instance.Waits);
+
                                 // C. Validate that the first wait contains at least one SignalWait
                                 ValidateFirstWait(instance.Waits);
 

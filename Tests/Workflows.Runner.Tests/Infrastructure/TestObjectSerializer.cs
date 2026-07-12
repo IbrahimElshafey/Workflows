@@ -37,5 +37,23 @@ namespace Workflows.Runner.Tests.Infrastructure
             if (string.IsNullOrEmpty(serialized)) return default;
             return JsonSerializer.Deserialize<TResult>(serialized, _options);
         }
+
+        public void Serialize(object obj, System.IO.Stream stream, SerializationScope scope = SerializationScope.Standard)
+        {
+            if (obj == null) return;
+            JsonSerializer.Serialize(stream, obj, _options);
+        }
+
+        public TResult Deserialize<TResult>(System.IO.Stream stream, SerializationScope scope = SerializationScope.Standard)
+        {
+            if (stream == null) return default;
+            return JsonSerializer.Deserialize<TResult>(stream, _options);
+        }
+
+        public object Deserialize(System.IO.Stream stream, Type type, SerializationScope scope = SerializationScope.Standard)
+        {
+            if (stream == null) return null;
+            return JsonSerializer.Deserialize(stream, type, _options);
+        }
     }
 }

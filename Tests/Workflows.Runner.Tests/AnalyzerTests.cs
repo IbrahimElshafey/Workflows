@@ -832,6 +832,30 @@ namespace TestWorkflows.Archive.MyWorkflow.V1
 
             return applyChangesOperation.ChangedSolution;
         }
+
+        [Fact]
+        public async Task WF209_MissingWorkflowAttribute_OnClassWithRunMethod_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    public sealed class ClassWithRunMethod
+    {
+        public async IAsyncEnumerable<Wait> Run()
+        {
+            yield break;
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+            diagnostics.Should().ContainSingle(d => d.Id == "WF209");
+            diagnostics.First(d => d.Id == "WF209").GetMessage().Should().Contain("is missing [WorkflowAttribute]");
+        }
     }
 
     public class InMemoryAdditionalText : AdditionalText

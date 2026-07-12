@@ -1,0 +1,71 @@
+@model DefinitionDetailViewModel
+@{
+    ViewData["Title"] = $"{Model.WorkflowName} v{Model.Version}";
+}
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+    <h1 class="h2">Definition: @Model.WorkflowName <span class="badge bg-secondary">v@(Model.Version)</span></h1>
+    <a href="/admin/Definitions" class="btn btn-outline-secondary btn-sm">Back to Definitions</a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">Metadata</div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item"><strong>Type Name:</strong> <code>@Model.WorkflowTypeName</code></li>
+                <li class="list-group-item"><strong>Registered At:</strong> @Model.RegisteredAt.ToString("g")</li>
+                <li class="list-group-item"><strong>Instance Count:</strong> @Model.InstanceCount</li>
+            </ul>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">Schema</div>
+            <div class="card-body p-0">
+                <pre class="m-0 p-3 bg-light"><code>@Model.WorkflowTypeSchema</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Visual Topology</div>
+    <div class="card-body">
+        <div id="topologyGraph" style="height: 500px; border: 1px solid #dee2e6;"></div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        function getNodeColor(type) {
+            switch (type) {
+                case 'Start': return '#d1e7dd';
+                case 'End': return '#f8d7da';
+                case 'SignalWait': return '#fff3cd';
+                case 'TimeWait': return '#cff4fc';
+                case 'CommandWait': return '#e2e3e5';
+                case 'CompensationWait': return '#f8d7da';
+                case 'SubWorkflowWait': return '#d1e7dd';
+                default: return '#f8f9fa';
+            }
+        }
+
+        const rawNodes = @Html.Raw(Json.Serialize(Model.Topology.Nodes));
+        const rawEdges = @Html.Raw(Json.Serialize(Model.Topology.Edges));
+
+        const nodes = new vis.DataSet(rawNodes.map(n => ({ id: n.Id, label: n.Label, color: getNodeColor(n.Type) })));
+        const edges = new vis.DataSet(rawEdges.map(e => ({ from: e.From, to: e.To, label: e.Label })));
+
+        const container = document.getElementById('topologyGraph');
+        const data = { nodes: nodes, edges: edges };
+        const options = {
+            layout: { hierarchical: { direction: 'LR', sortMethod: 'directed' } },
+            nodes: { shape: 'box', margin: 10, font: { size: 14 } },
+            edges: { arrows: { to: { enabled: true } }, smooth: { type: 'cubicBezier' } },
+            physics: { enabled: false }
+        };
+
+        new vis.Network(container, data, options);
+    </script>
+}

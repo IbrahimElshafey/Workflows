@@ -1,0 +1,62 @@
+@model DefinitionListViewModel
+@{
+    ViewData["Title"] = "Definitions";
+}
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+    <h1 class="h2">Workflow Definitions</h1>
+</div>
+
+<div class="accordion" id="definitionsAccordion">
+    @if (Model.Groups.Any())
+    {
+        int index = 0;
+        foreach (var group in Model.Groups)
+        {
+            var collapseId = $"collapse{index}";
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button @(index == 0 ? "" : "collapsed")" type="button" data-bs-toggle="collapse" data-bs-target="#@collapseId">
+                        <strong>@group.WorkflowName</strong>
+                        <span class="badge bg-primary ms-2">@group.Versions.Count versions</span>
+                        <span class="badge bg-secondary ms-2">@group.TotalInstances instances</span>
+                    </button>
+                </h2>
+                <div id="@collapseId" class="accordion-collapse collapse @(index == 0 ? "show" : "")" data-bs-parent="#definitionsAccordion">
+                    <div class="accordion-body p-0">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Version</th>
+                                    <th>Type Name</th>
+                                    <th>Registered At</th>
+                                    <th>Instances</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var version in group.Versions)
+                                {
+                                    <tr>
+                                        <td>@version.Version</td>
+                                        <td><code>@version.WorkflowTypeName</code></td>
+                                        <td>@version.RegisteredAt.ToString("g")</td>
+                                        <td>@version.InstanceCount</td>
+                                        <td>
+                                            <a href="/admin/Definitions/Detail/@Uri.EscapeDataString(version.WorkflowName)/@version.Version" class="btn btn-sm btn-outline-primary">View Topology</a>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            index++;
+        }
+    }
+    else
+    {
+        <div class="alert alert-info">No workflow definitions registered.</div>
+    }
+</div>

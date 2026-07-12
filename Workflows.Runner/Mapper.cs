@@ -443,7 +443,8 @@ namespace Workflows.Runner
             }
             else
             {
-                templateHashKey = $"{signalWait.SignalIdentifier}:";
+                var wfName = signalWait.WorkflowContainer?.GetType().Name ?? string.Empty;
+                templateHashKey = $"{signalWait.SignalIdentifier}:{wfName}";
             }
             // Register the live AfterMatchAction delegate in the CallbackRegistry so the
             // SignalWaitMatcher can retrieve it by the stable hash key without reflection.
