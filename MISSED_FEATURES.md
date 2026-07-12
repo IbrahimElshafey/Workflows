@@ -12,7 +12,7 @@ This document tracks the implementation status of all planned and required produ
 |---|---------|--------|--------|
 | 1.1 | Distributed Timer Scheduling | ✅ Implemented | `c88a148` |
 | 1.2 | Side-by-Side Version Routing | ✅ Implemented | `014eafc` |
-| 1.3 | Composite Wait Group / GroupWait Pruning | 🟡 Partial | — |
+| 1.3 | Composite Wait Group / GroupWait Pruning | ✅ Implemented | runner + store |
 | 1.4 | Optimistic Concurrency Retry Pipeline | 🟡 Partial | — |
 | 1.5 | Massive Fan-Out (WaitMany / WaitAny) | ✅ Implemented | `014eafc` |
 | 1.6 | Background DB Pruning Worker | 🟡 Partial | — |
@@ -53,9 +53,8 @@ This document tracks the implementation status of all planned and required produ
 ---
 
 ### 1.3. Composite Wait Group Routing & Downward Pruning (`GroupWait`)
-- **Status:** 🟡 **Partially Implemented**
-- **The Issue:** `GroupWait.MatchAny()` correctly short-circuits at the runner level, but the Orchestrator does not cancel sibling timer waits or signal waits that become irrelevant once one branch fires. For example, in a `WaitGroup(delay, signal).MatchAny()`, once the `delay` fires, the registered `SignalWait` in the DB is not pruned and could still match future signals.
-- **Next step:** Add a post-match pruning pass in `Orchestrator.ProcessSignalAsync` that cancels/removes sibling wait DB rows after a `MatchAny` group resolves.
+- **Status:** ✅ **Implemented** — runner + store pipeline
+- **What was built:** `GroupCompletionChecker.PruneRemainingChildren` marks all non-completed sibling `WaitStatus.Canceled` and adds their IDs to `context.ConsumedWaitsIds` for both `MatchAny` (`GroupWaitFirst`) and `GroupWaitWithExpression`. `WorkflowRunner` packages `ConsumedWaitsIds` into `WorkflowExecutionResponse`, which `WorkflowRunnerClient` passes directly to `SaveContextSyncAsync`. The store then calls `UpdateWaitStatusAsync(id, Canceled)` for each consumed ID inside the same transaction, correctly updating all concrete wait tables (SignalWaits, TimeWaits, CommandWaits) in the DB. Pruning is recursive — nested child waits of pruned children are also cancelled via `PruneChildrenRecursive`.
 
 ---
 
