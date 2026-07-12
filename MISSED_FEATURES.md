@@ -14,7 +14,7 @@ This document tracks the implementation status of all planned and required produ
 | 1.2 | Side-by-Side Version Routing | ✅ Implemented | `014eafc` |
 | 1.3 | Composite Wait Group / GroupWait Pruning | ✅ Implemented | runner + store |
 | 1.4 | Optimistic Concurrency Retry Pipeline | 🟡 Partial | — |
-| 1.5 | Massive Fan-Out (WaitMany / WaitAny) | ✅ Implemented | `014eafc` |
+| 1.5 | Massive Fan-Out (WaitMany / WaitAny) | 🟡 Impl, not integration-tested | `014eafc` |
 | 1.6 | Background DB Pruning Worker | 🟡 Partial | — |
 | 1.7 | High-Performance JSON Serialization | 🟡 Partial | — |
 | 1.8 | Roslyn Analyzer — Attribute Verification | 🟡 Partial | — |
@@ -66,15 +66,17 @@ This document tracks the implementation status of all planned and required produ
 ---
 
 ### 1.5. Massive Fan-Out (External State Pattern)
-- **Status:** ✅ **Implemented** — `014eafc`
+- **Status:** 🟡 **Implemented but not integration-tested**
 - **What was built:**
-  - New `WaitMany` / `WaitAny` DSL methods on `WorkflowContainer`
-  - `ExternalGroupWait` / `ExternalGroupWaitDto` model a fan-out group persisted outside the JSON state blob
-  - `ExternalChildWaits` relational table stores individual child wait metadata
-  - `ExternalGroupWaitSerializer` handles serialization, DB persistence, and hydration of child wait rows
-  - `GroupCompletionChecker` evaluates `WaitMany` (all children complete) vs `WaitAny` (first child fires, siblings pruned)
-  - `WorkflowStore` updated with full `ExternalChildWaits` CRUD; `WaitFinder` routes signals to external group children
-  - 14 new tests in `MassiveFanOutTests.cs`
+  - `WaitMany` / `WaitAny` DSL methods on `WorkflowContainer`
+  - `ExternalGroupWait` / `ExternalGroupWaitDto` with `[JsonIgnore]` on `ExternalChildWaits` — children are **not** serialized into the JSON state blob
+  - `ExternalChildWaits` relational DB table (`ExternalChildWaitEntity`) with signal path, time wait, and command wait fields
+  - `ExternalGroupWaitSerializer` maps children to DTOs and stores them in the table at yield time
+  - `HydrateExternalChildWaitsAsync` in `WorkflowStore` re-loads child waits from the DB table when the instance is read back
+  - `FindInstancesWaitingForSignalAsync` queries the `ExternalChildWaits` table for signal/timer matching
+  - `GroupCompletionChecker` evaluates `WaitMany` (all) / `WaitAny` (any one) semantics and prunes siblings
+- **Critical gap — missing integration tests:** The existing `MassiveFanOutTests` use `WorkflowTestBuilder`, which is a **mock runner client** — child waits are passed directly in-memory through `request.Waits` and never go through the real `SaveContextSyncAsync` → `HydrateExternalChildWaitsAsync` round-trip. The DB persistence path has never been exercised by an automated test against the real SQLite store.
+- **Next step:** Add integration tests in `OrchestrationIntegrationTests` using the full SQLite store (like the existing orchestration tests) to prove the DB write → re-hydrate → signal → complete cycle works correctly.
 
 ---
 
