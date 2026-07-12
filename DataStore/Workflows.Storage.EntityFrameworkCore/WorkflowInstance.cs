@@ -23,6 +23,12 @@ namespace Workflows.Storage.EntityFrameworkCore
         public DateTime? LockedAt { get; set; }
         public DateTime? LockExpiresAt { get; set; }
 
+        // Denormalized admin/query-friendly columns (maintained by WorkflowStore)
+        public DateTime? CompletedAt { get; set; }
+        public int ActiveWaitCount { get; set; }
+        public string? ErrorMessage { get; set; }
+        public string? LastAdvanceReason { get; set; }
+
         // JSON Owned property
         public WorkflowStateObject StateObject { get; set; } = new();
 

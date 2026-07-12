@@ -100,6 +100,11 @@ namespace Workflows.Storage.EntityFrameworkCore
                         }
                     }
 
+                    var activeWaitCount = CountActiveWaitsRecursive(state.Waits);
+                    var lastAdvanceReason = BuildLastAdvanceReason(state.Waits, triggeringSignalId);
+                    var errorMessage = ExtractErrorMessage(state);
+                    var completedAt = IsCompletedStatus(state.Status) ? (DateTime?)DateTime.UtcNow : null;
+
                     if (dbInstance == null)
                     {
                         dbInstance = new WorkflowInstance
@@ -111,7 +116,11 @@ namespace Workflows.Storage.EntityFrameworkCore
                             WorkflowVersion = state.WorkflowVersion,
                             StateObject = state.StateObject ?? new(),
                             CancellationHistory = state.CancellationHistory ?? new(),
-                            Waits = state.Waits ?? new()
+                            Waits = state.Waits ?? new(),
+                            ActiveWaitCount = activeWaitCount,
+                            LastAdvanceReason = lastAdvanceReason,
+                            ErrorMessage = errorMessage,
+                            CompletedAt = completedAt
                         };
                         _dbContext.WorkflowInstances.Add(dbInstance);
                     }
@@ -122,6 +131,11 @@ namespace Workflows.Storage.EntityFrameworkCore
                         dbInstance.StateObject = state.StateObject ?? new();
                         dbInstance.CancellationHistory = state.CancellationHistory ?? new();
                         dbInstance.Waits = state.Waits ?? new();
+                        dbInstance.ActiveWaitCount = activeWaitCount;
+                        dbInstance.LastAdvanceReason = lastAdvanceReason;
+                        dbInstance.ErrorMessage = errorMessage;
+                        if (completedAt.HasValue)
+                            dbInstance.CompletedAt = completedAt;
                         _dbContext.WorkflowInstances.Update(dbInstance);
                     }
 
@@ -1049,5 +1063,99 @@ namespace Workflows.Storage.EntityFrameworkCore
                 await _dbContext.SaveChangesAsync();
             }
         }
+
+        #region Denormalized Admin Columns Helpers
+
+        private static int CountActiveWaitsRecursive(IEnumerable<WaitInfrastructureDto>? waits)
+        {
+            if (waits == null) return 0;
+            int count = 0;
+            foreach (var wait in waits)
+            {
+                if (wait.Status == WaitStatus.Waiting)
+                    count++;
+
+                if (wait.ChildWaits != null)
+                    count += CountActiveWaitsRecursive(wait.ChildWaits);
+
+                if (wait is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+                    count += CountActiveWaitsRecursive(externalGroup.ExternalChildWaits);
+            }
+            return count;
+        }
+
+        private static string? BuildLastAdvanceReason(IEnumerable<WaitInfrastructureDto>? waits, Guid? triggeringSignalId)
+        {
+            if (triggeringSignalId.HasValue)
+                return $"Signal: {triggeringSignalId.Value}";
+
+            var matchedWait = FindMostRecentlyMatchedWait(waits);
+            if (matchedWait == null) return null;
+
+            return matchedWait switch
+            {
+                SignalWaitDto sw => $"Signal: {sw.SignalIdentifier}",
+                CommandWaitDto cw => $"Command: {cw.HandlerKey}",
+                TimeWaitDto tw => $"Timer: {tw.UniqueMatchId}",
+                CompensationWaitDto cw => $"Compensation: {cw.Token}",
+                _ => $"Wait: {matchedWait.WaitName}"
+            };
+        }
+
+        private static WaitInfrastructureDto? FindMostRecentlyMatchedWait(IEnumerable<WaitInfrastructureDto>? waits)
+        {
+            if (waits == null) return null;
+            WaitInfrastructureDto? candidate = null;
+            foreach (var wait in waits)
+            {
+                if (wait.Status == WaitStatus.Matched || wait.Status == WaitStatus.Completed)
+                {
+                    if (candidate == null || wait.Created > candidate.Created)
+                        candidate = wait;
+                }
+
+                var childCandidate = FindMostRecentlyMatchedWait(wait.ChildWaits);
+                if (childCandidate != null && (candidate == null || childCandidate.Created > candidate.Created))
+                    candidate = childCandidate;
+
+                if (wait is ExternalGroupWaitDto externalGroup)
+                {
+                    var externalCandidate = FindMostRecentlyMatchedWait(externalGroup.ExternalChildWaits);
+                    if (externalCandidate != null && (candidate == null || externalCandidate.Created > candidate.Created))
+                        candidate = externalCandidate;
+                }
+            }
+            return candidate;
+        }
+
+        private static string? ExtractErrorMessage(WorkflowStateDto state)
+        {
+            if (state.Status != WorkflowInstanceStatus.InError)
+                return null;
+
+            // Try to extract an error message from the state object's instance if available.
+            var instance = state.StateObject?.Instance;
+            if (instance == null) return null;
+
+            var errorProperty = instance.GetType().GetProperty("ErrorMessage")
+                ?? instance.GetType().GetProperty("Error");
+            if (errorProperty != null)
+            {
+                var value = errorProperty.GetValue(instance);
+                if (value != null)
+                    return value.ToString();
+            }
+
+            return null;
+        }
+
+        private static bool IsCompletedStatus(WorkflowInstanceStatus status)
+        {
+            return status == WorkflowInstanceStatus.Completed
+                || status == WorkflowInstanceStatus.InError
+                || status == WorkflowInstanceStatus.Canceled;
+        }
+
+        #endregion
     }
 }

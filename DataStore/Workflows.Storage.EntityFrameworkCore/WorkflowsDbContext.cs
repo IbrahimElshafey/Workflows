@@ -145,6 +145,12 @@ namespace Workflows.Storage.EntityFrameworkCore
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.ConcurrencyToken).IsConcurrencyToken();
 
+                // Indexes for admin UI queries
+                entity.HasIndex(e => e.Status);
+                entity.HasIndex(e => new { e.WorkflowType, e.Status });
+                entity.HasIndex(e => e.Created);
+                entity.HasIndex(e => e.CompletedAt);
+
                 entity.Property(e => e.StateObject)
                       .HasConversion(
                           v => JsonConvert.SerializeObject(v, PolymorphicSerializerSettings),

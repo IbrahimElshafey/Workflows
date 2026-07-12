@@ -1,0 +1,196 @@
+@model InstanceListViewModel
+@{
+    ViewData["Title"] = "Instances";
+}
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+    <h1 class="h2">Workflow Instances</h1>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">Filter</div>
+    <div class="card-body">
+        <form method="get" asp-action="Index" asp-controller="Instances">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label asp-for="Filter.InstanceId" class="form-label">Instance ID</label>
+                    <input asp-for="Filter.InstanceId" class="form-control" placeholder="Guid" />
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="Filter.WorkflowType" class="form-label">Workflow Type</label>
+                    <input asp-for="Filter.WorkflowType" class="form-control" placeholder="e.g. OrderWorkflow" />
+                </div>
+                <div class="col-md-2">
+                    <label asp-for="Filter.Status" class="form-label">Status</label>
+                    <select asp-for="Filter.Status" class="form-select" asp-items="Html.GetEnumSelectList<WorkflowInstanceStatus>()">
+                        <option value="">All</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label asp-for="Filter.CreatedAfter" class="form-label">Created After</label>
+                    <input asp-for="Filter.CreatedAfter" type="date" class="form-control" />
+                </div>
+                <div class="col-md-2">
+                    <label asp-for="Filter.CreatedBefore" class="form-label">Created Before</label>
+                    <input asp-for="Filter.CreatedBefore" type="date" class="form-control" />
+                </div>
+                <div class="col-md-2">
+                    <label asp-for="Filter.HasError" class="form-label">Has Error</label>
+                    <select asp-for="Filter.HasError" class="form-select">
+                        <option value="">All</option>
+                        <option value="true">Yes</option>
+                        <option value="false">No</option>
+                    </select>
+                </div>
+            </div>
+            <div class="row mt-3">
+                <div class="col">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-search"></i> Search</button>
+                    <a href="/admin/Instances" class="btn btn-outline-secondary">Reset</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Results (@Model.PagedResult.TotalCount total)</span>
+        <span>Page @Model.PagedResult.Page of @Model.PagedResult.TotalPages</span>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-striped table-hover mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>ID</th>
+                    <th>Workflow</th>
+                    <th>Version</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Completed</th>
+                    <th>Active Waits</th>
+                    <th>Last Advance</th>
+                    <th>Lock</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (Model.PagedResult.Items.Any())
+                {
+                    foreach (var item in Model.PagedResult.Items)
+                    {
+                        string statusBadge = item.Status switch
+                        {
+                            WorkflowInstanceStatus.Running => "bg-success",
+                            WorkflowInstanceStatus.InProgress => "bg-warning text-dark",
+                            WorkflowInstanceStatus.Completed => "bg-info",
+                            WorkflowInstanceStatus.InError => "bg-danger",
+                            WorkflowInstanceStatus.Canceled => "bg-secondary",
+                            _ => "bg-light text-dark"
+                        };
+                        <tr class="@(item.Status == WorkflowInstanceStatus.InError ? "table-danger" : "")">
+                            <td><code class="small">@item.Id</code></td>
+                            <td>@item.WorkflowType</td>
+                            <td>@item.WorkflowVersion</td>
+                            <td><span class="badge @statusBadge">@item.Status</span></td>
+                            <td>@item.Created.ToString("g")</td>
+                            <td>@(item.CompletedAt?.ToString("g") ?? "-")</td>
+                            <td>@item.ActiveWaitsCount</td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(item.LastAdvanceReason))
+                                {
+                                    <span class="small text-muted">@item.LastAdvanceReason</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">-</span>
+                                }
+                            </td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(item.LockedBy))
+                                {
+                                    <span class="badge bg-dark">@item.LockedBy</span>
+                                    @if (item.LockExpiresAt.HasValue && item.LockExpiresAt.Value < DateTime.UtcNow)
+                                    {
+                                        <span class="badge bg-danger">Expired</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="text-muted">-</span>
+                                }
+                            </td>
+                            <td>
+                                <a href="/admin/Instances/Detail/@item.Id" class="btn btn-sm btn-outline-primary">Details</a>
+                            </td>
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-4">No instances found.</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @if (Model.PagedResult.TotalPages > 1)
+    {
+        <div class="card-footer">
+            <nav>
+                <ul class="pagination justify-content-center mb-0">
+                    @if (Model.PagedResult.HasPreviousPage)
+                    {
+                        <li class="page-item">
+                            <a class="page-link" href="/admin/Instances?@BuildQueryString(Model.Filter, Model.PagedResult.Page - 1)">Previous</a>
+                        </li>
+                    }
+                    else
+                    {
+                        <li class="page-item disabled"><span class="page-link">Previous</span></li>
+                    }
+
+                    @for (int i = 1; i <= Model.PagedResult.TotalPages; i++)
+                    {
+                        if (i == Model.PagedResult.Page)
+                        {
+                            <li class="page-item active"><span class="page-link">@i</span></li>
+                        }
+                        else
+                        {
+                            <li class="page-item"><a class="page-link" href="/admin/Instances?@BuildQueryString(Model.Filter, i)">@i</a></li>
+                        }
+                    }
+
+                    @if (Model.PagedResult.HasNextPage)
+                    {
+                        <li class="page-item">
+                            <a class="page-link" href="/admin/Instances?@BuildQueryString(Model.Filter, Model.PagedResult.Page + 1)">Next</a>
+                        </li>
+                    }
+                    else
+                    {
+                        <li class="page-item disabled"><span class="page-link">Next</span></li>
+                    }
+                </ul>
+            </nav>
+        </div>
+    }
+</div>
+
+@functions {
+    string BuildQueryString(InstanceFilterViewModel filter, int page)
+    {
+        var qs = new System.Collections.Generic.List<string>();
+        qs.Add($"Filter.Page={page}");
+        qs.Add($"Filter.PageSize={filter.PageSize}");
+        if (!string.IsNullOrWhiteSpace(filter.InstanceId)) qs.Add($"Filter.InstanceId={Uri.EscapeDataString(filter.InstanceId)}");
+        if (!string.IsNullOrWhiteSpace(filter.WorkflowType)) qs.Add($"Filter.WorkflowType={Uri.EscapeDataString(filter.WorkflowType)}");
+        if (filter.Status.HasValue) qs.Add($"Filter.Status={filter.Status.Value}");
+        if (filter.CreatedAfter.HasValue) qs.Add($"Filter.CreatedAfter={filter.CreatedAfter.Value:yyyy-MM-dd}");
+        if (filter.CreatedBefore.HasValue) qs.Add($"Filter.CreatedBefore={filter.CreatedBefore.Value:yyyy-MM-dd}");
+        if (filter.HasError.HasValue) qs.Add($"Filter.HasError={filter.HasError.Value.ToString().ToLowerInvariant()}");
+        return string.Join("&", qs);
+    }
+}
