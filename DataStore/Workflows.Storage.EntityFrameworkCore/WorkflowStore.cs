@@ -142,14 +142,20 @@ namespace Workflows.Storage.EntityFrameworkCore
                     if (newWaitsList.Count > 0)
                     {
                         var flattenedRecords = new List<WorkflowWaitEntity>();
+                        var externalChildRecords = new List<ExternalChildWaitEntity>();
                         foreach (var wait in newWaitsList)
                         {
-                            FlattenAndCollectWaits(wait, null, state.Id, flattenedRecords);
+                            FlattenAndCollectWaits(wait, null, state.Id, flattenedRecords, externalChildRecords);
                         }
 
                         foreach (var record in flattenedRecords)
                         {
                             await UpsertWaitEntityAsync(record);
+                        }
+
+                        foreach (var record in externalChildRecords)
+                        {
+                            await UpsertExternalChildWaitEntityAsync(record);
                         }
                     }
 
@@ -209,6 +215,10 @@ namespace Workflows.Storage.EntityFrameworkCore
                 {
                     CollectNewWaitsRecursive(wait.ChildWaits, result);
                 }
+                if (wait is ExternalGroupWaitDto externalGroup)
+                {
+                    CollectNewWaitsRecursive(externalGroup.ExternalChildWaits, result);
+                }
             }
         }
 
@@ -221,6 +231,10 @@ namespace Workflows.Storage.EntityFrameworkCore
                 if (wait.ChildWaits != null)
                 {
                     MarkWaitsAsPersistedRecursive(wait.ChildWaits);
+                }
+                if (wait is ExternalGroupWaitDto externalGroup)
+                {
+                    MarkWaitsAsPersistedRecursive(externalGroup.ExternalChildWaits);
                 }
             }
         }
@@ -241,6 +255,10 @@ namespace Workflows.Storage.EntityFrameworkCore
                 {
                     CollectCancelledWaitsRecursive(wait.ChildWaits, cancelledTokens, result);
                 }
+                if (wait is ExternalGroupWaitDto externalGroup)
+                {
+                    CollectCancelledWaitsRecursive(externalGroup.ExternalChildWaits, cancelledTokens, result);
+                }
             }
         }
 
@@ -248,10 +266,25 @@ namespace Workflows.Storage.EntityFrameworkCore
             WaitInfrastructureDto wait,
             string? parentWaitId,
             Guid workflowInstanceId,
-            List<WorkflowWaitEntity> resultList)
+            List<WorkflowWaitEntity> resultList,
+            List<ExternalChildWaitEntity> externalChildRecords)
         {
             if (wait == null) return;
             if (resultList.Any(r => r.Id == wait.Id)) return;
+
+            if (wait is ExternalGroupWaitDto externalGroup)
+            {
+                // Parent external group is stored in the JSON state blob only.
+                // Its children are persisted in the dedicated ExternalChildWaits table.
+                if (externalGroup.ExternalChildWaits != null)
+                {
+                    foreach (var child in externalGroup.ExternalChildWaits)
+                    {
+                        FlattenAndCollectExternalChildWait(child, externalGroup.Id, workflowInstanceId, externalChildRecords);
+                    }
+                }
+                return;
+            }
 
             WorkflowWaitEntity record;
             if (wait is SignalWaitDto signalWait)
@@ -317,9 +350,54 @@ namespace Workflows.Storage.EntityFrameworkCore
             {
                 foreach (var child in wait.ChildWaits)
                 {
-                    FlattenAndCollectWaits(child, wait.Id, workflowInstanceId, resultList);
+                    FlattenAndCollectWaits(child, wait.Id, workflowInstanceId, resultList, externalChildRecords);
                 }
             }
+        }
+
+        private void FlattenAndCollectExternalChildWait(
+            WaitInfrastructureDto wait,
+            string parentWaitId,
+            Guid workflowInstanceId,
+            List<ExternalChildWaitEntity> resultList)
+        {
+            if (wait == null) return;
+            if (resultList.Any(r => r.Id == wait.Id)) return;
+
+            string? signalExactMatchPaths = null;
+            if (wait is SignalWaitDto signalWait && !string.IsNullOrEmpty(signalWait.TemplateHashKey))
+            {
+                var template = _templateRepository?.GetTemplate(signalWait.TemplateHashKey);
+                if (template?.SignalExactMatchPathsJson != null && template.SignalExactMatchPathsJson != "[]")
+                {
+                    var paths = System.Text.Json.JsonSerializer.Deserialize<List<string>>(template.SignalExactMatchPathsJson);
+                    signalExactMatchPaths = paths != null ? string.Join(",", paths) : null;
+                }
+            }
+
+            var record = new ExternalChildWaitEntity
+            {
+                Id = wait.Id,
+                WorkflowInstanceId = workflowInstanceId,
+                ParentWaitId = parentWaitId,
+                ChildWaitType = (int)wait.WaitType,
+                Status = (int)wait.Status,
+                SignalPath = wait is SignalWaitDto sw ? sw.SignalIdentifier : null,
+                SignalExactMatchPaths = signalExactMatchPaths,
+                ExactMatchFilter = wait is SignalWaitDto sw2 ? sw2.ExactMatchPart : null,
+                IsFirstWait = wait is SignalWaitDto sw3 && sw3.IsFirstWait,
+                TemplateHashKey = wait is SignalWaitDto sw4 ? sw4.TemplateHashKey : null,
+                UniqueMatchId = wait is TimeWaitDto tw ? tw.UniqueMatchId : null,
+                ExecutionTime = wait is TimeWaitDto tw2 ? tw2.ExecutionTime : null,
+                CommandWaitId = wait is CommandWaitDto cw ? cw.Id : null,
+                Token = wait is CompensationWaitDto cw2 ? cw2.Token : null,
+                CancelTokens = wait.CancelTokens != null && wait.CancelTokens.Any()
+                    ? string.Join(",", wait.CancelTokens)
+                    : null,
+                Created = wait.Created
+            };
+
+            resultList.Add(record);
         }
 
         public async Task<WorkflowStateDto> GetInstanceStateAsync(Guid instanceId)
@@ -348,6 +426,7 @@ namespace Workflows.Storage.EntityFrameworkCore
 
             var waits = dbInstance.Waits ?? new();
             MarkWaitsAsPersistedRecursive(waits);
+            await HydrateExternalChildWaitsAsync(instanceId, waits);
 
             return new WorkflowStateDto
             {
@@ -362,6 +441,71 @@ namespace Workflows.Storage.EntityFrameworkCore
             };
         }
 
+        private async Task HydrateExternalChildWaitsAsync(Guid instanceId, List<WaitInfrastructureDto> waits)
+        {
+            if (waits == null) return;
+            foreach (var wait in waits)
+            {
+                if (wait is ExternalGroupWaitDto externalGroup)
+                {
+                    var childEntities = await _dbContext.ExternalChildWaits
+                        .Where(e => e.WorkflowInstanceId == instanceId && e.ParentWaitId == externalGroup.Id)
+                        .ToListAsync();
+
+                    externalGroup.ExternalChildWaits = childEntities.Select(MapToWaitDto).ToList();
+                }
+
+                if (wait.ChildWaits != null)
+                {
+                    await HydrateExternalChildWaitsAsync(instanceId, wait.ChildWaits);
+                }
+            }
+        }
+
+        private static WaitInfrastructureDto MapToWaitDto(ExternalChildWaitEntity entity)
+        {
+            WaitInfrastructureDto dto;
+            if (entity.ExecutionTime.HasValue)
+            {
+                dto = new TimeWaitDto
+                {
+                    UniqueMatchId = entity.UniqueMatchId,
+                    ExecutionTime = entity.ExecutionTime.GetValueOrDefault()
+                };
+            }
+            else if (!string.IsNullOrEmpty(entity.CommandWaitId))
+            {
+                dto = new CommandWaitDto
+                {
+                    CommandData = null,
+                    HandlerKey = string.Empty
+                };
+            }
+            else if (!string.IsNullOrEmpty(entity.Token))
+            {
+                dto = new CompensationWaitDto
+                {
+                    Token = entity.Token
+                };
+            }
+            else
+            {
+                dto = new SignalWaitDto
+                {
+                    SignalIdentifier = entity.SignalPath ?? string.Empty,
+                    TemplateHashKey = entity.TemplateHashKey,
+                    ExactMatchPart = entity.ExactMatchFilter
+                };
+            }
+
+            dto.Id = entity.Id;
+            dto.WaitType = (WaitType)entity.ChildWaitType;
+            dto.Status = (WaitStatus)entity.Status;
+            dto.Created = entity.Created;
+            dto.IsPersisted = true;
+            return dto;
+        }
+
         public async Task<List<Guid>> FindInstancesWaitingForSignalAsync(string signalPath, string signalDataJson)
         {
             var matchedInstanceIds = new List<Guid>();
@@ -373,6 +517,13 @@ namespace Workflows.Storage.EntityFrameworkCore
                 .ToListAsync();
             matchedInstanceIds.AddRange(matchedTimeWaits);
 
+            // 1b. Query external child time waits
+            var matchedExternalTimeWaits = await _dbContext.ExternalChildWaits
+                .Where(w => w.UniqueMatchId == signalPath && w.Status == (int)WaitStatus.Waiting)
+                .Select(w => w.WorkflowInstanceId)
+                .ToListAsync();
+            matchedInstanceIds.AddRange(matchedExternalTimeWaits);
+
             // 2. Get distinct exact match path configurations for active waits of this signal path
             var rawMatchPaths = await _dbContext.SignalWaits
                 .Where(w => w.SignalPath == signalPath && w.Status == (int)WaitStatus.Waiting)
@@ -380,7 +531,14 @@ namespace Workflows.Storage.EntityFrameworkCore
                 .Distinct()
                 .ToListAsync();
 
+            var externalRawMatchPaths = await _dbContext.ExternalChildWaits
+                .Where(w => w.SignalPath == signalPath && w.Status == (int)WaitStatus.Waiting)
+                .Select(w => w.SignalExactMatchPaths)
+                .Distinct()
+                .ToListAsync();
+
             var distinctMatchPaths = rawMatchPaths
+                .Concat(externalRawMatchPaths)
                 .Select(p => p ?? string.Empty)
                 .Distinct()
                 .ToList();
@@ -396,6 +554,13 @@ namespace Workflows.Storage.EntityFrameworkCore
                         .Distinct()
                         .ToListAsync();
                     matchedInstanceIds.AddRange(allSignalMatched);
+
+                    var allExternalSignalMatched = await _dbContext.ExternalChildWaits
+                        .Where(w => w.SignalPath == signalPath && w.Status == (int)WaitStatus.Waiting)
+                        .Select(w => w.WorkflowInstanceId)
+                        .Distinct()
+                        .ToListAsync();
+                    matchedInstanceIds.AddRange(allExternalSignalMatched);
                 }
                 else
                 {
@@ -422,6 +587,15 @@ namespace Workflows.Storage.EntityFrameworkCore
                                 .ToListAsync();
 
                             matchedInstanceIds.AddRange(broadcastIds);
+
+                            var externalBroadcastIds = await _dbContext.ExternalChildWaits
+                                .Where(w => w.SignalPath == signalPath
+                                         && w.Status == (int)WaitStatus.Waiting
+                                         && (w.SignalExactMatchPaths == "" || w.SignalExactMatchPaths == null))
+                                .Select(w => w.WorkflowInstanceId)
+                                .ToListAsync();
+
+                            matchedInstanceIds.AddRange(externalBroadcastIds);
                         }
                         else
                         {
@@ -464,6 +638,16 @@ namespace Workflows.Storage.EntityFrameworkCore
                                 .ToListAsync();
 
                             matchedInstanceIds.AddRange(matchedIds);
+
+                            var externalMatchedIds = await _dbContext.ExternalChildWaits
+                                .Where(w => w.SignalPath == signalPath
+                                         && w.Status == (int)WaitStatus.Waiting
+                                         && w.SignalExactMatchPaths == pathsString
+                                         && w.ExactMatchFilter == calculatedFilter)
+                                .Select(w => w.WorkflowInstanceId)
+                                .ToListAsync();
+
+                            matchedInstanceIds.AddRange(externalMatchedIds);
                         }
                     }
                 }
@@ -498,6 +682,14 @@ namespace Workflows.Storage.EntityFrameworkCore
             {
                 time.Status = (int)status;
                 _dbContext.TimeWaits.Update(time);
+                return;
+            }
+
+            var externalChild = await _dbContext.ExternalChildWaits.FindAsync(id);
+            if (externalChild != null)
+            {
+                externalChild.Status = (int)status;
+                _dbContext.ExternalChildWaits.Update(externalChild);
             }
         }
 
@@ -510,6 +702,11 @@ namespace Workflows.Storage.EntityFrameworkCore
                 if (wait.ChildWaits != null)
                 {
                     var found = FindWaitById(wait.ChildWaits, id);
+                    if (found != null) return found;
+                }
+                if (wait is ExternalGroupWaitDto externalGroup)
+                {
+                    var found = FindWaitById(externalGroup.ExternalChildWaits, id);
                     if (found != null) return found;
                 }
             }
@@ -571,6 +768,30 @@ namespace Workflows.Storage.EntityFrameworkCore
             // Base WorkflowWaitEntity (group/sub-workflow containers) — no concrete table, skip.
         }
 
+        private async Task UpsertExternalChildWaitEntityAsync(ExternalChildWaitEntity record)
+        {
+            var existing = await _dbContext.ExternalChildWaits.FindAsync(record.Id);
+            if (existing != null)
+            {
+                existing.Status = record.Status;
+                existing.SignalPath = record.SignalPath;
+                existing.SignalExactMatchPaths = record.SignalExactMatchPaths;
+                existing.ExactMatchFilter = record.ExactMatchFilter;
+                existing.IsFirstWait = record.IsFirstWait;
+                existing.TemplateHashKey = record.TemplateHashKey;
+                existing.UniqueMatchId = record.UniqueMatchId;
+                existing.ExecutionTime = record.ExecutionTime;
+                existing.CommandWaitId = record.CommandWaitId;
+                existing.Token = record.Token;
+                existing.CancelTokens = record.CancelTokens;
+                _dbContext.ExternalChildWaits.Update(existing);
+            }
+            else
+            {
+                _dbContext.ExternalChildWaits.Add(record);
+            }
+        }
+
         private static string FormatJToken(JToken? token)
         {
             if (token == null || token.Type == JTokenType.Null)
@@ -592,7 +813,14 @@ namespace Workflows.Storage.EntityFrameworkCore
         {
             var record = await _dbContext.CommandWaits
                 .FirstOrDefaultAsync(w => w.CommandWaitId == commandWaitId);
-            return record?.WorkflowInstanceId ?? Guid.Empty;
+            if (record != null)
+            {
+                return record.WorkflowInstanceId;
+            }
+
+            var externalRecord = await _dbContext.ExternalChildWaits
+                .FirstOrDefaultAsync(w => w.CommandWaitId == commandWaitId);
+            return externalRecord?.WorkflowInstanceId ?? Guid.Empty;
         }
 
         public async Task<List<TimeWaitDto>> GetPendingTimeWaitsAsync()
@@ -601,11 +829,23 @@ namespace Workflows.Storage.EntityFrameworkCore
                 .Where(w => w.Status == (int)WaitStatus.Waiting)
                 .ToListAsync();
 
-            return entities.Select(e => new TimeWaitDto
+            var externalEntities = await _dbContext.ExternalChildWaits
+                .Where(w => w.Status == (int)WaitStatus.Waiting && w.ExecutionTime != null)
+                .ToListAsync();
+
+            var result = entities.Select(e => new TimeWaitDto
             {
                 UniqueMatchId = e.UniqueMatchId,
                 ExecutionTime = e.ExecutionTime
             }).ToList();
+
+            result.AddRange(externalEntities.Select(e => new TimeWaitDto
+            {
+                UniqueMatchId = e.UniqueMatchId,
+                ExecutionTime = e.ExecutionTime.GetValueOrDefault()
+            }));
+
+            return result;
         }
 
         private static bool AreWaitsEqual(List<WaitInfrastructureDto>? list1, List<WaitInfrastructureDto>? list2)
@@ -669,6 +909,7 @@ namespace Workflows.Storage.EntityFrameworkCore
             {
                 if (w is SignalWaitDto sw && sw.IsFirstWait) return true;
                 if (w.ChildWaits != null && HasFirstWait(w.ChildWaits)) return true;
+                if (w is ExternalGroupWaitDto externalGroup && HasFirstWait(externalGroup.ExternalChildWaits)) return true;
             }
             return false;
         }
@@ -717,6 +958,14 @@ namespace Workflows.Storage.EntityFrameworkCore
                     CollectAndInsertOutboxMessagesRecursive(child, workflowInstanceId, notifications);
                 }
             }
+
+            if (wait is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+            {
+                foreach (var child in externalGroup.ExternalChildWaits)
+                {
+                    CollectAndInsertOutboxMessagesRecursive(child, workflowInstanceId, notifications);
+                }
+            }
         }
 
         public async Task ReplaceMigratedStateAsync(
@@ -750,12 +999,16 @@ namespace Workflows.Storage.EntityFrameworkCore
                     var oldTimeWaits = await _dbContext.TimeWaits.Where(w => w.WorkflowInstanceId == instanceId).ToListAsync(ct);
                     _dbContext.TimeWaits.RemoveRange(oldTimeWaits);
 
+                    var oldExternalChildWaits = await _dbContext.ExternalChildWaits.Where(w => w.WorkflowInstanceId == instanceId).ToListAsync(ct);
+                    _dbContext.ExternalChildWaits.RemoveRange(oldExternalChildWaits);
+
                     MarkWaitsAsPersistedRecursive(newWaits);
 
                     var flattenedRecords = new List<WorkflowWaitEntity>();
+                    var externalChildRecords = new List<ExternalChildWaitEntity>();
                     foreach (var wait in newWaits)
                     {
-                        FlattenAndCollectWaits(wait, null, instanceId, flattenedRecords);
+                        FlattenAndCollectWaits(wait, null, instanceId, flattenedRecords, externalChildRecords);
                     }
 
                     foreach (var record in flattenedRecords)
@@ -772,6 +1025,11 @@ namespace Workflows.Storage.EntityFrameworkCore
                         {
                             _dbContext.TimeWaits.Add(timeRecord);
                         }
+                    }
+
+                    foreach (var record in externalChildRecords)
+                    {
+                        _dbContext.ExternalChildWaits.Add(record);
                     }
 
                     _dbContext.WorkflowInstances.Update(dbInstance);

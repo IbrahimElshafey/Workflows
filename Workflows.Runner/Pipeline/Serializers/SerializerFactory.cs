@@ -19,6 +19,7 @@ namespace Workflows.Runner.Pipeline.Serializers
         private readonly TimeWaitSerializer _timeWaitSerializer;
         private readonly CommandSerializer _deferredCommandSerializer;
         private readonly GroupWaitSerializer _groupWaitSerializer;
+        private readonly ExternalGroupWaitSerializer _externalGroupWaitSerializer;
         private readonly CompensationWaitSerializer _compensationSerializer;
 
         public SerializerFactory(
@@ -38,6 +39,8 @@ namespace Workflows.Runner.Pipeline.Serializers
             _deferredCommandSerializer = new CommandSerializer(_mapper);
             _groupWaitSerializer = new GroupWaitSerializer(_mapper, _stateMachineAdvancer);
             _groupWaitSerializer.ProcessorFactory = this;
+            _externalGroupWaitSerializer = new ExternalGroupWaitSerializer(_mapper, _stateMachineAdvancer);
+            _externalGroupWaitSerializer.ProcessorFactory = this;
             _compensationSerializer = new CompensationWaitSerializer(_mapper);
         }
 
@@ -63,6 +66,9 @@ namespace Workflows.Runner.Pipeline.Serializers
 
             if (yieldedWait is GroupWait)
                 return _groupWaitSerializer;
+
+            if (yieldedWait is ExternalGroupWait)
+                return _externalGroupWaitSerializer;
 
             if (yieldedWait is CompensationWait)
                 return _compensationSerializer;

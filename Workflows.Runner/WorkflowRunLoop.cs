@@ -128,10 +128,15 @@ namespace Workflows.Runner
 
             try
             {
-                // Get workflow types
-                if (!_workflowRegistry.Workflows.TryGetValue(_context.WorkflowState.WorkflowType, out var workflowTypes))
+                // Get workflow types — resolve by instance version first, fall back to latest
+                var workflowName = _context.WorkflowState.WorkflowType;
+                var workflowVersion = _context.WorkflowState.WorkflowVersion;
+                if (!_workflowRegistry.TryGetWorkflow(workflowName, workflowVersion, out var workflowTypes))
                 {
-                    throw new InvalidOperationException($"Workflow {_context.WorkflowState.WorkflowType} not registered.");
+                    if (!_workflowRegistry.TryGetLatestWorkflow(workflowName, out workflowTypes))
+                    {
+                        throw new InvalidOperationException($"Workflow {workflowName} (V{workflowVersion}) not registered.");
+                    }
                 }
 
                 var childKey = subWorkflowWaitDto.StateMachineObjectId.ToString();

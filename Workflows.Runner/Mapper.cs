@@ -7,6 +7,7 @@ using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Persistence;
 using Workflows.Definition;
+using Workflows.Primitives;
 using Workflows.Definition.Helpers;
 using Workflows.Runner.DataObjects;
 using Workflows.Runner.ExpressionTransformers;
@@ -175,6 +176,26 @@ namespace Workflows.Runner
                 dto.ChildWaits = waitsGroup.ChildWaits.Select(MapToDto).ToList();
             }
 
+            return dto;
+        }
+
+        public ExternalGroupWaitDto MapToDto(ExternalGroupWait waitsGroup)
+        {
+            if (waitsGroup == null)
+                throw new ArgumentNullException(nameof(waitsGroup));
+
+            var requiredCompletedCount = waitsGroup.WaitType == WaitType.WaitAny ? 1 : waitsGroup.ChildWaits.Count;
+
+            var dto = new ExternalGroupWaitDto
+            {
+                ChildCount = waitsGroup.ChildWaits.Count,
+                RequiredCompletedCount = requiredCompletedCount,
+                CancelTokens = waitsGroup.CancelTokens,
+                // Keep child DTOs in memory for the current execution, but they will NOT be serialized into the state blob.
+                ExternalChildWaits = waitsGroup.ChildWaits.Select(MapToDto).ToList()
+            };
+
+            CopyBase(waitsGroup, dto);
             return dto;
         }
 
@@ -643,8 +664,9 @@ namespace Workflows.Runner
                 SubWorkflowWait subWorkflowWait => MapToDto(subWorkflowWait),
                 TimeWait timeWait => MapToDto(timeWait),
                 GroupWait groupWait => MapToDto(groupWait),
+                ExternalGroupWait externalGroupWait => MapToDto(externalGroupWait),
                 CompensationWait compensationWait => MapToDto(compensationWait),
-                Wait w when w.WaitType == Workflows.Primitives.WaitType.Command => MapToDto((dynamic)w),
+                Wait w when w.WaitType == WaitType.Command => MapToDto((dynamic)w),
                 ISignalWait signalWait => MapToDto((dynamic)signalWait),
                 _ => throw new NotSupportedException($"Unsupported wait type [{wait.GetType().FullName}].")
             };

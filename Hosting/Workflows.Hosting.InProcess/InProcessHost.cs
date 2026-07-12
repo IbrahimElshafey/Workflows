@@ -44,6 +44,7 @@ namespace Workflows.Hosting.InProcess
             services.AddHostedService<CompensationWorker>();
             services.AddHostedService<CancelerWorker>();
             services.AddHostedService<InboxPollerWorker>();
+            services.AddHostedService<LockExpiryWorker>();
 
             services.AddScoped<CommandResultInboxWriter>();
 

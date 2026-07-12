@@ -351,5 +351,26 @@ namespace Workflows.Storage.EntityFrameworkCore
                 ExecutionMode = (CommandExecutionMode)db.ExecutionMode
             };
         }
+
+        /// <inheritdoc/>
+        public async Task<List<int>> GetAllRegisteredVersionsAsync(string workflowName)
+        {
+            return await _dbContext.WorkflowDefinitions
+                .Where(w => w.WorkflowName == workflowName)
+                .Select(w => w.Version)
+                .OrderBy(v => v)
+                .ToListAsync();
+        }
+
+        /// <inheritdoc/>
+        public async Task<int> GetLatestRegisteredVersionAsync(string workflowName)
+        {
+            var versions = await _dbContext.WorkflowDefinitions
+                .Where(w => w.WorkflowName == workflowName)
+                .Select(w => w.Version)
+                .ToListAsync();
+
+            return versions.Count > 0 ? versions.Max() : 0;
+        }
     }
 }

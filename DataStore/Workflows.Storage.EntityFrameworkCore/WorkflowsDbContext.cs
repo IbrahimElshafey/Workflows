@@ -19,6 +19,7 @@ namespace Workflows.Storage.EntityFrameworkCore
         public DbSet<CommandWaitEntity> CommandWaits { get; set; }
         public DbSet<TimeWaitEntity> TimeWaits { get; set; }
         public DbSet<CompensationWaitEntity> CompensationWaits { get; set; }
+        public DbSet<ExternalChildWaitEntity> ExternalChildWaits { get; set; }
         public DbSet<WorkflowDefinitionEntity> WorkflowDefinitions { get; set; }
         public DbSet<SignalDefinitionEntity> SignalDefinitions { get; set; }
         public DbSet<CommandDefinitionEntity> CommandDefinitions { get; set; }
@@ -219,6 +220,22 @@ namespace Workflows.Storage.EntityFrameworkCore
                 entity.HasIndex(e => e.WorkflowInstanceId);
                 // Index for scheduler polling: WHERE ExecutionTime <= NOW() AND Status = Waiting
                 entity.HasIndex(e => new { e.Status, e.ExecutionTime });
+                entity.HasIndex(e => e.UniqueMatchId);
+
+                entity.HasOne<WorkflowInstance>()
+                      .WithMany()
+                      .HasForeignKey(e => e.WorkflowInstanceId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<ExternalChildWaitEntity>(entity =>
+            {
+                entity.ToTable("ExternalChildWaits");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.WorkflowInstanceId);
+                entity.HasIndex(e => e.ParentWaitId);
+                entity.HasIndex(e => new { e.SignalPath, e.Status, e.SignalExactMatchPaths, e.ExactMatchFilter });
+                entity.HasIndex(e => e.CommandWaitId);
                 entity.HasIndex(e => e.UniqueMatchId);
 
                 entity.HasOne<WorkflowInstance>()

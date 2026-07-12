@@ -2,6 +2,7 @@ using Newtonsoft.Json.Schema;
 using Newtonsoft.Json.Schema.Generation;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -20,8 +21,8 @@ namespace Workflows.Runner
     internal class WorkflowBuilder : IWorkflowBuilder, IWorkflowRegistry
     {
         private readonly BulkRegistrationPackage registrationPackage = new BulkRegistrationPackage();
-        // Key=> Workflow Name, Value => Tuple of (WorkflowContainer Type, StateMachine Type, StateType Type, StartMethod Name)
-        private readonly Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType, string StartMethod)> _workflows = new();
+        // Key => (Workflow Name, Version), Value => (WorkflowContainer Type, StateMachine Type, StateType Type, StartMethod Name)
+        private readonly Dictionary<(string Name, int Version), (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType, string StartMethod)> _workflows = new();
         // Key => Signal Identifier, Value => Signal Payload Type
         private readonly Dictionary<string, Type> _signals = new();
         // Key => Command Identifier, Value => Tuple of (Command Payload Type, Command Result Type)
@@ -33,11 +34,52 @@ namespace Workflows.Runner
             _schemaGenerator = schemaGenerator;
         }
 
-        public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType, string StartMethod)> Workflows => _workflows;
+        /// <summary>
+        /// Backward-compatible property returning the latest version of each workflow by name.
+        /// </summary>
+        public Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType, string StartMethod)> Workflows
+        {
+            get
+            {
+                var latest = new Dictionary<string, (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType, string StartMethod)>();
+                foreach (var kvp in _workflows)
+                {
+                    var name = kvp.Key.Name;
+                    var version = kvp.Key.Version;
+                    if (!latest.TryGetValue(name, out var existing) || version > GetVersionFromTuple(existing))
+                    {
+                        latest[name] = kvp.Value;
+                    }
+                }
+                return latest;
+            }
+        }
 
         public Dictionary<string, Type> SignalTypes => _signals;
 
         public Dictionary<string, (Type CommandPayloadType, Type CommandResultType)> CommandTypes => _commands;
+
+        /// <inheritdoc/>
+        public bool TryGetWorkflow(string name, int version, out (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType, string StartMethod) tuple)
+        {
+            return _workflows.TryGetValue((name, version), out tuple);
+        }
+
+        /// <inheritdoc/>
+        public bool TryGetLatestWorkflow(string name, out (Type WorkflowContainer, Type WorkflowStateMachine, Type StateType, string StartMethod) tuple)
+        {
+            tuple = default;
+            var bestVersion = -1;
+            foreach (var kvp in _workflows)
+            {
+                if (kvp.Key.Name == name && kvp.Key.Version > bestVersion)
+                {
+                    bestVersion = kvp.Key.Version;
+                    tuple = kvp.Value;
+                }
+            }
+            return bestVersion >= 0;
+        }
 
         public Task<RegistrationSyncResult> CommitAsync()
         {
@@ -179,9 +221,10 @@ namespace Workflows.Runner
                 stateType = methodInfo.GetParameters()[0].ParameterType;
             }
 
-            // 5. Correctly assign the container type, state machine type, state type, and start method
-            _workflows[name] = (workflowType, stateMachineType, stateType, startMethodName);
-            global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows[name] = (workflowType, stateMachineType, stateType, startMethodName);
+            // 5. Store by (name, version) composite key — SxS version routing
+            var tuple = (workflowType, stateMachineType, stateType, startMethodName);
+            _workflows[(name, version)] = tuple;
+            global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.AddOrUpdate(name, version, tuple);
 
             // Validate sub-workflows (visibility and attribute)
             ValidateWorkflowSubWorkflows(workflowType, startMethodName);
@@ -322,6 +365,12 @@ namespace Workflows.Runner
         public IWorkflowBuilder SettingsSection(string settingsSection)
         {
             return this;
+        }
+
+        private static int GetVersionFromTuple((Type WorkflowContainer, Type WorkflowStateMachine, Type StateType, string StartMethod) tuple)
+        {
+            var attr = tuple.WorkflowContainer.GetCustomAttribute<WorkflowAttribute>();
+            return attr?.Version ?? 1;
         }
     }
 }

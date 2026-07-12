@@ -27,6 +27,12 @@ namespace Workflows.Orchestrator
                     var child = FindWaitingRecordForSignal(w.ChildWaits, signalPath);
                     if (child != null) return child;
                 }
+
+                if (w is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+                {
+                    var child = FindWaitingRecordForSignal(externalGroup.ExternalChildWaits, signalPath);
+                    if (child != null) return child;
+                }
             }
 
             return null;
@@ -48,6 +54,12 @@ namespace Workflows.Orchestrator
                     var child = FindWaitingRecordForCommand(w.ChildWaits, commandWaitId);
                     if (child != null) return child;
                 }
+
+                if (w is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+                {
+                    var child = FindWaitingRecordForCommand(externalGroup.ExternalChildWaits, commandWaitId);
+                    if (child != null) return child;
+                }
             }
 
             return null;
@@ -67,6 +79,12 @@ namespace Workflows.Orchestrator
                 if (w.ChildWaits != null && w.ChildWaits.Count > 0)
                 {
                     var child = FindWaitById(w.ChildWaits, id);
+                    if (child != null) return child;
+                }
+
+                if (w is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+                {
+                    var child = FindWaitById(externalGroup.ExternalChildWaits, id);
                     if (child != null) return child;
                 }
             }

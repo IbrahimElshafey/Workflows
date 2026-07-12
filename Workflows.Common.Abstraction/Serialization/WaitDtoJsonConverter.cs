@@ -47,6 +47,10 @@ namespace Workflows.Shared.Serialization
                 case WaitType.GroupWaitWithExpression:
                     targetType = typeof(GroupWaitDto);
                     break;
+                case WaitType.WaitMany:
+                case WaitType.WaitAny:
+                    targetType = typeof(ExternalGroupWaitDto);
+                    break;
                 case WaitType.Placeholder:
                     targetType = typeof(PlaceholderWaitDto);
                     break;

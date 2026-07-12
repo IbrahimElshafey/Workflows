@@ -20,7 +20,12 @@ namespace Workflows.Orchestrator
 
         public async Task<AsyncResult> StartWorkflow(string workflowName, object input = null)
         {
-            var request = new StartWorkflowRequest { WorkflowName = workflowName, Input = input };
+            return await StartWorkflow(workflowName, version: 0, input);
+        }
+
+        public async Task<AsyncResult> StartWorkflow(string workflowName, int version, object input = null)
+        {
+            var request = new StartWorkflowRequest { WorkflowName = workflowName, Version = version, Input = input };
             return await _dispatcher.DispatchAndReceiveAsync<StartWorkflowRequest, AsyncResult>(request);
         }
     }

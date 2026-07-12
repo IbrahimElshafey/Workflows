@@ -234,6 +234,112 @@ namespace Workflows.Runner.Tests
             }
         }
 
+        [Fact]
+        public void InMemoryWorkflowRegistry_ShouldStoreMultipleVersionsSideBySide()
+        {
+            // Arrange
+            var registry = new Infrastructure.InMemoryWorkflowRegistry();
+
+            // Act
+            registry.AddWorkflow("OrderWorkflow", 1, (typeof(OrderWorkflowV1), typeof(OrderWorkflowV1), typeof(object), "Run"));
+            registry.AddWorkflow("OrderWorkflow", 2, (typeof(OrderWorkflowV2), typeof(OrderWorkflowV2), typeof(object), "Run"));
+
+            // Assert
+            registry.TryGetWorkflow("OrderWorkflow", 1, out var v1).Should().BeTrue();
+            registry.TryGetWorkflow("OrderWorkflow", 2, out var v2).Should().BeTrue();
+            v1.WorkflowContainer.Should().Be(typeof(OrderWorkflowV1));
+            v2.WorkflowContainer.Should().Be(typeof(OrderWorkflowV2));
+
+            registry.TryGetLatestWorkflow("OrderWorkflow", out var latest).Should().BeTrue();
+            latest.WorkflowContainer.Should().Be(typeof(OrderWorkflowV2));
+
+            // Backward compat: Workflows dictionary returns latest
+            registry.Workflows.Should().ContainKey("OrderWorkflow");
+            registry.Workflows["OrderWorkflow"].WorkflowContainer.Should().Be(typeof(OrderWorkflowV2));
+        }
+
+        [Fact]
+        public async Task SideBySideExecution_ShouldRunEachInstanceWithItsOwnVersion()
+        {
+            // Arrange
+            var builder = new Infrastructure.WorkflowTestBuilder();
+            builder.RegisterWorkflow<TestWorkflows.SxSWorkflowV1>("SxSWorkflow");
+            builder.RegisterWorkflow<TestWorkflows.SxSWorkflowV2>("SxSWorkflow");
+            builder.RegisterSignal<TestWorkflows.SxSWorkflowSignal>("SxSWorkflowSignal");
+
+            var runner = builder.Build();
+
+            // Act - Start V1 instance explicitly
+            var v1StartResult = await runner.StartWorkflow("SxSWorkflow", version: 1);
+            v1StartResult.Should().NotBeNull();
+            var v1Response = builder.Client.SentResults.Last().Result;
+            var v1State = v1Response.UpdatedState;
+            v1State.WorkflowVersion.Should().Be(1);
+            var v1Workflow = (TestWorkflows.SxSWorkflowV1)v1State.StateObject.Instance;
+            v1Workflow.ExecutionLog.Should().Contain("V1: Start");
+
+            // Act - Start V2 instance explicitly
+            var v2StartResult = await runner.StartWorkflow("SxSWorkflow", version: 2);
+            v2StartResult.Should().NotBeNull();
+            var v2Response = builder.Client.SentResults.Last().Result;
+            var v2State = v2Response.UpdatedState;
+            v2State.WorkflowVersion.Should().Be(2);
+            var v2Workflow = (TestWorkflows.SxSWorkflowV2)v2State.StateObject.Instance;
+            v2Workflow.ExecutionLog.Should().Contain("V2: Start");
+
+            // Act - Resume V1 instance
+            var v1Wait = v1State.Waits.First();
+            var v1ResumeRequest = new WorkflowExecutionRequest
+            {
+                TriggeringWaitId = v1Wait.Id,
+                Signal = builder.CreateSignal("SxSWorkflowSignal", new TestWorkflows.SxSWorkflowSignal { Value = "v1" }),
+                WorkflowState = v1State
+            };
+            var v1ResumeResult = await runner.RunWorkflowAsync(v1ResumeRequest);
+            v1ResumeResult.Should().NotBeNull();
+            v1ResumeResult.Status.Should().Be("Accepted");
+            var resumedV1Workflow = (TestWorkflows.SxSWorkflowV1)v1State.StateObject.Instance;
+            resumedV1Workflow.ExecutionLog.Should().ContainInOrder("V1: Start", "V1: End");
+
+            // Act - Resume V2 instance
+            var v2Wait = v2State.Waits.First();
+            var v2ResumeRequest = new WorkflowExecutionRequest
+            {
+                TriggeringWaitId = v2Wait.Id,
+                Signal = builder.CreateSignal("SxSWorkflowSignal", new TestWorkflows.SxSWorkflowSignal { Value = "v2" }),
+                WorkflowState = v2State
+            };
+            var v2ResumeResult = await runner.RunWorkflowAsync(v2ResumeRequest);
+            v2ResumeResult.Should().NotBeNull();
+            v2ResumeResult.Status.Should().Be("Accepted");
+            var resumedV2Workflow = (TestWorkflows.SxSWorkflowV2)v2State.StateObject.Instance;
+            resumedV2Workflow.ExecutionLog.Should().ContainInOrder("V2: Start", "V2: End");
+        }
+
+        [Fact]
+        public async Task DefinitionRepository_ShouldReturnAllVersionsAndLatest()
+        {
+            // Arrange
+            using var context = new WorkflowsDbContext(_options);
+            context.WorkflowDefinitions.AddRange(
+                new WorkflowDefinitionEntity { WorkflowName = "OrderWorkflow", Version = 1, WorkflowTypeName = "T1", WorkflowTypeSchema = "{}", RegisteredAt = DateTime.UtcNow },
+                new WorkflowDefinitionEntity { WorkflowName = "OrderWorkflow", Version = 2, WorkflowTypeName = "T2", WorkflowTypeSchema = "{}", RegisteredAt = DateTime.UtcNow },
+                new WorkflowDefinitionEntity { WorkflowName = "OrderWorkflow", Version = 3, WorkflowTypeName = "T3", WorkflowTypeSchema = "{}", RegisteredAt = DateTime.UtcNow }
+            );
+            await context.SaveChangesAsync();
+
+            using var repoContext = new WorkflowsDbContext(_options);
+            var repo = new DefinitionRepository(repoContext, new ServiceCollection().BuildServiceProvider());
+
+            // Act
+            var allVersions = await repo.GetAllRegisteredVersionsAsync("OrderWorkflow");
+            var latest = await repo.GetLatestRegisteredVersionAsync("OrderWorkflow");
+
+            // Assert
+            allVersions.Should().Equal(1, 2, 3);
+            latest.Should().Be(3);
+        }
+
         private class MockMessageDispatcher : IMessageDispatcher
         {
             public List<object> DispatchedMessages { get; } = new();

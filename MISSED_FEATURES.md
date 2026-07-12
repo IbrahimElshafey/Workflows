@@ -29,9 +29,8 @@ These features have been identified by the development team and are documented i
 *   **Solution**: Wrap the Orchestrator's persistence phase in a transaction retry loop with exponential backoff.
 
 ### 1.5. Massive Fan-Out (External State Pattern)
-*   **Current State**: 🔴 **Unimplemented (Causes State Bloat)**
-*   **The Issue**: Yielding composite waits like `WaitGroup` with thousands of children forces the engine to serialize the entire tree inside the JSON state blob, causing performance degradation.
-*   **Solution**: Introduce `WaitMany` or `WaitAny` waits that persist child wait metadata in dedicated relational tables, waking up the engine only when aggregation conditions are met.
+*   **Current State**: 🟢 **Implemented**
+*   **Implementation**: Added `WaitMany` and `WaitAny` wait types (`ExternalGroupWait` / `ExternalGroupWaitDto`) that persist child wait metadata in a dedicated `ExternalChildWaits` relational table instead of the JSON state blob. The runner's `GroupCompletionChecker` evaluates aggregation conditions (all children for `WaitMany`, any child for `WaitAny`) and prunes remaining siblings on early completion. Routing, serialization, hydration, and persistence were updated across the Orchestrator, Runner, EF Core store, and DTO layers. Tests cover both fan-out modes.
 
 ### 1.6. Background Database Pruning Worker
 *   **Current State**: 🟡 **Partially Implemented**

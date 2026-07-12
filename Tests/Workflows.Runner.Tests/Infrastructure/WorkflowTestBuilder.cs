@@ -69,7 +69,8 @@ namespace Workflows.Runner.Tests.Infrastructure
                 }
             }
 
-            _registry.Workflows[workflowType] = (workflowTypeClass, stateMachineType, stateType, startMethodName);
+            var version = attribute?.Version ?? 1;
+            _registry.AddWorkflow(workflowType, version, (workflowTypeClass, stateMachineType, stateType, startMethodName));
             return this;
         }
 

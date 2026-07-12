@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -40,63 +41,76 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
         public override async Task<bool> IsCompleted(WaitInfrastructureDto waitDto)
         {
             // NOTE: This matcher is only invoked via MatchParentAsync from child matchers.
-            var groupWaitDto = waitDto as GroupWaitDto;
-            if (groupWaitDto == null)
-            {
-                throw new InvalidOperationException(
-                    "GroupWaitMatcher can only be called via parent propagation with a GroupWaitDto.");
-            }
+            var childWaits = GetChildWaits(waitDto);
 
             // Get all child waits from DTO
-            if (groupWaitDto.ChildWaits == null || !groupWaitDto.ChildWaits.Any())
+            if (childWaits == null || !childWaits.Any())
             {
                 // No children means group is complete
-                groupWaitDto.Status = WaitStatus.Completed;
+                waitDto.Status = WaitStatus.Completed;
 
                 return true;
             }
 
             // Count completed children
-            var completedChildren = groupWaitDto.ChildWaits.Count(child => child.Status == WaitStatus.Completed || child.Status == WaitStatus.Matched);
-            var totalChildren = groupWaitDto.ChildWaits.Count;
+            var completedChildren = childWaits.Count(child => child.Status == WaitStatus.Completed || child.Status == WaitStatus.Matched);
+            var totalChildren = childWaits.Count;
 
             bool groupMatches = false;
 
             // Evaluate based on wait type
-            switch (groupWaitDto.WaitType)
+            switch (waitDto.WaitType)
             {
                 case WaitType.GroupWaitAll: // MatchAll
+                case WaitType.WaitMany: // Massive fan-out: all children must complete
                     groupMatches = completedChildren == totalChildren;
                     break;
 
                 case WaitType.GroupWaitFirst: // MatchAny / MatchFirst
+                case WaitType.WaitAny: // Massive fan-out: any single child completes
                     groupMatches = completedChildren >= 1;
                     if (groupMatches)
                     {
                         // Downward pruning: mark remaining children as cancelled
-                        PruneRemainingChildren(groupWaitDto, _context);
+                        PruneRemainingChildren(waitDto, _context);
                     }
                     break;
 
                 case WaitType.GroupWaitWithExpression: // MatchIf with custom expression
-                    groupMatches = EvaluateGroupFilter(groupWaitDto);
+                    groupMatches = waitDto is GroupWaitDto gwd && EvaluateGroupFilter(gwd);
                     if (groupMatches)
                     {
-                        PruneRemainingChildren(groupWaitDto, _context);
+                        PruneRemainingChildren(waitDto, _context);
                     }
                     break;
 
                 default:
-                    throw new InvalidOperationException($"Unsupported GroupWait type: {groupWaitDto.WaitType}");
+                    throw new InvalidOperationException($"Unsupported GroupWait type: {waitDto.WaitType}");
             }
 
             if (groupMatches)
             {
                 // Mark group as completed
-                groupWaitDto.Status = WaitStatus.Completed;
+                waitDto.Status = WaitStatus.Completed;
             }
 
             return groupMatches;
+        }
+
+        private static List<WaitInfrastructureDto> GetChildWaits(WaitInfrastructureDto waitDto)
+        {
+            if (waitDto is GroupWaitDto groupWaitDto)
+            {
+                return groupWaitDto.ChildWaits;
+            }
+
+            if (waitDto is ExternalGroupWaitDto externalGroupWaitDto)
+            {
+                return externalGroupWaitDto.ExternalChildWaits;
+            }
+
+            throw new InvalidOperationException(
+                "GroupCompletionChecker can only be called via parent propagation with a GroupWaitDto or ExternalGroupWaitDto.");
         }
 
         private bool EvaluateGroupFilter(GroupWaitDto groupWaitDto)
@@ -229,10 +243,12 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
             }
         }
 
-        private void PruneRemainingChildren(GroupWaitDto groupWaitDto, WorkflowExecutionContext context)
+        private void PruneRemainingChildren(WaitInfrastructureDto waitDto, WorkflowExecutionContext context)
         {
+            var childWaits = GetChildWaits(waitDto);
+
             // Mark all non-completed children for removal
-            var childrenToPrune = groupWaitDto.ChildWaits
+            var childrenToPrune = childWaits
                 .Where(child => child.Status == WaitStatus.Waiting)
                 .ToList();
 

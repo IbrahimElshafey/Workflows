@@ -63,7 +63,7 @@ namespace Workflows.Hosting.InProcess
                             }
                             else if (context.Message is StartWorkflowRequest startReq)
                             {
-                                var result = await runner.StartWorkflow(startReq.WorkflowName, startReq.Input);
+                                var result = await runner.StartWorkflow(startReq.WorkflowName, startReq.Version, startReq.Input);
                                 // Set result directly if it was synchronous starting with no wait
                                 // Wait, starting a workflow always yields the start result.
                                 // In the case of StartWorkflow, does the Egress Channel client get called?

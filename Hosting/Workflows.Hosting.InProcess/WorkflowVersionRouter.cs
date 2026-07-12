@@ -36,7 +36,15 @@ namespace Workflows.Hosting.InProcess
             var workflowName = request.WorkflowState.WorkflowType;
             var instanceVersion = request.WorkflowState.WorkflowVersion;
 
-            if (!WorkflowDefinitionRegistry.Workflows.TryGetValue(workflowName, out var tuple))
+            // Check if the instance's exact version is registered in memory (SxS without disk archive)
+            if (WorkflowDefinitionRegistry.TryGetWorkflow(workflowName, instanceVersion, out _))
+            {
+                // The exact version is already in memory — no routing needed, runner will use it
+                return null;
+            }
+
+            // Get the latest registered version for comparison
+            if (!WorkflowDefinitionRegistry.TryGetLatestWorkflow(workflowName, out var tuple))
             {
                 return null;
             }

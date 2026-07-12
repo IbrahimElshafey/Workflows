@@ -92,6 +92,11 @@ namespace Workflows.Runner
                         isCompleted = await groupChecker.IsCompleted(groupWaitDto);
                         break;
 
+                    case Abstraction.DTOs.Waits.ExternalGroupWaitDto externalGroupWaitDto:
+                        var externalGroupChecker = _completionChecker.GetChecker(externalGroupWaitDto);
+                        isCompleted = await externalGroupChecker.IsCompleted(externalGroupWaitDto);
+                        break;
+
                     case Abstraction.DTOs.Waits.SubWorkflowWaitDto subWorkflowWaitDto:
                         // Execute/resume the sub-workflow
                         await workflowRunLoop.ResumeSubWorkflowAsync(subWorkflowWaitDto);
@@ -117,11 +122,16 @@ namespace Workflows.Runner
 
         public async Task<AsyncResult> StartWorkflow(string workflowName, object input = null)
         {
+            return await StartWorkflow(workflowName, version: 0, input);
+        }
+
+        public async Task<AsyncResult> StartWorkflow(string workflowName, int version, object input = null)
+        {
             if (string.IsNullOrWhiteSpace(workflowName))
                 throw new ArgumentNullException(nameof(workflowName));
 
             // Create a fresh workflow state and execution context
-            _stateService.PopulateNewWorkflowContext(_context, workflowName, input);
+            _stateService.PopulateNewWorkflowContext(_context, workflowName, version, input);
             _context.WorkflowState.Status = Abstraction.Enums.WorkflowInstanceStatus.Running;
 
             return await RunExecutionLoopAndSendResult();

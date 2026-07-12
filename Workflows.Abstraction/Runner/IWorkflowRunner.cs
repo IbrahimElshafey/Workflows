@@ -11,6 +11,10 @@ namespace Workflows.Abstraction.Runner
     {
         Task<AsyncResult> StartWorkflow(string workflowName, object intialState = null);
         /// <summary>
+        /// Starts a specific version of a workflow. If the version is not available, falls back to the latest version.
+        /// </summary>
+        Task<AsyncResult> StartWorkflow(string workflowName, int version, object intialState = null);
+        /// <summary>
         /// Executes the next step of a workflow based on the provided context, 
         /// which includes the current state and the incoming signal.
         /// </summary>

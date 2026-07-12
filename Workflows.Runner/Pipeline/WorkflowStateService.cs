@@ -56,10 +56,13 @@ namespace Workflows.Runner.Pipeline
                 }
             }
 
-            // Get workflow types
-            if (!_workflowRegistry.Workflows.TryGetValue(state.WorkflowType, out var workflowTypes))
+            // Get workflow types — resolve by instance version first, fall back to latest
+            if (!_workflowRegistry.TryGetWorkflow(state.WorkflowType, state.WorkflowVersion, out var workflowTypes))
             {
-                throw new InvalidOperationException($"Workflow {state.WorkflowType} not registered.");
+                if (!_workflowRegistry.TryGetLatestWorkflow(state.WorkflowType, out workflowTypes))
+                {
+                    throw new InvalidOperationException($"Workflow {state.WorkflowType} (V{state.WorkflowVersion}) not registered.");
+                }
             }
 
             // Create or reuse workflow instance
@@ -234,6 +237,14 @@ namespace Workflows.Runner.Pipeline
                     AssignIdsRecursive(child, dto.Id, state);
                 }
             }
+
+            if (dto is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+            {
+                foreach (var child in externalGroup.ExternalChildWaits)
+                {
+                    AssignIdsRecursive(child, dto.Id, state);
+                }
+            }
         }
 
         private void CollectCompletedWaitsRecursive(WaitInfrastructureDto wait, HashSet<string> completedIds)
@@ -256,6 +267,14 @@ namespace Workflows.Runner.Pipeline
                     CollectCompletedWaitsRecursive(child, completedIds);
                 }
             }
+
+            if (wait is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+            {
+                foreach (var child in externalGroup.ExternalChildWaits)
+                {
+                    CollectCompletedWaitsRecursive(child, completedIds);
+                }
+            }
         }
 
         private void CollectAllIdsRecursive(WaitInfrastructureDto wait, HashSet<string> ids)
@@ -265,6 +284,14 @@ namespace Workflows.Runner.Pipeline
             if (wait.ChildWaits != null)
             {
                 foreach (var child in wait.ChildWaits)
+                {
+                    CollectAllIdsRecursive(child, ids);
+                }
+            }
+
+            if (wait is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+            {
+                foreach (var child in externalGroup.ExternalChildWaits)
                 {
                     CollectAllIdsRecursive(child, ids);
                 }
@@ -284,6 +311,14 @@ namespace Workflows.Runner.Pipeline
                 if (current.ChildWaits != null)
                 {
                     foreach (var child in current.ChildWaits)
+                    {
+                        if (child != null) stack.Push(child);
+                    }
+                }
+
+                if (current is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+                {
+                    foreach (var child in externalGroup.ExternalChildWaits)
                     {
                         if (child != null) stack.Push(child);
                     }
@@ -332,11 +367,18 @@ namespace Workflows.Runner.Pipeline
         /// <summary>
         /// Populates a fresh execution context for a brand-new workflow instance.
         /// </summary>
-        public void PopulateNewWorkflowContext(WorkflowExecutionContext context, string workflowName, object input = null)
+        public void PopulateNewWorkflowContext(WorkflowExecutionContext context, string workflowName, int version, object input = null)
         {
             if (context == null) throw new ArgumentNullException(nameof(context));
-            if (!_workflowRegistry.Workflows.TryGetValue(workflowName, out var workflowTypes))
-                throw new InvalidOperationException($"Workflow '{workflowName}' not registered.");
+
+            // Resolve by requested version, fall back to latest
+            if (!_workflowRegistry.TryGetWorkflow(workflowName, version, out var workflowTypes))
+            {
+                if (!_workflowRegistry.TryGetLatestWorkflow(workflowName, out workflowTypes))
+                {
+                    throw new InvalidOperationException($"Workflow '{workflowName}' not registered.");
+                }
+            }
 
             // Instantiate the workflow container
             var workflowInstance = _hydrator.CreateInstance(workflowTypes.WorkflowContainer);
@@ -411,14 +453,14 @@ namespace Workflows.Runner.Pipeline
             var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, startMethod, stateType);
             var workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance, stateObj);
 
-            var version = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<Definition.WorkflowAttribute>(workflowTypes.WorkflowContainer)?.Version ?? 1;
+            var resolvedVersion = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<Definition.WorkflowAttribute>(workflowTypes.WorkflowContainer)?.Version ?? 1;
 
             var freshState = new WorkflowStateDto
             {
                 Id = Guid.NewGuid(),
                 Created = DateTime.UtcNow,
                 WorkflowType = workflowName,
-                WorkflowVersion = version,
+                WorkflowVersion = resolvedVersion,
                 Status = Abstraction.Enums.WorkflowInstanceStatus.New,
                 StateObject = new WorkflowStateObject
                 {

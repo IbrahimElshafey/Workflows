@@ -10,6 +10,14 @@ namespace Workflows.Primitives
         Command,
         Compensation,
         Placeholder,
-        PlaceholderSubWorkflow
+        PlaceholderSubWorkflow,
+        /// <summary>
+        /// Massive fan-out: all external child waits must complete.
+        /// </summary>
+        WaitMany,
+        /// <summary>
+        /// Massive fan-out: any single external child wait completes.
+        /// </summary>
+        WaitAny
     }
 }
