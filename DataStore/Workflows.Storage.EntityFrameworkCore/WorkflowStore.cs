@@ -173,15 +173,12 @@ namespace Workflows.Storage.EntityFrameworkCore
 
                     if (_cache != null)
                     {
-                        Console.WriteLine($"[CACHE DEBUG] SaveContextSyncAsync: State ID = {state.Id}, Status = {state.Status}");
                         if (state.Status == WorkflowInstanceStatus.Completed || state.Status == WorkflowInstanceStatus.InError)
                         {
-                            Console.WriteLine($"[CACHE DEBUG] Removing from cache: {state.Id}");
                             _cache.Remove(state.Id);
                         }
                         else
                         {
-                            Console.WriteLine($"[CACHE DEBUG] Updating cache: {state.Id} to Status {state.Status}");
                             _cache.Update(state.Id, state);
                         }
                     }
@@ -404,18 +401,9 @@ namespace Workflows.Storage.EntityFrameworkCore
         {
             if (_cache != null)
             {
-                var cachedState = await _cache.GetOrAddAsync(instanceId, async id => {
-                    Console.WriteLine($"[CACHE DEBUG] GetInstanceStateAsync: Cache MISS for {id}. Loading from DB. Stack Trace:\n{Environment.StackTrace}");
-                    return await LoadInstanceStateFromDbAsync(id);
-                });
-                if (cachedState != null)
-                {
-                    Console.WriteLine($"[CACHE DEBUG] GetInstanceStateAsync: Cache HIT for {instanceId}. Status = {cachedState.Status}");
-                    return cachedState;
-                }
-                return null;
+                var cachedState = await _cache.GetOrAddAsync(instanceId, id => LoadInstanceStateFromDbAsync(id));
+                return cachedState;
             }
-            Console.WriteLine($"[CACHE DEBUG] GetInstanceStateAsync: Cache is NULL. Loading from DB.");
             return await LoadInstanceStateFromDbAsync(instanceId);
         }
 

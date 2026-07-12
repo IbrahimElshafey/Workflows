@@ -21,7 +21,6 @@ namespace Workflows.Runner.Pipeline.Serializers
         /// </summary>
         protected void SaveWaitStatesToMachineState(Wait wait, WorkflowStateObject stateObject)
         {
-            Console.WriteLine($"[SERIALIZER DEBUG] SaveWaitStatesToMachineState: StateKey = {wait.StateKey}, Id = {wait.Id}, ExplicitState = {wait.ExplicitState}");
             if (wait.ExplicitState == null) return;
 
             stateObject.Locals ??= new Dictionary<string, object>();

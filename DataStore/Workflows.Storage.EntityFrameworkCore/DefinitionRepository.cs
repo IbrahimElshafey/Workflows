@@ -185,6 +185,16 @@ namespace Workflows.Storage.EntityFrameworkCore
                                     dbSw.IsFirstWait = true;
                                 }
 
+                                // Also set IsFirstWait on ExternalChildWaits rows (WaitMany / WaitAny first waits)
+                                var dbExternalChildren = await _dbContext.ExternalChildWaits
+                                    .Where(ec => ec.WorkflowInstanceId == instanceId)
+                                    .ToListAsync();
+
+                                foreach (var dbEc in dbExternalChildren)
+                                {
+                                    dbEc.IsFirstWait = true;
+                                }
+
                                 // E. Set IsFirstWait = true inside the JSON column representation
                                 UpdateIsFirstWaitRecursive(instance.Waits);
 
@@ -281,9 +291,21 @@ namespace Workflows.Storage.EntityFrameworkCore
             {
                 return true;
             }
+            // Check inline children (GroupWaitDto)
             if (wait.ChildWaits != null)
             {
                 foreach (var child in wait.ChildWaits)
+                {
+                    if (ContainsSignalWait(child))
+                    {
+                        return true;
+                    }
+                }
+            }
+            // Check external children (ExternalGroupWaitDto — WaitMany / WaitAny)
+            if (wait is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+            {
+                foreach (var child in externalGroup.ExternalChildWaits)
                 {
                     if (ContainsSignalWait(child))
                     {
@@ -306,6 +328,11 @@ namespace Workflows.Storage.EntityFrameworkCore
                 if (wait.ChildWaits != null)
                 {
                     UpdateIsFirstWaitRecursive(wait.ChildWaits);
+                }
+                // Also mark external children (WaitMany / WaitAny)
+                if (wait is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+                {
+                    UpdateIsFirstWaitRecursive(externalGroup.ExternalChildWaits);
                 }
             }
         }

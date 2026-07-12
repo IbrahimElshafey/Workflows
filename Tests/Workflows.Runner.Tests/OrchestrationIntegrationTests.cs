@@ -477,8 +477,234 @@ namespace Workflows.Runner.Tests
 
             connection.Close();
         }
-        
+
+        // ── Helper: register FanOut workflows and sync to DB ─────────────────
+        private async Task SyncFanOutDefinitions(ServiceProvider provider)
+        {
+            var registry = provider.GetRequiredService<IWorkflowBuilder>();
+            registry.RegisterWorkflow<FanOutManyIntegrationWorkflow>("FanOutManyIntegration", 1);
+            registry.RegisterWorkflow<FanOutAnyIntegrationWorkflow>("FanOutAnyIntegration", 1);
+            registry.RegisterSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal");
+
+            var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
+            var package = (BulkRegistrationPackage)packageField!.GetValue(registry)!;
+
+            using var scope = provider.CreateScope();
+            var defRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
+            var syncResult = await defRepo.SyncDefinitionsAsync(package);
+            syncResult.Success.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task WaitMany_WithRealDb_ShouldPersistExternalChildren_HydrateOnReload_AndCompleteAfterAllSignals()
+        {
+            // This test exercises the full DB round-trip:
+            // 1. Start workflow → ExternalChildWaits rows written to DB
+            // 2. GetInstanceStateAsync → rows re-hydrated via HydrateExternalChildWaitsAsync
+            // 3. Send signal for each child → child status updated in ExternalChildWaits table
+            // 4. After last signal → parent ExternalGroupWait completes → workflow completes
+
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            using var provider = CreateServiceProvider(dbName, out var connection);
+            await SyncFanOutDefinitions(provider);
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+            var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+
+            // ── Step 1: Start workflow ─────────────────────────────────────────
+            var instanceId = await orchestrator.StartWorkflowAsync("FanOutManyIntegration", 1, null);
+            instanceId.Should().NotBeEmpty();
+
+            dbContext.ChangeTracker.Clear();
+
+            // ── Step 2: Verify ExternalChildWaits rows exist in DB ────────────
+            var childRows = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            childRows.Should().HaveCount(3, "WaitMany has 3 children");
+            childRows.Should().OnlyContain(c => c.Status == (int)WaitStatus.Waiting);
+            childRows.Should().OnlyContain(c => c.SignalPath == "FanOutIntegrationSignal");
+
+            // ── Step 3: Re-load state — ExternalChildWaits hydrated from DB ───
+            var state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            var parent = state!.Waits.Single(w => w.Status == WaitStatus.Waiting)
+                .Should().BeOfType<ExternalGroupWaitDto>().Subject;
+            parent.WaitType.Should().Be(WaitType.WaitMany);
+            parent.ExternalChildWaits.Should().HaveCount(3, "hydrated from ExternalChildWaits table");
+
+            // ── Step 4: Send signal to child 1 ────────────────────────────────
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "FanOutIntegrationSignal",
+                Data = new FanOutIntegrationSignal { Value = "A" }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Only 1 child row should be Completed; group still Waiting
+            var childRowsAfter1 = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            childRowsAfter1.Count(c => c.Status == (int)WaitStatus.Completed).Should().Be(1);
+            childRowsAfter1.Count(c => c.Status == (int)WaitStatus.Waiting).Should().Be(2);
+
+            var stateAfter1 = await workflowStore.GetInstanceStateAsync(instanceId);
+            stateAfter1!.Status.Should().Be(WorkflowInstanceStatus.Running);
+
+            // ── Step 5: Send signal to child 2 ────────────────────────────────
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "FanOutIntegrationSignal",
+                Data = new FanOutIntegrationSignal { Value = "B" }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            var childRowsAfter2 = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            childRowsAfter2.Count(c => c.Status == (int)WaitStatus.Completed).Should().Be(2);
+
+            var stateAfter2 = await workflowStore.GetInstanceStateAsync(instanceId);
+            stateAfter2!.Status.Should().Be(WorkflowInstanceStatus.Running);
+
+            // ── Step 6: Send signal to child 3 — should complete workflow ─────
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "FanOutIntegrationSignal",
+                Data = new FanOutIntegrationSignal { Value = "C" }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            var finalState = await workflowStore.GetInstanceStateAsync(instanceId);
+            finalState.Should().NotBeNull();
+            finalState!.Status.Should().Be(WorkflowInstanceStatus.Completed);
+            var instance = finalState.StateObject.Instance as FanOutManyIntegrationWorkflow;
+            instance.Should().NotBeNull();
+            instance!.Completed.Should().BeTrue();
+            instance.ReceivedValues.Should().HaveCount(3);
+
+            // All child rows should be Completed in DB
+            var finalChildRows = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            finalChildRows.Should().OnlyContain(c => c.Status == (int)WaitStatus.Completed);
+
+            connection.Close();
+        }
+
+        [Fact]
+        public async Task WaitAny_WithRealDb_ShouldPersistExternalChildren_AndCompleteAfterFirstSignal_WithSiblingsCancelled()
+        {
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            using var provider = CreateServiceProvider(dbName, out var connection);
+            await SyncFanOutDefinitions(provider);
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+            var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+
+            // ── Step 1: Start workflow ─────────────────────────────────────────
+            var instanceId = await orchestrator.StartWorkflowAsync("FanOutAnyIntegration", 1, null);
+            instanceId.Should().NotBeEmpty();
+
+            dbContext.ChangeTracker.Clear();
+
+            // ── Step 2: Verify all 3 child rows in DB (Waiting) ───────────────
+            var childRows = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            childRows.Should().HaveCount(3);
+            childRows.Should().OnlyContain(c => c.Status == (int)WaitStatus.Waiting);
+
+            // ── Step 3: Re-load — hydrate ExternalChildWaits from DB ──────────
+            var state = await workflowStore.GetInstanceStateAsync(instanceId);
+            var parent = state!.Waits.Single(w => w.Status == WaitStatus.Waiting)
+                .Should().BeOfType<ExternalGroupWaitDto>().Subject;
+            parent.WaitType.Should().Be(WaitType.WaitAny);
+            parent.ExternalChildWaits.Should().HaveCount(3);
+
+            // ── Step 4: Send ONE signal — should complete workflow immediately ─
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "FanOutIntegrationSignal",
+                Data = new FanOutIntegrationSignal { Value = "First" }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Workflow completes after just the first child fires
+            var finalState = await workflowStore.GetInstanceStateAsync(instanceId);
+            finalState.Should().NotBeNull();
+            finalState!.Status.Should().Be(WorkflowInstanceStatus.Completed);
+            var instance = finalState.StateObject.Instance as FanOutAnyIntegrationWorkflow;
+            instance.Should().NotBeNull();
+            instance!.Completed.Should().BeTrue();
+
+            // Exactly 1 child Completed; remaining 2 are Canceled (pruned by WaitAny)
+            var finalChildRows = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            finalChildRows.Count(c => c.Status == (int)WaitStatus.Completed).Should().Be(1);
+            finalChildRows.Count(c => c.Status == (int)WaitStatus.Canceled).Should().Be(2);
+
+            connection.Close();
+        }
     }
+
+    // ── Fan-out integration workflow definitions ──────────────────────────────
+
+    [Workflow("FanOutManyIntegration", 1)]
+    public sealed class FanOutManyIntegrationWorkflow : WorkflowContainer
+    {
+        public bool Completed { get; set; }
+        public List<string> ReceivedValues { get; set; } = new();
+
+        public async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitMany(new Wait[]
+            {
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "Child1")
+                    .AfterMatch(s => ReceivedValues.Add(s.Value)),
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "Child2")
+                    .AfterMatch(s => ReceivedValues.Add(s.Value)),
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "Child3")
+                    .AfterMatch(s => ReceivedValues.Add(s.Value))
+            }, "WaitForAll3");
+
+            Completed = true;
+        }
+    }
+
+    [Workflow("FanOutAnyIntegration", 1)]
+    public sealed class FanOutAnyIntegrationWorkflow : WorkflowContainer
+    {
+        public bool Completed { get; set; }
+
+        public async IAsyncEnumerable<Wait> Run()
+        {
+            yield return WaitAny(new Wait[]
+            {
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "AnyChild1"),
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "AnyChild2"),
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "AnyChild3")
+            }, "WaitForAny3");
+
+            Completed = true;
+        }
+    }
+
+    public sealed class FanOutIntegrationSignal
+    {
+        public string Value { get; set; } = string.Empty;
+    }
+
+
 
     [Workflow("ShortDelayWorkflow", 1)]
     public sealed class ShortDelayWorkflow : WorkflowContainer
