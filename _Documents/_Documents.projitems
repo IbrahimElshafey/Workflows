@@ -9,6 +9,7 @@
     <Import_RootNamespace>_Documents</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)AI-Prompts\Prompt1.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Architectural Reference Guide.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Command Execution Modes.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Distributed Lock Registry.md" />
