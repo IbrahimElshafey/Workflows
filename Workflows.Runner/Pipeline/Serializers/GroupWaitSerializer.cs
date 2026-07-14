@@ -9,178 +9,55 @@ using Workflows.Definition;
 namespace Workflows.Runner.Pipeline.Serializers
 {
     /// <summary>
-    /// Handles GroupWait objects.
-    /// Unfolds composite layers and supports executing nested sub-workflows.
+    /// Handles GroupWaitDto objects.
+    /// Child waits are already DTOs due to the Wait -> DTO conversion.
     /// Returns false to suspend execution.
     /// </summary>
     internal class GroupWaitSerializer : WaitSerializer
     {
-        private readonly Mapper _mapper;
-        private readonly StateMachineAdvancer _stateMachineAdvancer;
+        public GroupWaitSerializer(Mapper mapper, StateMachineAdvancer stateMachineAdvancer)
+        {
+            if (mapper == null) throw new ArgumentNullException(nameof(mapper));
+            if (stateMachineAdvancer == null) throw new ArgumentNullException(nameof(stateMachineAdvancer));
+        }
 
         public SerializerFactory ProcessorFactory { get; set; }
 
-        public GroupWaitSerializer(Mapper mapper, StateMachineAdvancer stateMachineAdvancer)
+        public override Task<bool> Serialize(WaitInfrastructureDto yieldedWait, WorkflowExecutionContext context)
         {
-            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
-            _stateMachineAdvancer = stateMachineAdvancer ?? throw new ArgumentNullException(nameof(stateMachineAdvancer));
-        }
-
-        public override async Task<bool> Serialize(Wait yieldedWait, WorkflowExecutionContext context)
-        {
-            var groupWait = yieldedWait as GroupWait;
-            if (groupWait == null)
+            if (yieldedWait is not GroupWaitDto groupWaitDto)
             {
-                throw new InvalidOperationException("GroupWaitSerializer requires a GroupWait.");
+                throw new InvalidOperationException("GroupWaitSerializer requires a GroupWaitDto.");
             }
 
-            // Save ExplicitState to WorkflowStateObject.WaitStatesObjects
-            SaveWaitStatesToMachineState(yieldedWait, context.WorkflowState.StateObject);
+            // Save ExplicitState to WorkflowStateObject.Locals
+            SaveWaitStatesToMachineState(groupWaitDto, context.WorkflowState.StateObject, context.WorkflowInstance);
 
-            // Map parent group to DTO (do not map children yet)
-            var groupWaitDto = _mapper.MapToDto(groupWait, mapChildren: false) as GroupWaitDto;
-            if (groupWaitDto == null)
-            {
-                throw new InvalidOperationException("Failed to map GroupWait to GroupWaitDto.");
-            }
-
-            // Recursively process and map all child waits
-            groupWaitDto.ChildWaits = await ProcessChildWaits(groupWait.ChildWaits, groupWait.Id, context).ConfigureAwait(false);
+            // Recursively save state for all child DTOs
+            SaveChildStatesRecursive(groupWaitDto.ChildWaits, context);
 
             // Add parent group to waits collection
             context.WorkflowState.Waits.Add(groupWaitDto);
 
             // Return false - passive wait, suspend execution
-            return false;
+            return Task.FromResult(false);
         }
 
-        private async Task<List<WaitInfrastructureDto>> ProcessChildWaits(
-            IReadOnlyList<Wait> childWaits, 
-            string parentWaitId, 
-            WorkflowExecutionContext context)
+        private void SaveChildStatesRecursive(IEnumerable<WaitInfrastructureDto> childWaits, WorkflowExecutionContext context)
         {
-            if (childWaits == null || !childWaits.Any())
-            {
-                return new List<WaitInfrastructureDto>();
-            }
-
-            var childDtos = new List<WaitInfrastructureDto>();
+            if (childWaits == null) return;
 
             foreach (var child in childWaits)
             {
-                // Save child wait states
-                SaveWaitStatesToMachineState(child, context.WorkflowState.StateObject);
+                if (child == null) continue;
 
-                // Map child to DTO
-                var childDto = _mapper.MapToDto(child);
-                childDto.ParentWaitId = parentWaitId;
+                SaveWaitStatesToMachineState(child, context.WorkflowState.StateObject, context.WorkflowInstance);
 
-                // If child is also a GroupWait, recursively process its children
-                if (child is GroupWait nestedGroup)
+                if (child.ChildWaits != null && child.ChildWaits.Any())
                 {
-                    var nestedGroupDto = childDto as GroupWaitDto;
-                    if (nestedGroupDto != null)
-                    {
-                        nestedGroupDto.ChildWaits = await ProcessChildWaits(nestedGroup.ChildWaits, nestedGroup.Id, context).ConfigureAwait(false);
-                    }
+                    SaveChildStatesRecursive(child.ChildWaits, context);
                 }
-                // If child is a SubWorkflowWait, process/advance it
-                else if (child is SubWorkflowWait subWorkflow)
-                {
-                    var subWorkflowDto = childDto as SubWorkflowWaitDto;
-                    if (subWorkflowDto != null)
-                    {
-                        subWorkflowDto.ChildWaits = new List<WaitInfrastructureDto>();
-                        
-                        var childKey = subWorkflowDto.StateMachineObjectId.ToString();
-                        var childState = new WorkflowStateObject
-                        {
-                            WorkflowType = context.WorkflowState.WorkflowType,
-                            SubWorkflowMethod = subWorkflowDto.CallerName
-                        };
-                        
-                        bool subWorkflowCompleted = false;
-                        var subWorkflowStream = subWorkflow.Runner;
-
-                        while (!subWorkflowCompleted)
-                        {
-                            var advancerResult = await _stateMachineAdvancer.RunAsync(subWorkflowStream, childState).ConfigureAwait(false);
-                            
-                            if (advancerResult == null)
-                            {
-                                subWorkflowCompleted = true;
-                                break;
-                            }
-
-                            var childWait = advancerResult.Wait;
-                            childState = advancerResult.State;
-
-                            if (childWait == null)
-                            {
-                                subWorkflowCompleted = true;
-                                break;
-                            }
-
-                            // Save child wait states
-                            SaveWaitStatesToMachineState(childWait, childState);
-
-                            if (IsActiveWait(childWait))
-                            {
-                                var childProcessor = ProcessorFactory.GetSerializer(childWait);
-                                bool childContinues = await childProcessor.Serialize(childWait, context).ConfigureAwait(false);
-                                
-                                if (!childContinues)
-                                {
-                                    context.WorkflowState.StateObject.Locals[childKey] = childState;
-                                    break;
-                                }
-                            }
-                            else
-                            {
-                                // Passive wait
-                                var subChildDto = _mapper.MapToDto(childWait);
-                                subChildDto.ParentWaitId = subWorkflow.Id;
-                                subWorkflowDto.ChildWaits.Add(subChildDto);
-                                
-                                // Store child state
-                                context.WorkflowState.StateObject.Locals[childKey] = childState;
-                                break;
-                            }
-                        }
-
-                        if (subWorkflowCompleted)
-                        {
-                            context.WorkflowState.StateObject.Locals.Remove(childKey);
-                            subWorkflowDto.Status = Abstraction.Enums.WaitStatus.Completed;
-                        }
-                    }
-                }
-                // If child is a SubWorkflowWait DTO with children already mapped
-                else if (child is SubWorkflowWait subWorkflowLegacy && subWorkflowLegacy.ChildWaits != null && subWorkflowLegacy.ChildWaits.Any())
-                {
-                    var subWorkflowDto = childDto as SubWorkflowWaitDto;
-                    if (subWorkflowDto != null)
-                    {
-                        subWorkflowDto.ChildWaits = new List<WaitInfrastructureDto>();
-                        foreach (var subChild in subWorkflowLegacy.ChildWaits)
-                        {
-                            SaveWaitStatesToMachineState(subChild, context.WorkflowState.StateObject);
-                            var subChildDto = _mapper.MapToDto(subChild);
-                            subChildDto.ParentWaitId = subWorkflowLegacy.Id;
-                            subWorkflowDto.ChildWaits.Add(subChildDto);
-                        }
-                    }
-                }
-
-                childDtos.Add(childDto);
             }
-
-            return childDtos;
-        }
-
-        private bool IsActiveWait(Wait wait)
-        {
-            return false;
         }
     }
 }

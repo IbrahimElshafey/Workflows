@@ -17,11 +17,50 @@ namespace Workflows.Runner.Helpers
         private static readonly ConcurrentDictionary<Type, Func<object, StateMachineObject>> _dehydratorCache
             = new ConcurrentDictionary<Type, Func<object, StateMachineObject>>();
 
+        private static object UnwrapEnumerator(object enumerator)
+        {
+            if (enumerator == null) return null;
+            var type = enumerator.GetType();
+
+            var prop = type.GetProperty("InnerEnumerator", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (prop != null)
+            {
+                var inner = prop.GetValue(enumerator);
+                if (inner != null)
+                {
+                    return UnwrapEnumerator(inner);
+                }
+            }
+
+            if (type.FullName != null && type.FullName.Contains("CastOrConvertStream"))
+            {
+                var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var field in fields)
+                {
+                    var fieldType = field.FieldType;
+                    var isEnumerator = (fieldType.IsGenericType && fieldType.GetGenericTypeDefinition() == typeof(System.Collections.Generic.IAsyncEnumerator<>)) ||
+                                       fieldType.GetInterfaces().Any(i => 
+                                           i.IsGenericType && 
+                                           i.GetGenericTypeDefinition() == typeof(System.Collections.Generic.IAsyncEnumerator<>));
+                    if (isEnumerator)
+                    {
+                        var inner = field.GetValue(enumerator);
+                        if (inner != null)
+                        {
+                            return UnwrapEnumerator(inner);
+                        }
+                    }
+                }
+            }
+            return enumerator;
+        }
+
         public static void Hydrate(object enumerator, StateMachineObject stateObj)
         {
             if (enumerator == null) return;
             if (stateObj == null) return;
 
+            enumerator = UnwrapEnumerator(enumerator);
             var type = enumerator.GetType();
             var hydrator = _hydratorCache.GetOrAdd(type, BuildHydratorDelegate);
             hydrator(enumerator, stateObj);
@@ -31,6 +70,7 @@ namespace Workflows.Runner.Helpers
         {
             if (enumerator == null) return null;
 
+            enumerator = UnwrapEnumerator(enumerator);
             var type = enumerator.GetType();
             var dehydrator = _dehydratorCache.GetOrAdd(type, BuildDehydratorDelegate);
             return dehydrator(enumerator);

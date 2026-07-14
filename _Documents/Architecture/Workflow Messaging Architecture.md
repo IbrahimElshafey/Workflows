@@ -1,17 +1,15 @@
-﻿# Workflow Messaging Architecture
+# Workflow Messaging Architecture
 
-This document outlines the communication architecture between the **Workflow Orchestrator** and the **Workflow Runners**. 
-
-The core philosophy of this design is **100% Infrastructure Agnosticism**. The domain logic never interacts with magic strings, HTTP URLs, or RabbitMQ queue names. Instead, it relies on a strongly-typed, expression-based routing engine that maps logical .NET types to physical transport mechanisms at application startup.
+This document outlines the communication architecture between the **Workflow Orchestrator** and the **Workflow Runners** in the embedded in-process execution model.
 
 ---
 
 ## 1. The Core Interfaces
 
-The communication layer is built on three primary interfaces, completely firewalling the domain from the underlying transport (HTTP, RabbitMQ, Kafka, etc.).
+The communication layer is built on three primary interfaces, completely fire-walling the engine logic from the underlying transport mechanics.
 
 ### `IMessageTransport` (The Sender Engine)
-Implemented by physical transports (e.g., `RabbitMqTransport`, `HttpTransport`). It requires a physical destination address.
+Implemented by physical transports. It requires a physical destination address.
 ```csharp
 public interface IMessageTransport
 {
@@ -41,136 +39,108 @@ public interface IMessageDispatcher
 
 ---
 
-## 2. Smart Routing via Expression Trees
+## 2. In-Process Message Transport Configuration
 
-To prevent hardcoding queues or URLs in the execution logic, we use the `TransportRoutingBuilder`. This compiles Expression Trees at startup to evaluate high-performance routing rules.
+By default, the engine is bootstrapped under `Workflows.Hosting.InProcess` using loopback/in-memory messaging transports. 
 
-**Configuration Example (`Startup.cs`):**
+### Bootstrapping in `InProcessHost.cs`
+At startup, the host registers `InProcessMessageTransport` and `InProcessMessageSubscriber` to handle all traffic.
+
 ```csharp
-var builder = new TransportRoutingBuilder();
+// 1. Register transports
+services.AddSingleton<InProcessMessageTransport>();
+services.AddSingleton<InProcessMessageSubscriber>();
 
-// Route Request-Response (RPC) over HTTP
-builder.ForMessage<BulkRegistrationPackage>()
-       .Use<HttpTransport, HttpSubscriber>("http://orchestrator-api/register");
+// 2. Build routing rules
+var routingBuilder = new TransportRoutingBuilder();
+routingBuilder.UseDefault<InProcessMessageTransport, InProcessMessageSubscriber>();
 
-// Route Fire-and-Forget execution over RabbitMQ based on workflow type
-builder.ForMessage<WorkflowExecutionRequest>()
-       .When(req => req.Context.WorkflowTypeName == "OrderWorkflow")
-       .Use<RabbitMqTransport, RabbitMqSubscriber>("orders-execution-queue");
+// Explicitly route execution requests to the loopback transport
+routingBuilder.ForMessage<StartWorkflowRequest>()
+    .Use<InProcessMessageTransport, InProcessMessageSubscriber>("in-process-runner");
+routingBuilder.ForMessage<WorkflowExecutionRequest>()
+    .Use<InProcessMessageTransport, InProcessMessageSubscriber>("in-process-runner");
+
+services.AddSingleton(routingBuilder);
+services.AddSingleton<ITransportFactory, DefaultTransportFactory>();
+services.AddSingleton<IMessageDispatcher, DefaultMessageDispatcher>();
 ```
 
 ---
 
-## 3. Execution Patterns
+## 3. The In-Process Channels Execution Loop
 
-### A. Fire-and-Forget (Workflow Execution)
-Used when the Orchestrator commands a Runner to execute, or when a Runner pushes a result back. Threads are immediately freed.
+When a workflow is started or a signal is received, the messaging flows as follows:
 
-*   **Orchestrator:** `await _dispatcher.DispatchAsync(executionRequest);`
-*   **Behind the scenes:** Evaluates rule -> Resolves `RabbitMqTransport` -> Publishes to `orders-execution-queue`.
+```
+[External Request / Signal]
+             │
+             ▼
+    [InboxOrchestrator]
+             │ (Validates & Enqueues)
+             ▼
+   [WorkflowExecutionChannel] ◄─── (System.Threading.Channels)
+             │
+             ▼
+      [RunnerWorker] (Hosted Service)
+             │ (Lease / Route version)
+             ▼
+     [WorkflowRunner] (Stateless Tick)
+             │
+             ▼
+[WorkflowRunResult / Wait DTOs]
+             │
+             ▼
+ [CoordinatorCommitWorker] (Persists state to SQLite DB)
+```
 
-### B. Request-Response (Registration Sync)
-Used for fast operations requiring immediate feedback, utilizing RPC patterns (e.g., temporary reply queues in RabbitMQ).
+### 1. Request Dispatching (In-Memory Channel)
+`RunnerWorker` listens to a high-performance in-memory channel (`WorkflowExecutionChannel`). 
+When the client or orchestrator initiates an action, a `StartWorkflowRequest` or `WorkflowExecutionRequest` is pushed into the channel:
 
-*   **Runner:** `await _dispatcher.DispatchAndReceiveAsync<BulkRegistrationPackage, SyncResult>(package);`
-*   **Behind the scenes:** Pauses thread -> Waits for Orchestrator to confirm SQL save -> Resumes.
+```csharp
+public class WorkflowExecutionChannel
+{
+    private readonly Channel<WorkflowExecutionContext> _channel = Channel.CreateUnbounded<WorkflowExecutionContext>(...);
+    public ChannelWriter<WorkflowExecutionContext> EgressWriter => _channel.Writer;
+    public ChannelReader<WorkflowExecutionContext> IngressReader => _channel.Reader;
+}
+```
+
+### 2. Processing (RunnerWorker)
+The `RunnerWorker` background service loops asynchronously reading requests from the ingress reader, resolves a scoped DI container, determines the workflow version using `WorkflowVersionRouter`, and dispatches it to the stateless `WorkflowRunner`:
+
+```csharp
+while (await reader.WaitToReadAsync(stoppingToken))
+{
+    while (reader.TryRead(out var context))
+    {
+        using (var scope = _serviceProvider.CreateScope())
+        {
+            var runner = scope.ServiceProvider.GetRequiredService<WorkflowRunner>();
+            // Route version and execute
+            var result = await runner.RunWorkflowAsync(req);
+            ...
+        }
+    }
+}
+```
+
+### 3. State Preservation & Commit
+Upon completing the state machine tick, the runner returns the updated run context and wait DTOs. The `CoordinatorCommitWorker` picks up the state delta and commits it atomically to the SQLite database (marking completed waits and inserting newly yielded ones).
 
 ---
 
-## 4. Signal Ingestion (The ASP.NET Bridge)
+## 4. Signal Ingestion
 
-When external systems send Signals (e.g., "Payment Approved") via standard API calls, we use a streamlined bridge to maintain our agnostic core while leveraging standard ASP.NET routing.
+External signals do not use custom HTTP transport adapters or brokers. They are posted directly to the orchestrator interface (`IOrchestrator.PostSignalAsync`) via the API controllers or dashboard services:
 
-### The Bridge Subscriber
-This holds the handler logic in memory, waiting for the ASP.NET Controller to pass the data.
 ```csharp
-public class HttpSubscriber : IMessageSubscriber
+public interface IOrchestrator
 {
-    private readonly ConcurrentDictionary<Type, Func<object, Task>> _handlers = new();
-
-    // The address string is ignored; ASP.NET handles routing
-    public void Subscribe<T>(string address, Func<T, Task> handler)
-    {
-        _handlers[typeof(T)] = async (obj) => await handler((T)obj);
-    }
-
-    public async Task TriggerAsync<T>(T message)
-    {
-        if (_handlers.TryGetValue(typeof(T), out var handler))
-        {
-            await handler(message);
-        }
-        else
-        {
-            throw new InvalidOperationException($"No subscriber registered for type {typeof(T).Name}");
-        }
-    }
+    Task StartWorkflowAsync(StartWorkflowRequest request);
+    Task PostSignalAsync(string signalPath, object signalPayload, Guid? signalId = null);
 }
 ```
 
-### The Standard Controller
-A clean, secure entry point for external systems.
-
-```csharp
-[ApiController]
-[Route("api/signals")]
-public class SignalsController : ControllerBase
-{
-    private readonly HttpSubscriber _subscriber;
-
-    public SignalsController(HttpSubscriber subscriber)
-    {
-        _subscriber = subscriber;
-    }
-
-    [HttpPost("receive")]
-    public async Task<IActionResult> ReceiveSignal([FromBody] SignalRequest request)
-    {
-        try
-        {
-            // Pass the typed request directly into the agnostic abstraction
-            await _subscriber.TriggerAsync(request);
-            return Accepted(new { Message = "Signal accepted." });
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { Error = ex.Message });
-        }
-    }
-}
-```
-
-### The Bootstrapper
-A background service that wires the core `ISignalProcessor` to the HTTP Bridge at startup.
-
-```csharp
-public class OrchestratorBootstrapper : IHostedService
-{
-    private readonly ITransportFactory _factory;
-    private readonly ISignalProcessor _signalProcessor;
-
-    public OrchestratorBootstrapper(ITransportFactory factory, ISignalProcessor signalProcessor)
-    {
-        _factory = factory;
-        _signalProcessor = signalProcessor;
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken)
-    {
-        // Resolve the HttpSubscriber registered for this type
-        var subscriber = _factory.GetSubscriber<SignalRequest>();
-
-        // Bind the core processing logic to the bridge
-        subscriber.Subscribe<SignalRequest>(
-            "ignored-for-http", 
-            async (signal) => await _signalProcessor.ProcessSignalAsync(signal)
-        );
-
-        return Task.CompletedTask;
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-}
-```
-
-````
+This ensures that signal handling is transactional, idempotent, and leverages the SQLite-backed inbox tables for deduplication prior to runner dispatch.

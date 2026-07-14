@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
-using Workflows.Definition;
+using Workflows.Abstraction.DTOs.Waits;
 
 namespace Workflows.Runner.Pipeline
 {
@@ -20,7 +20,7 @@ namespace Workflows.Runner.Pipeline
         /// Checks if a yielded wait should be cancelled and skips it if so.
         /// Returns true if wait was cancelled and execution should continue to next wait.
         /// </summary>
-        public Task<bool> CheckAndSkipCancelledWaitAsync(Wait yieldedWait, WorkflowExecutionContext context)
+        public Task<bool> CheckAndSkipCancelledWaitAsync(WaitInfrastructureDto yieldedWait, WorkflowExecutionContext context)
         {
             if (yieldedWait == null) return Task.FromResult(false);
 
@@ -73,9 +73,9 @@ namespace Workflows.Runner.Pipeline
         /// <summary>
         /// Checks if a wait should be cancelled based on its tokens.
         /// </summary>
-        public bool IsWaitCancelled(Wait wait, HashSet<string> cancelledTokens)
+        public bool IsWaitCancelled(WaitInfrastructureDto wait, HashSet<string> cancelledTokens)
         {
-            if (cancelledTokens == null || !cancelledTokens.Any())
+            if (cancelledTokens == null || !cancelledTokens.Any() || wait == null)
             {
                 return false;
             }

@@ -2,6 +2,7 @@ using System;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition.Helpers;
 using Workflows.Primitives;
 
@@ -62,6 +63,7 @@ namespace Workflows.Definition
 
         public static implicit operator ImmediateCommandWait<TCommand, TResult>(ImmediateCommandBuilder<TCommand, TResult> builder) => builder._wait;
         public static implicit operator Wait(ImmediateCommandBuilder<TCommand, TResult> builder) => builder._wait;
+        public static implicit operator WaitInfrastructureDto(ImmediateCommandBuilder<TCommand, TResult> builder) => WaitDtoConversion.Convert(builder._wait);
     }
 
     public readonly struct StatefulImmediateCommandBuilder<TCommand, TResult, TState>
@@ -128,6 +130,7 @@ namespace Workflows.Definition
 
         public static implicit operator ImmediateCommandWait<TCommand, TResult>(StatefulImmediateCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
         public static implicit operator Wait(StatefulImmediateCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
+        public static implicit operator WaitInfrastructureDto(StatefulImmediateCommandBuilder<TCommand, TResult, TState> builder) => WaitDtoConversion.Convert(builder._wait);
     }
 
     // ==========================================
@@ -205,6 +208,7 @@ namespace Workflows.Definition
 
         public static implicit operator DeferredCommandWait<TCommand, TResult>(DeferredCommandBuilder<TCommand, TResult> builder) => builder._wait;
         public static implicit operator Wait(DeferredCommandBuilder<TCommand, TResult> builder) => builder._wait;
+        public static implicit operator WaitInfrastructureDto(DeferredCommandBuilder<TCommand, TResult> builder) => WaitDtoConversion.Convert(builder._wait);
     }
 
     public readonly struct StatefulDeferredCommandBuilder<TCommand, TResult, TState>
@@ -291,6 +295,7 @@ namespace Workflows.Definition
 
         public static implicit operator DeferredCommandWait<TCommand, TResult>(StatefulDeferredCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
         public static implicit operator Wait(StatefulDeferredCommandBuilder<TCommand, TResult, TState> builder) => builder._wait;
+        public static implicit operator WaitInfrastructureDto(StatefulDeferredCommandBuilder<TCommand, TResult, TState> builder) => WaitDtoConversion.Convert(builder._wait);
     }
 
     // ==========================================

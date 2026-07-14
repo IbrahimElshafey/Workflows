@@ -49,6 +49,10 @@ namespace Workflows.Runner.Tests.ResumptionTests
         public bool Verified { get; set; }
     }
 
+    public class GroupWaitResumptionWorkflowState
+    {
+    }
+
     [Workflow("GroupWaitResumptionWorkflow", 1)]
     public sealed class GroupWaitResumptionWorkflow : WorkflowContainer
     {
@@ -57,7 +61,7 @@ namespace Workflows.Runner.Tests.ResumptionTests
         public bool CustomerOk { get; set; }
         public List<string> ExecutionLog { get; set; } = new();
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(GroupWaitResumptionWorkflowState state = null!)
         {
             ExecutionLog.Add("Start");
             yield return WaitSignal<ResumptionOrderReceivedSignal>("OrderReceived", "WaitOrderReceived")

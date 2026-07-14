@@ -1,91 +1,123 @@
-# Feature Gap Analysis: Planned vs. Unimplemented & Unplanned Must-Haves
+# 📋 Workflows Engine: Gap Analysis & Feature Status
 
-* If `IsGenericMatchFullMatch == true` or `IsExactMatchFullMatch == true`, the orchestrator should also evaluate the parent group match when its type is `WaitAll`. It should also change the wait status to `Matched`.
-* Review method `FindInstancesWaitingForSignalAsync`
-* Link standard logs that happen when a specific workflow instance runs to this specific workflow instance.
-* **Workflow Attribute Validation**: Ensure every workflow container has a `[Workflow(Name = "...", Version = "...")]` attribute to prevent configuration mismatch at runtime.
-To test:
-*  We only serialize state machine genrated class public fields except <>1__state, <>2__curren and <>4__this
-* A signal should not trigger multiple workflow instances of the same type simultaneously. However, if the first selected instance returns Unmatched after the runner completes the full evaluation, the system should sequentially evaluate the next candidate instance, and continue this process until a match is found or no instances remain.
+This document tracks the implementation status, planned roadmap, and key technical specifications for all required production features of the Workflows engine.
+
+**Last reviewed:** 2026-07-13 | **Test suite:** 135 tests, all passing ✅
 
 ---
 
-## 1. Planned but Unimplemented (or Partially Implemented) Features
+## 🏛️ Implementation Summary Dashboard
 
-These features are documented across various roadmap files in this directory but have not yet been fully realized in the codebase.
-
-### 1.1 Orchestrator-Side Distributed Timer Scheduling
-* **Goal**: Enable fully reliable, distributed time-based triggers (`TimeWait`).
-* **Current State**: **Unimplemented**. The orchestrator currently uses a basic, in-memory scheduler in [Scheduler.cs](file:///d:/MySrc/Workflows/Workflows.Orchestrator/Scheduler.cs) powered by an in-memory `ConcurrentDictionary` and a thread polling loop. This is fragile and will lose all scheduled timer signals if the application restarts.
-* **Planned Solution**: Integrate Hangfire or Quartz.NET to serve as the distributed scheduler.
-
-### 1.2 Group Wait Evaluation & Routing
-* **Goal**: Handle complex evaluation, tracking of child counts, and downward branch pruning for composite `GroupWait` structures (e.g. `MatchAll` and `MatchAny`).
-* **Current State**: **Partially Implemented**. The C# DSL models exist in [GroupWait.cs](file:///d:/MySrc/Workflows/Workflows.Definition/GroupWait.cs), but the Orchestrator doesn't support complex evaluation, tracking child counts, or early pruning.
-* **Planned Solution**: Implement group evaluation logic in the Orchestrator.
-
-### 1.3 Side-by-Side (SxS) Version Routing
-* **Goal**: Run old, in-flight workflow instances on the exact version of the C# code they started with while routing new instances to the latest version.
-* **Current State**: **Unimplemented**. Currently, [WorkflowRegistry.cs](file:///d:/MySrc/Workflows/Workflows.Runner/WorkflowRegistry.cs) stores registered workflows strictly by their Name, overwriting other versions in memory. When instantiating, the runner fetches the workflow container by name and ignores the version.
-* **Planned Solution**: Scan assemblies for `[Workflow]` attributes, store routes in a `WorkflowRegistrations` database table, and resolve the exact version dynamically.
-
-### 1.5 Optimistic Concurrency & ETag/RowVersion Retries
-* **Goal**: Prevent state overwrites in high-throughput or clustered deployments by catching DB concurrency exceptions and retrying executions.
-* **Current State**: **Partially Implemented**. The DB schema context in [WorkflowsDbContext.cs](file:///d:/MySrc/Workflows/DataStore/Workflows.Storage.EntityFrameworkCore/WorkflowsDbContext.cs) maps `ConcurrencyToken`, and the [WorkflowAuditingInterceptor.cs](file:///d:/MySrc/Workflows/DataStore/Workflows.Storage.EntityFrameworkCore/WorkflowAuditingInterceptor.cs) updates it automatically on updates. However, the Orchestrator and Runner do not catch concurrency exceptions or retry the execution pipeline with exponential backoff.
-* **Planned Solution**: Implement catch-and-retry logic in the Orchestrator's pipeline.
-
-### 1.6 Relational Database Pruning
-* **Goal**: Periodically clean up orphaned wait records belonging to completed/faulted workflow instances to keep indexing fast.
-* **Current State**: **Partially Implemented**. Active waits are pruned in [WorkflowStore.cs](file:///d:/MySrc/Workflows/DataStore/Workflows.Storage.EntityFrameworkCore/WorkflowStore.cs) when completed or cancelled via token, but no background pruning worker exists for database-wide cleanup of orphaned rows.
-* **Planned Solution**: Add a background cleanup worker that periodically runs to prune dead/orphaned rows.
-
-### 1.7 High-Performance JSON Serialization
-* **Goal**: Minimize Garbage Collector (GC) pressure and avoid reflection in serialization loops.
-* **Current State**: **Partially Implemented**. Newtonsoft.Json settings are utilized, but character array pooling (`ArrayPool<char>`), object reference loops preservation, and direct streaming to/from DB connections are not yet fully integrated.
-* **Planned Solution**: Adopt array pooling, contract caching, and stream-direct serialization.
-
-### 1.8 Massive Fan-Out (External State Pattern)
-* **Goal**: Prevent JSON state machine bloat by storing massive fan-out conditions (e.g. waiting for 10,000+ items) out-of-process in a correlation DB table.
-* **Current State**: **Unimplemented**. All composite waits (`GroupWait`) are stored inline in the instance state, causing state bloat on massive fan-outs.
-* **Planned Solution**: Implement `WaitMany` or `WaitAny` that persist state out-of-process.
-
-### 1.9 Payload Monitoring & Zombie Recovery
-* **Goal**: Alert operators if workflow state sizes exceed safe thresholds and suspend workflows that enter infinite crash loops.
-* **Current State**: **Unimplemented**.
-* **Planned Solution**: Implement payload size logs/circuit breakers and retry limit policies.
-
-### 1.10 Roslyn Compiler Attribute Validation
-* **Goal**: Validate at compile-time that all workflow container classes have a valid `[Workflow]` attribute.
-* **Current State**: **Unimplemented**. The compiler analyzer ([WorkflowAnalyzer.cs](file:///d:/MySrc/Workflows/Workflows.Analyzers/WorkflowAnalyzer.cs)) is written for closures and structural rules, but does not validate attributes.
-* **Planned Solution**: Extend the Roslyn rules to include attribute validation checks.
-
-### 1.11 UI Administration Dashboard
-* **Goal**: A visual console displaying metrics, DAG diagrams, state inspectors, saga compensation paths, and manual lifecycle actions.
-* **Current State**: **Unimplemented**. No UI projects or admin endpoints exist.
+| # | Feature | Status | Commit / Details | Reference Spec |
+|---|---------|--------|------------------|----------------|
+| **1.1** | Distributed Timer Scheduling (`TimeWait`) | ✅ Implemented | `c88a148` (In-memory dict with Guid match keys) | [Timer Scheduling](file:///d:/MySrc/Workflows/_Documents/Architecture/Orchestrator-Side%20Distributed%20Timer%20Scheduling.md) |
+| **1.2** | Side-by-Side (SxS) Version Routing | ✅ Implemented | `014eafc` (Archived project ALCs, in-process routing) | [SxS Architecture](file:///d:/MySrc/Workflows/_Documents/Architecture/Workflow%20Side-by-Side%20(SxS)%20Execution%20Architecture.md) |
+| **1.3** | Composite Wait Group & Pruning (`GroupWait`) | ✅ Implemented | Runner + Store (Downward pruning of non-completed siblings) | — |
+| **1.4** | Optimistic Concurrency Retry Pipeline | 🟡 Partial | Concurrency token mapped in EF; needs retry interceptor / loop | — |
+| **1.5** | Massive Fan-Out (WaitMany / WaitAny) | 🟡 Partial | Implemented in `014eafc` via external state DB; needs integration tests | — |
+| **1.6** | Background DB Pruning Worker | 🟡 Partial | Stale locks expired by worker; needs general dead-row sweeper | — |
+| **1.7** | High-Performance JSON Serialization | 🟡 Partial | Settings cached; needs `ArrayPool<char>` and stream-based I/O | — |
+| **1.8** | Roslyn Analyzer — Attribute Verification | 🟡 Partial | AST closure/yield validation done; needs `[Workflow]` check | — |
+| **1.9** | UI Administration Dashboard | ✅ Implemented | `f00364f` (ASP.NET Core MVC statistics and wait trees views) | — |
+| **1.10**| Payload Monitoring & Zombie Recovery | 🔴 Not Started | Size thresholds warning, retry limit circuit breaker policies | — |
+| **2.1** | Distributed Lock Registry | ✅ Implemented | `014eafc` (Row-level SQL lock manager with TTL expiry worker) | [Lock Registry](file:///d:/MySrc/Workflows/_Documents/Architecture/Distributed%20Lock%20Registry.md) |
+| **2.2** | Idempotent Signal/Command Processing | ✅ Implemented | `347a614` (SignalInbox database deduplication table) | [Idempotent Processing](file:///d:/MySrc/Workflows/_Documents/Architecture/Idempotent%20Signal%20Processing.md) |
+| **2.3** | Poison Message & Dead Letter Queue (DLQ) | 🔴 Not Started | Needs retry count tracking, dead-letter storage, error isolation | [Poison & DLQ Spec](file:///d:/MySrc/Workflows/_Documents/Architecture/Poison%20Message%20&%20DLQ%20Handling.md) |
+| **2.4** | State Payload Encryption at Rest | 🔴 Not Started | Needs `IStateEncryptor` wrapper (AES-256-GCM envelope security) | [Encryption Spec](file:///d:/MySrc/Workflows/_Documents/Architecture/State%20Payload%20Encryption.md) |
+| **2.5** | OpenTelemetry Tracing | 🔴 Not Started | Needs `ActivitySource` instrumentation across orchestrator/runner | [Telemetry Spec](file:///d:/MySrc/Workflows/_Documents/Architecture/Telemetry%20&%20OpenTelemetry%20Integration.md) |
+| **2.6** | Schema Compatibility Verification | 🔴 Not Started | Needs Roslyn-based CLI tool to analyze AST drift before deployment | [Schema Spec](file:///d:/MySrc/Workflows/_Documents/Architecture/Workflow%20Schema%20Compatibility%20Verification.md) |
+| **2.7** | Runner Clustering & Work Partitioning | ❌ Deprecated | Replaced by single-unit embedded in-process hosting model | [Clustering Spec (Obsolete)](file:///d:/MySrc/Workflows/_Documents/Architecture/Runner%20Clustering%20&%20Work%20Partitioning.md) |
 
 ---
 
-### 2. Planned & Documented Production Features (New Architectural Specifications)
+## 💡 Key Design Reminders & Edge Cases
 
-These features have been designed and documented to ensure the Workflows engine is production-ready, secure, and horizontally scalable.
+*   **Parent Group Match Evaluation:** If `IsGenericMatchFullMatch == true` or `IsExactMatchFullMatch == true`, the Orchestrator should also evaluate the parent group match when its type is `WaitAll`. It should also change the wait status to `Matched`.
+*   **Signal Routing Redirection:** A signal should not trigger multiple workflow instances of the same type simultaneously. However, if the first selected instance returns `Unmatched` after the runner completes the full evaluation, the system should sequentially evaluate the next candidate instance, and continue this process until a match is found or no instances remain (review `FindInstancesWaitingForSignalAsync`).
+*   **State Machine Field Serialization:** We only serialize state machine generated class public fields except `<>1__state`, `<>2__current` and `<>4__this`.
+*   **Auditing & Logging:** Link standard logs that happen when a specific workflow instance runs to this specific workflow instance.
 
-### 2.1 [Distributed Lock Registry](file:///d:/MySrc/Workflows/_Documents/Architecture/Distributed%20Lock%20Registry.md) (Inter-Instance Mutual Exclusion)
-*   **Why**: Separate workflow instances often need to modify or interact with the same external resource. A native way to acquire/release distributed locks (e.g., Redis or SQL-backed locks) within the workflow DSL prevents race conditions across instances.
+---
 
-### 2.2 [Idempotent Signal Processing](file:///d:/MySrc/Workflows/_Documents/Architecture/Idempotent%20Signal%20Processing.md) (Event & Signal Deduplication)
-*   **Why**: Messaging infrastructures generally guarantee "at-least-once" delivery. Duplicate signals or command results could advance the workflow state twice or run duplicate side effects unless there is deduplication tracking at the database layer.
+## 🔍 Detailed Feature Walkthrough
 
-### 2.3 [Poison Message & DLQ Handling](file:///d:/MySrc/Workflows/_Documents/Architecture/Poison%20Message%20&%20DLQ%20Handling.md) (Error Isolation & Retries)
-*   **Why**: If a signal or command payload fails validation, throws during runner rehydration, or repeatedly errors on serialization, the system needs a way to isolate and move it to a DLQ/error store so it doesn't block processing queues.
+### 1. Planned but Unimplemented (or Partially Implemented) Features
 
-### 2.4 [State Payload Encryption](file:///d:/MySrc/Workflows/_Documents/Architecture/State%20Payload%20Encryption.md) (Symmetric Envelope Security)
-*   **Why**: The serialized JSON state in the database frequently contains sensitive business data (PII, credentials, financial records). A production system must support encrypting this data before storing it.
+#### 1.1. Distributed Timer Scheduling (`TimeWait`)
+*   **Status:** ✅ **Implemented** — `c88a148`
+*   **Details:** `Scheduler.cs` now accepts a stable `Guid timerId` (the `UniqueMatchId`) for each timer entry, enabling idempotent re-registration on restart. `WorkflowRunnerClient.cs` scans the committed state tree recursively for new `TimeWaitDto` entries and schedules them. Consumed timers are cancelled accordingly.
+*   **Remaining Gap:** The in-memory `ConcurrentDictionary` scheduler is still not persisted across restarts. A database-backed recovery path (scanning the `TimeWaits` table on startup) is partially implemented in `Scheduler.StartAsync`, but the in-memory scheduler itself is not fully durable across process crashes.
 
-### 2.5 [Telemetry & OpenTelemetry Integration](file:///d:/MySrc/Workflows/_Documents/Architecture/Telemetry%20&%20OpenTelemetry%20Integration.md) (Distributed Tracing & Logs)
-*   **Why**: Debugging distributed systems requires trace context propagation. The system should natively emit OpenTelemetry span data so that incoming API requests, workflow execution cycles, runner dispatches, and command handler executions can be correlated.
+#### 1.2. Side-by-Side (SxS) Version Routing
+*   **Status:** ✅ **Implemented** — `014eafc`
+*   **Details:** `WorkflowRegistry.cs` supports registering multiple versions of the same workflow name. `WorkflowVersionRouter` dispatches incoming execution requests to the correct version (loading the compiled legacy project `/Archive/{workflowName}/V{version}` DLL inside a collectible `AssemblyLoadContext` on a cold start) if no data migration exists.
+*   **Remaining Gap:** Caching mechanism for assembly contexts uses static dictionary structures, leading to a collectible ALC retain/leak cycle (needs weak reference or weak cache management).
 
-### 2.6 [Workflow Schema Compatibility Verification](file:///d:/MySrc/Workflows/_Documents/Architecture/Workflow%20Schema%20Compatibility%20Verification.md) (Roslyn AST CLI Tool)
-*   **Why**: Developers deploying a new version of a workflow might inadvertently break compatibility with currently running instances (e.g., by inserting or renaming wait points). A CLI tool is needed to analyze compile-time ASTs and ensure a new deployment doesn't break in-flight state rehydration.
+#### 1.3. Composite Wait Group Routing & Downward Pruning (`GroupWait`)
+*   **Status:** ✅ **Implemented**
+*   **Details:** `GroupCompletionChecker.PruneRemainingChildren` marks all non-completed sibling wait statuses as `Canceled` and adds their IDs to `ConsumedWaitsIds` for both `MatchAny` (`GroupWaitFirst`) and expression-based groups. Pruning is recursive and correctly propagates status updates through all indexing tables (SignalWaits, TimeWaits, CommandWaits) inside the same database transaction.
 
-### 2.7 [Runner Clustering & Work Partitioning](file:///d:/MySrc/Workflows/_Documents/Architecture/Runner%20Clustering%20&%20Work%20Partitioning.md) (Horizontal Scaling)
-*   **Why**: In a multi-node deployment, runners need to avoid resource contention. A partition strategy (e.g., consistent hashing on instance IDs and SQL leases) is required so that runner nodes process distinct subsets of active workflows without double-execution conflicts.
+#### 1.4. Optimistic Concurrency Retry Pipeline
+*   **Status:** 🟡 **Partially Implemented**
+*   **Details:** EF Core `RowVersion` concurrency tokens are configured in `WorkflowsDbContext`, but the Orchestrator's signal processing loop does not catch `DbUpdateConcurrencyException` or retry with backoff.
+*   **Planned Solution:** Wrap `WorkflowRunnerClient.SendWorkflowRunResultAsync` in a retry loop (3–5 attempts with jitter) catching `DbUpdateConcurrencyException`, re-fetching state, and reapplying the execution result.
+
+#### 1.5. Massive Fan-Out (External State Pattern)
+*   **Status:** 🟡 **Partially Implemented** (Needs integration tests)
+*   **Details:** Supports `WaitMany` / `WaitAny` DSL methods. Composite waits are kept out of the inline JSON state blob (`[JsonIgnore]`) and saved instead to the relational `ExternalChildWaits` table (`ExternalChildWaitEntity`). The store re-hydrates child waits when loading instances and uses them during signal lookups.
+*   **Critical Gap:** Missing integration tests. Current tests use a mock runner client which does not exercise the database write, re-hydrate, and prune cycles of the real SQLite store.
+
+#### 1.6. Background Database Pruning Worker
+*   **Status:** 🟡 **Partially Implemented**
+*   **Details:** `LockExpiryWorker` runs periodically to clear expired locks. However, no database-wide orphan row sweeper exists for clearing out old `SignalWaits`, `TimeWaits`, `CommandWaits`, or `ExternalChildWaits` left behind after crashes.
+*   **Planned Solution:** Add a `DbPruningWorker` that periodically sweeps and deletes wait rows whose parent `WorkflowInstance` is in `Completed` or `Faulted` states.
+
+#### 1.7. High-Performance JSON Serialization
+*   **Status:** 🟡 **Partially Implemented**
+*   **Details:** Newtonsoft.Json settings are cached and reused, but character array pooling (`ArrayPool<char>`) and direct stream read/write paths are not integrated.
+*   **Planned Solution:** Refactor `IObjectSerializer` implementations to accept a `Stream` parameter and use `JsonTextReader`/`JsonTextWriter` with array pooling.
+
+#### 1.8. Roslyn Analyzer — Workflow Attribute Verification
+*   **Status:** 🟡 **Partially Implemented**
+*   **Details:** The compiler analyzer (`WorkflowAnalyzer.cs`) is written for closures and structural rules, but does not validate that all workflow container classes have a valid `[Workflow]` attribute.
+*   **Planned Solution:** Add a rule in the analyzer that flags any class implementing `IAsyncEnumerable<Wait>` Run() without the `[Workflow]` attribute.
+
+#### 1.9. UI Administration Dashboard
+*   **Status:** ✅ **Implemented** — `f00364f`
+*   **Details:** Added `Workflows.Admin.UI` project providing an ASP.NET Core MVC-based administration panel displaying dashboard metrics, workflow definition graphs, instance wait tree diagrams, and execution logs/trace views.
+
+#### 1.10. Payload Monitoring & Zombie Recovery
+*   **Status:** 🔴 **Not Started**
+*   **Planned Solution:** Implement warning limits when JSON state sizes exceed safe thresholds and a retry-limit circuit breaker to suspend workflows that crash repeatedly.
+
+---
+
+### 2. Unplanned Production Must-Haves
+
+#### 2.1. Distributed Lock Registry
+*   **Status:** ✅ **Implemented** — `014eafc`
+*   **Details:** SQL-backed lock manager (`InstanceLockManager.cs`) using `WorkflowInstance` row-level locking with `LockedUntil` timestamps. Stale locks are cleared by a background `LockExpiryWorker`.
+
+#### 2.2. Idempotent Signal/Command Processing (Deduplication)
+*   **Status:** ✅ **Implemented** — `347a614`
+*   **Details:** Implemented `SignalInboxEntity` database inbox table. `Orchestrator.ProcessSignalAsync` checks the inbox for duplicate signal IDs before processing and records them upon completion to ensure once-only signal advancement.
+
+#### 2.3. Poison Message & Dead Letter Queue (DLQ) Handling
+*   **Status:** 🔴 **Not Started**
+*   **Details:** Malformed signals will retry indefinitely in the channel-based ingress. Needs a DLQ table, retry counting in `WorkflowInstance`, and maximum attempt thresholds.
+
+#### 2.4. State Payload Encryption
+*   **Status:** 🔴 **Not Started**
+*   **Details:** Serialized state is written as plain text JSON. Needs AES-256-GCM symmetric envelope encryption at rest before SQL writes.
+
+#### 2.5. Telemetry & OpenTelemetry Integration
+*   **Status:** 🔴 **Not Started**
+*   **Details:** Needs `ActivitySource` distributed tracing instrumentation across orchestrator steps, runner processing, and store query boundaries.
+
+#### 2.6. Schema Compatibility Verification
+*   **Status:** 🔴 **Not Started**
+*   **Details:** Needs a Roslyn AST parsing CLI tool that runs during CI/CD builds to compare new workflow layouts against reference schema contracts, preventing deployment of incompatible C# state machine index shifts.
+
+#### 2.7. Runner Clustering & Work Partitioning
+*   **Status:** ❌ **Deprecated**
+*   **Details:** The original distributed multi-node runner clustering design using consistent hashing and SQL leases is deprecated. The system executes using the single-unit embedded in-process hosting model (`Workflows.Hosting.InProcess`) over memory-backed SQLite.

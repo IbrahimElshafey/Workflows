@@ -6,45 +6,30 @@ using Workflows.Definition;
 namespace Workflows.Runner.Pipeline.Serializers
 {
     /// <summary>
-    /// Handles TimeWait objects after state machine advancement.
-    /// Calculates absolute target datetime offsets and registers them into the context for scheduling.
+    /// Handles TimeWaitDto objects after state machine advancement.
+    /// The DTO is already enriched by the Wait -> DTO conversion; this serializer
+    /// persists explicit state and appends the wait to the context.
     /// Returns false to suspend execution.
     /// </summary>
     internal class TimeWaitSerializer : WaitSerializer
     {
-        private readonly Mapper _mapper;
-
         public TimeWaitSerializer(Mapper mapper)
         {
-            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            if (mapper == null) throw new ArgumentNullException(nameof(mapper));
         }
 
-        public override Task<bool> Serialize(Wait yieldedWait, WorkflowExecutionContext context)
+        public override Task<bool> Serialize(WaitInfrastructureDto yieldedWait, WorkflowExecutionContext context)
         {
-            var timeWait = yieldedWait as TimeWait;
-            if (timeWait == null)
+            if (yieldedWait is not TimeWaitDto timeWaitDto)
             {
-                throw new InvalidOperationException("TimeWaitSerializer requires a TimeWait.");
+                throw new InvalidOperationException("TimeWaitSerializer requires a TimeWaitDto.");
             }
 
-            // Calculate absolute target datetime offsets and register for scheduling
-            var timeWaitDto = _mapper.MapToDto(yieldedWait) as TimeWaitDto;
-            if (timeWaitDto != null)
-            {
-                // Calculate absolute target time based on TimeToWait offset
-                // The actual FiredAt calculation happens in the mapper
-                // Here we just ensure the DTO is properly prepared for scheduling
+            // Save ExplicitState to WorkflowStateObject.Locals
+            SaveWaitStatesToMachineState(timeWaitDto, context.WorkflowState.StateObject, context.WorkflowInstance);
 
-                // Note: Actual scheduling registration happens in the Orchestrator
-                // when it persists this DTO and sets up timer triggers
-            }
-
-            // Save ExplicitState to WorkflowStateObject.WaitStatesObjects
-            SaveWaitStatesToMachineState(yieldedWait, context.WorkflowState.StateObject);
-
-            // Map to DTO and add to new waits
-            var waitDto = timeWaitDto ?? _mapper.MapToDto(yieldedWait);
-            context.WorkflowState.Waits.Add(waitDto);
+            // Add to new waits
+            context.WorkflowState.Waits.Add(timeWaitDto);
 
             // Return false - passive wait, suspend execution
             return Task.FromResult(false);

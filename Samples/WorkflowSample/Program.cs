@@ -1,6 +1,7 @@
 using System.Reflection;
 using WorkflowSample;
 using WorkflowSample.DataObject;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
 
 Console.WriteLine("=== Testing Workflow State Management (DSL Layer) ===\n");
@@ -241,14 +242,14 @@ catch (Exception ex)
 Console.WriteLine("\n=== All DSL Tests Completed Successfully! ===");
 
 // Helper workflow for testing
-[Workflow("TestWorkflow", 1)]
-public sealed class TestWorkflow : WorkflowContainer
-{
-    public async IAsyncEnumerable<Wait> Run()
+    [Workflow("TestWorkflow", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
     {
-        yield return WaitSignal<OrderReceivedEvent>("Test", "Test Signal");
-        await Task.CompletedTask;
-    }
+        public async IAsyncEnumerable<WaitInfrastructureDto> Run(TestWorkflowState state = null!)
+        {
+            yield return WaitSignal<OrderReceivedEvent>("Test", "Test Signal");
+            await Task.CompletedTask;
+        }
 
     public SignalWait<OrderReceivedEvent> CreateSignalWaitWithState()
     {
@@ -365,4 +366,6 @@ public class OrderState
     public string CustomerEmail { get; set; } = "";
     public List<string> Items { get; set; } = new();
 }
+
+public class TestWorkflowState {}
 

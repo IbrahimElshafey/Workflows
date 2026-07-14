@@ -17,13 +17,17 @@ namespace Workflows.Runner.Tests
             public int Amount { get; set; }
         }
 
+        public class GroupFilterTestWorkflowState
+        {
+        }
+
         [Workflow("GroupFilterTest", 1)]
         public sealed class GroupFilterTestWorkflow : WorkflowContainer
         {
             public List<string> ExecutionLog { get; set; } = new();
             public int StateValue { get; set; } = 100;
 
-            public async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run(GroupFilterTestWorkflowState state = null!)
             {
                 ExecutionLog.Add("Start");
 
@@ -43,13 +47,17 @@ namespace Workflows.Runner.Tests
             }
         }
 
+        public class GroupFilterFailTestWorkflowState
+        {
+        }
+
         [Workflow("GroupFilterFailTest", 1)]
         public sealed class GroupFilterFailTestWorkflow : WorkflowContainer
         {
             public List<string> ExecutionLog { get; set; } = new();
             public int StateValue { get; set; } = 30;
 
-            public async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run(GroupFilterFailTestWorkflowState state = null!)
             {
                 ExecutionLog.Add("Start");
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Primitives;
 
 namespace Workflows.Definition
@@ -57,6 +58,13 @@ namespace Workflows.Definition
         public WorkflowContainer WorkflowContainer { get; set; }
 
         public bool ShouldSerializeWorkflowContainer() => false;
+
+        /// <summary>
+        /// Implicit conversion from runtime <see cref="Wait"/> to serializable DTO.
+        /// Allows workflow methods to return <see cref="IAsyncEnumerable{WaitInfrastructureDto}"/>
+        /// while still yielding <see cref="Wait"/> objects from the DSL builders.
+        /// </summary>
+        public static implicit operator WaitInfrastructureDto(Wait wait) => WaitDtoConversion.Convert(wait);
 
         public Wait WithState<TState>(TState state)
         {

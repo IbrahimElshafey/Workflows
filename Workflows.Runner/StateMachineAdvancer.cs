@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
-using Workflows.Definition;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Runner.DataObjects;
 using Workflows.Runner.Helpers;
 
@@ -12,7 +12,7 @@ namespace Workflows.Runner
     internal class StateMachineAdvancer
     {
         internal async Task<AdvancerResult> RunAsync(
-            IAsyncEnumerable<Wait> workflow,
+            IAsyncEnumerable<WaitInfrastructureDto> workflow,
             WorkflowStateObject previousState,
             CancellationToken cancellationToken = default)
         {

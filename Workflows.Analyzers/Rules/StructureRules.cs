@@ -8,7 +8,7 @@ namespace Workflows.Analyzers.Rules
 {
     public static class StructureRules
     {
-        public static void AnalyzeNamedType(SymbolAnalysisContext context, DiagnosticDescriptor wf201, DiagnosticDescriptor wf202, DiagnosticDescriptor wf209, DiagnosticDescriptor wf210)
+        public static void AnalyzeNamedType(SymbolAnalysisContext context, DiagnosticDescriptor wf201, DiagnosticDescriptor wf202, DiagnosticDescriptor wf209, DiagnosticDescriptor wf210, DiagnosticDescriptor wf211)
         {
             var typeSymbol = (INamedTypeSymbol)context.Symbol;
             if (typeSymbol.TypeKind != TypeKind.Class) return;
@@ -77,6 +77,24 @@ namespace Workflows.Analyzers.Rules
                         {
                             var diagnostic = Diagnostic.Create(wf210, syntax.Identifier.GetLocation(), typeSymbol.Name);
                             context.ReportDiagnostic(diagnostic);
+                        }
+                    }
+                }
+
+                // WF211: Workflow method must accept a state DTO parameter
+                if (inherits)
+                {
+                    foreach (var method in members)
+                    {
+                        if (WorkflowAnalyzer.IsWorkflowMethod(method))
+                        {
+                            if (method.Parameters.Length != 1)
+                            {
+                                var syntax = method.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as MethodDeclarationSyntax;
+                                var location = syntax?.Identifier.GetLocation() ?? method.Locations.FirstOrDefault() ?? Location.None;
+                                var diagnostic = Diagnostic.Create(wf211, location, method.Name);
+                                context.ReportDiagnostic(diagnostic);
+                            }
                         }
                     }
                 }

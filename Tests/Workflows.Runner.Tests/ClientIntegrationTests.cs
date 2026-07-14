@@ -55,12 +55,16 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    public class ClientIntegrationWorkflowState
+    {
+    }
+
     [Workflow("ClientIntegrationWorkflow", 1)]
     public sealed class ClientIntegrationWorkflow : WorkflowContainer
     {
         public string CommandResponse { get; set; } = string.Empty;
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(ClientIntegrationWorkflowState state = null!)
         {
             yield return WaitGroup(new Wait[]
             {

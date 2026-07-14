@@ -2,6 +2,7 @@ using System;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition.Helpers;
 using Workflows.Primitives;
 
@@ -58,6 +59,7 @@ namespace Workflows.Definition
 
         public static implicit operator SignalWait<TSignal>(SignalBuilder<TSignal> builder) => builder._wait;
         public static implicit operator Wait(SignalBuilder<TSignal> builder) => builder._wait;
+        public static implicit operator WaitInfrastructureDto(SignalBuilder<TSignal> builder) => WaitDtoConversion.Convert(builder._wait);
     }
 
     public readonly struct StatefulSignalBuilder<TSignal, TState>
@@ -130,6 +132,7 @@ namespace Workflows.Definition
 
         public static implicit operator SignalWait<TSignal>(StatefulSignalBuilder<TSignal, TState> builder) => builder._wait;
         public static implicit operator Wait(StatefulSignalBuilder<TSignal, TState> builder) => builder._wait;
+        public static implicit operator WaitInfrastructureDto(StatefulSignalBuilder<TSignal, TState> builder) => WaitDtoConversion.Convert(builder._wait);
     }
 
     /// <summary>

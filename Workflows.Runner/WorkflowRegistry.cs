@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs.Registration;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition;
 using Workflows.Definition.Registration;
@@ -256,11 +257,13 @@ namespace Workflows.Runner
                 var hasSubWorkflowAttr = method.GetCustomAttribute<SubWorkflowAttribute>() != null;
                 var returnsWaitAsyncEnum = typeof(IAsyncEnumerable<Wait>).IsAssignableFrom(method.ReturnType);
 
-                if (hasSubWorkflowAttr || returnsWaitAsyncEnum)
+                var returnsWaitDtoAsyncEnum = typeof(IAsyncEnumerable<WaitInfrastructureDto>).IsAssignableFrom(method.ReturnType);
+
+                if (hasSubWorkflowAttr || returnsWaitAsyncEnum || returnsWaitDtoAsyncEnum)
                 {
                     if (!hasSubWorkflowAttr)
                     {
-                        throw new InvalidOperationException($"Method '{method.Name}' in workflow '{workflowType.Name}' returns IAsyncEnumerable<Wait> but is missing [SubWorkflow] attribute.");
+                        throw new InvalidOperationException($"Method '{method.Name}' in workflow '{workflowType.Name}' returns IAsyncEnumerable<WaitInfrastructureDto> but is missing [SubWorkflow] attribute.");
                     }
                     if (!method.IsPrivate)
                     {
@@ -275,29 +278,40 @@ namespace Workflows.Runner
             try
             {
                 var container = (WorkflowContainer)Activator.CreateInstance(workflowType);
-                object? state = null;
-                if (stateType != typeof(object))
-                {
-                    state = Activator.CreateInstance(stateType);
-                }
+                object state = Activator.CreateInstance(stateType);
                 var runMethod = workflowType.GetMethod(startMethodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 if (runMethod != null)
-                {
-                    IAsyncEnumerable<Wait> stream;
-                    if (runMethod.GetParameters().Length == 1)
                     {
-                        stream = (IAsyncEnumerable<Wait>)runMethod.Invoke(container, new[] { state });
-                    }
-                    else
-                    {
-                        stream = (IAsyncEnumerable<Wait>)runMethod.Invoke(container, null);
-                    }
-                    var enumerator = stream.GetAsyncEnumerator();
+                        // Ensure the Wait -> DTO converter is configured for validation-time invocation
+                        WaitDtoConversion.Converter = wait =>
+                        {
+                            // During validation we don't have a full Mapper, so create a minimal DTO copy
+                            // for wait name uniqueness checks. Real execution uses the runner's Mapper.
+                            return new PlaceholderWaitDto
+                            {
+                                WaitName = wait.WaitName,
+                                WaitType = wait.WaitType,
+                                CallerName = wait.CallerName,
+                                InCodeLine = wait.InCodeLine,
+                                Created = wait.Created
+                            };
+                        };
+
+                        IAsyncEnumerable<WaitInfrastructureDto> stream;
+                        if (runMethod.GetParameters().Length == 1)
+                        {
+                            stream = CastOrConvertStream(runMethod.Invoke(container, new[] { state }));
+                        }
+                        else
+                        {
+                            stream = CastOrConvertStream(runMethod.Invoke(container, null));
+                        }
+                        var enumerator = stream.GetAsyncEnumerator();
                     var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                     var moveNextTask = Task.Run(async () =>
                     {
-                        var waits = new List<Wait>();
+                        var waits = new List<WaitInfrastructureDto>();
                         while (await enumerator.MoveNextAsync())
                         {
                             waits.Add(enumerator.Current);
@@ -308,11 +322,11 @@ namespace Workflows.Runner
                     if (moveNextTask.Wait(5000))
                     {
                         var waits = moveNextTask.Result;
-                        foreach (var wait in waits)
+                        foreach (var waitDto in waits)
                         {
-                            if (wait != null)
+                            if (waitDto != null)
                             {
-                                ValidateWaitRecursive(wait, seenNames, workflowType.Name);
+                                ValidateWaitRecursive(waitDto, seenNames, workflowType.Name);
                             }
                         }
                     }
@@ -333,19 +347,19 @@ namespace Workflows.Runner
             }
         }
 
-        private void ValidateWaitRecursive(Wait wait, HashSet<string> seenNames, string workflowName)
+        private void ValidateWaitRecursive(WaitInfrastructureDto waitDto, HashSet<string> seenNames, string workflowName)
         {
-            if (wait == null) return;
+            if (waitDto == null) return;
 
-            var name = wait.WaitName;
-            if (wait is CompensationWait compWait)
+            var name = waitDto.WaitName;
+            if (waitDto is CompensationWaitDto compWait)
             {
                 name = compWait.Token;
             }
 
             if (string.IsNullOrWhiteSpace(name))
             {
-                throw new InvalidOperationException($"Wait name is mandatory. A wait of type '{wait.GetType().Name}' in workflow '{workflowName}' is defined without a name.");
+                throw new InvalidOperationException($"Wait name is mandatory. A wait of type '{waitDto.GetType().Name}' in workflow '{workflowName}' is defined without a name.");
             }
 
             if (!seenNames.Add(name))
@@ -353,9 +367,9 @@ namespace Workflows.Runner
                 throw new InvalidOperationException($"Wait name '{name}' is duplicate in workflow '{workflowName}'. Wait names must be unique within a workflow.");
             }
 
-            if (wait.ChildWaits != null)
+            if (waitDto.ChildWaits != null)
             {
-                foreach (var child in wait.ChildWaits)
+                foreach (var child in waitDto.ChildWaits)
                 {
                     ValidateWaitRecursive(child, seenNames, workflowName);
                 }
@@ -371,6 +385,28 @@ namespace Workflows.Runner
         {
             var attr = tuple.WorkflowContainer.GetCustomAttribute<WorkflowAttribute>();
             return attr?.Version ?? 1;
+        }
+
+        private static async IAsyncEnumerable<WaitInfrastructureDto> CastOrConvertStream(object rawStream)
+        {
+            if (rawStream is IAsyncEnumerable<WaitInfrastructureDto> dtoStream)
+            {
+                await foreach (var item in dtoStream)
+                {
+                    yield return item;
+                }
+            }
+            else if (rawStream is IAsyncEnumerable<Wait> waitStream)
+            {
+                await foreach (var item in waitStream)
+                {
+                    yield return item;
+                }
+            }
+            else
+            {
+                throw new InvalidOperationException($"Invalid workflow stream type: {rawStream?.GetType().FullName}");
+            }
         }
     }
 }

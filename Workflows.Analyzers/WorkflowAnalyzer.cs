@@ -182,7 +182,18 @@ namespace Workflows.Analyzers
         private static readonly DiagnosticDescriptor WF210 = new DiagnosticDescriptor(
             DiagnosticIdWF210,
             "Missing Run Method",
-            "Workflow container class '{0}' must implement a public/protected 'Run' method returning IAsyncEnumerable<Wait>.",
+            "Workflow container class '{0}' must implement a public/protected 'Run' method returning IAsyncEnumerable<WaitInfrastructureDto>.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        // WF211: Workflow method must accept state parameter
+        public const string DiagnosticIdWF211 = "WF211";
+
+        private static readonly DiagnosticDescriptor WF211 = new DiagnosticDescriptor(
+            DiagnosticIdWF211,
+            "Workflow Must Accept State Parameter",
+            "Workflow method '{0}' must accept a state DTO parameter. Add a parameter (e.g., 'Run(MyState state)').",
             "Workflow.Structure",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -208,7 +219,7 @@ namespace Workflows.Analyzers
             isEnabledByDefault: true);
 
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(
-            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209, WF_ERR_UNSAFE_STATE, WF210, WF300, WF301);
+            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209, WF_ERR_UNSAFE_STATE, WF210, WF211, WF300, WF301);
 
         public override void Initialize(AnalysisContext context)
         {
@@ -228,7 +239,7 @@ namespace Workflows.Analyzers
 
         private static void AnalyzeNamedType(SymbolAnalysisContext context)
         {
-            Rules.StructureRules.AnalyzeNamedType(context, WF201, WF202, WF209, WF210);
+            Rules.StructureRules.AnalyzeNamedType(context, WF201, WF202, WF209, WF210, WF211);
             Rules.WaitRules.AnalyzeNamedType(context, WF204, WF205, WF206, WF207, WF208);
             Rules.VersioningRules.AnalyzeNamedType(context, WF300, WF301);
         }
@@ -348,32 +359,47 @@ namespace Workflows.Analyzers
             if (methodSymbol == null) return false;
             if (!InheritsFromWorkflowContainer(methodSymbol.ContainingType)) return false;
 
-            var returnType = methodSymbol.ReturnType as INamedTypeSymbol;
-            if (returnType == null) return false;
-
-            if (returnType.ConstructedFrom?.ToDisplayString() == "System.Collections.Generic.IAsyncEnumerable<T>" ||
-                returnType.Name == "IAsyncEnumerable")
-            {
-                var typeArg = returnType.TypeArguments.FirstOrDefault();
-                if (typeArg != null && (InheritsFromWait(typeArg) || typeArg.Name == "Wait"))
-                {
-                    return true;
-                }
-            }
-            return false;
+            return IsAsyncEnumerableOfWaitInfrastructureDto(methodSymbol.ReturnType)
+                || IsAsyncEnumerableOfWait(methodSymbol.ReturnType);
         }
 
         internal static bool IsRawWorkflowMethod(IMethodSymbol? methodSymbol)
         {
             if (methodSymbol == null) return false;
 
-            var returnType = methodSymbol.ReturnType as INamedTypeSymbol;
-            if (returnType == null) return false;
+            return IsAsyncEnumerableOfWaitInfrastructureDto(methodSymbol.ReturnType)
+                || IsAsyncEnumerableOfWait(methodSymbol.ReturnType);
+        }
 
-            if (returnType.ConstructedFrom?.ToDisplayString() == "System.Collections.Generic.IAsyncEnumerable<T>" ||
-                returnType.Name == "IAsyncEnumerable")
+        private static bool IsAsyncEnumerableOfWaitInfrastructureDto(ITypeSymbol? returnType)
+        {
+            if (returnType is not INamedTypeSymbol namedType) return false;
+
+            if (namedType.ConstructedFrom?.ToDisplayString() == "System.Collections.Generic.IAsyncEnumerable<T>" ||
+                namedType.Name == "IAsyncEnumerable")
             {
-                var typeArg = returnType.TypeArguments.FirstOrDefault();
+                var typeArg = namedType.TypeArguments.FirstOrDefault();
+                if (typeArg != null)
+                {
+                    var typeArgName = typeArg.ToDisplayString();
+                    if (typeArgName == "Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto" ||
+                        typeArgName == "WaitInfrastructureDto")
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static bool IsAsyncEnumerableOfWait(ITypeSymbol? returnType)
+        {
+            if (returnType is not INamedTypeSymbol namedType) return false;
+
+            if (namedType.ConstructedFrom?.ToDisplayString() == "System.Collections.Generic.IAsyncEnumerable<T>" ||
+                namedType.Name == "IAsyncEnumerable")
+            {
+                var typeArg = namedType.TypeArguments.FirstOrDefault();
                 if (typeArg != null && (InheritsFromWait(typeArg) || typeArg.Name == "Wait"))
                 {
                     return true;
@@ -405,6 +431,8 @@ namespace Workflows.Analyzers
             var methodDecl = (MethodDeclarationSyntax)context.Node;
             var methodSymbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
             if (methodSymbol == null) return;
+
+            // WF211: Workflow method must accept state parameter checks are run in StructureRules.cs
 
             if (IsWorkflowMethod(methodSymbol))
             {

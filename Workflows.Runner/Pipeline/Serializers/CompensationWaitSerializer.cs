@@ -6,30 +6,26 @@ using Workflows.Definition;
 namespace Workflows.Runner.Pipeline.Serializers
 {
     /// <summary>
-    /// Handles CompensationWait objects by serializing them and suspending execution.
+    /// Handles CompensationWaitDto objects by serializing them and suspending execution.
     /// Actual compensation actions are executed in LIFO order by the orchestrator/database layer.
     /// </summary>
     internal class CompensationWaitSerializer : WaitSerializer
     {
-        private readonly Mapper _mapper;
-
         public CompensationWaitSerializer(Mapper mapper)
         {
-            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            if (mapper == null) throw new ArgumentNullException(nameof(mapper));
         }
 
-        public override Task<bool> Serialize(Wait yieldedWait, WorkflowExecutionContext context)
+        public override Task<bool> Serialize(WaitInfrastructureDto yieldedWait, WorkflowExecutionContext context)
         {
-            var compensationWait = yieldedWait as CompensationWait;
-            if (compensationWait == null)
+            if (yieldedWait is not CompensationWaitDto compensationWaitDto)
             {
-                throw new InvalidOperationException("CompensationWaitSerializer requires a CompensationWait.");
+                throw new InvalidOperationException("CompensationWaitSerializer requires a CompensationWaitDto.");
             }
 
-            SaveWaitStatesToMachineState(yieldedWait, context.WorkflowState.StateObject);
+            SaveWaitStatesToMachineState(compensationWaitDto, context.WorkflowState.StateObject, context.WorkflowInstance);
 
-            var waitDto = _mapper.MapToDto(yieldedWait);
-            context.WorkflowState.Waits.Add(waitDto);
+            context.WorkflowState.Waits.Add(compensationWaitDto);
 
             return Task.FromResult(false); // Suspend execution, do not keep in cache
         }

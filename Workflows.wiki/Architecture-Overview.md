@@ -1,6 +1,6 @@
 # Architecture Overview
 
-The Workflows Engine is architected on a strict separation of concerns between **Domain Definition**, **I/O & Persistence**, and **Compute & Execution**. This design enables high scalability and allows the engine to run either entirely in-process or distributed across a cluster.
+The Workflows Engine is architected on a strict separation of concerns between **Domain Definition**, **I/O & Persistence**, and **Compute & Execution**. While logically decoupled to maintain clean boundaries, they are hosted in-process as a single unified unit (via `Workflows.Hosting.InProcess`) to achieve zero-network overhead and simplified operations.
 
 ---
 

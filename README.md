@@ -14,9 +14,9 @@ Unlike traditional workflow engines (e.g., Temporal or Durable Functions) that r
 
 *   **No Replay Overhead:** Workflows are suspended and serialized as complete execution snapshots. Resuming execution requires a single key-value database lookup and instant deserialization—no event replay necessary.
 *   **Pure C# Domain DSL:** Author workflows using standard C# control flow and native `IAsyncEnumerable<Wait>` generators with `yield return` statements. Workflow definitions remain 100% database and infrastructure-agnostic.
-*   **Stateless Compute (Runner):** The **Runner** contains zero database/I/O connections. It acts as a pure in-memory compute brain, using dynamic delegate compilation and template caching to eliminate reflection bottlenecks.
+*   **Stateless Compute (Runner):** The **Runner** contains zero database/I/O connections. It acts as a pure in-memory compute brain, executing in-process via high-performance `System.Threading.Channels` (`WorkflowExecutionChannel`) inside the host application, and utilizing dynamic delegate compilation to eliminate reflection bottlenecks.
 *   **ACID Persistence (Orchestrator):** The **Orchestrator** manages all state persistence using a **Hybrid Document-Relational Model**. Relational tables index active waits for sub-millisecond signal routing, while execution context blobs are saved in a single document column.
-*   **Scale-Out Ready:** By default, the Orchestrator and Runner run in-process as a single unified unit for ease of hosting. However, they are physically and logically decoupled via transport-agnostic interfaces, allowing the system to scale out to a distributed microservice cluster over RabbitMQ, Kafka, or gRPC.
+*   **Embedded In-Process Engine:** By default, the Orchestrator and Runner run in-process as a single unified unit for ease of hosting and operations. They are logically decoupled via transport-agnostic interfaces but communicate with zero-network overhead using an in-memory loopback transport.
 *   **Advanced Control Flow:** Built-in support for `WaitSignal`, `WaitDelay` (Timers), `WaitGroup` (Parallel branching/MatchAny/MatchAll), `WaitSubWorkflow` (Recursive child workflows), and Saga compensations.
 
 ---
@@ -48,6 +48,9 @@ sequenceDiagram
     DB-->>Orch: Transaction Complete
     Orch-->>Client: Acknowledge Signal Processed
 ```
+
+> [!NOTE]
+> In the embedded engine implementation, the communication between the **Workflow Orchestrator** and **Stateless Runner** (Steps 7 and 9 in the diagram above) is mediated via high-performance, in-memory `System.Threading.Channels` (`WorkflowExecutionChannel`) without network overhead.
 
 For a detailed look into each layer, explore the project documentation:
 *   [Architectural Reference Guide](_Documents/Architecture/Architectural%20Reference%20Guide.md)

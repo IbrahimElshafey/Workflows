@@ -51,7 +51,7 @@ namespace Workflows.Runner
         /// Resumes/executes the given stream and returns the final state object and whether it completed natively.
         /// </summary>
         public async Task<ExecutionResult> ExecuteAsync(
-            IAsyncEnumerable<Wait> stream,
+            IAsyncEnumerable<WaitInfrastructureDto> stream,
             WorkflowStateObject stateObject)
         {
             _context.ContinueExecutionLoop = true;
@@ -62,7 +62,7 @@ namespace Workflows.Runner
             {
                 // Advance the underlying C# state machine
                 var advancerResult = await _stateMachineAdvancer.RunAsync(stream, currentState);
-                Wait yieldedWait = advancerResult?.Wait;
+                WaitInfrastructureDto yieldedWait = advancerResult?.Wait;
 
                 if (yieldedWait == null)
                 {
@@ -86,15 +86,9 @@ namespace Workflows.Runner
                 }
 
                 // Intercept SubWorkflowWait directly to execute immediately
-                if (yieldedWait is SubWorkflowWait subWorkflowWait)
+                if (yieldedWait is SubWorkflowWaitDto subWorkflowDto)
                 {
-                    var subWorkflowDto = _mapper.MapToDto(subWorkflowWait, mapChildren: false) as SubWorkflowWaitDto;
-                    if (subWorkflowDto == null)
-                    {
-                        throw new InvalidOperationException("Failed to map SubWorkflowWait to SubWorkflowWaitDto.");
-                    }
-
-                    SaveWaitStatesToMachineState(subWorkflowWait, _context.WorkflowState.StateObject);
+                    SaveWaitStatesToMachineState(subWorkflowDto, _context.WorkflowState.StateObject);
 
                     // Nest the sub-workflow DTO if executing under another sub-workflow
                     if (_context.CurrentSubWorkflow != null)
@@ -110,6 +104,9 @@ namespace Workflows.Runner
                     await ResumeSubWorkflowAsync(subWorkflowDto);
                     continue;
                 }
+
+                // Execute any sub-workflows nested inside groups or other structures
+                await ResumeNestedSubWorkflowsAsync(yieldedWait);
 
                 // Materialize state and update context
                 await _context.SaveStateAsync(yieldedWait);
@@ -156,23 +153,21 @@ namespace Workflows.Runner
                     callerName,
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
 
-                Type subStateType = typeof(object);
-                if (methodInfo != null && methodInfo.GetParameters().Length == 1)
+                if (methodInfo == null)
                 {
-                    subStateType = methodInfo.GetParameters()[0].ParameterType;
+                    throw new InvalidOperationException($"Sub-workflow method '{callerName}' not found on '{workflowTypes.WorkflowContainer.FullName}'.");
                 }
+
+                var subStateType = methodInfo.GetParameters()[0].ParameterType;
 
                 if (!childState.Locals.TryGetValue("state", out var childStateObj) || childStateObj == null)
                 {
-                    if (subStateType != typeof(object))
-                    {
-                        childStateObj = Activator.CreateInstance(subStateType);
-                        childState.Locals["state"] = childStateObj;
-                    }
+                    childStateObj = Activator.CreateInstance(subStateType);
+                    childState.Locals["state"] = childStateObj;
                 }
 
                 var subWorkflowInvoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName, subStateType);
-                var subWorkflowStream = (IAsyncEnumerable<Wait>)subWorkflowInvoker(_context.WorkflowInstance, childStateObj);
+                var subWorkflowStream = CastOrConvertStream(subWorkflowInvoker(_context.WorkflowInstance, childStateObj));
 
                 // Execute using the unified loop
                 var result = await ExecuteAsync(subWorkflowStream, childState);
@@ -227,11 +222,39 @@ namespace Workflows.Runner
                 {
                     _context.WorkflowState.StateObject.Locals.TryGetValue("state", out parentStateParam);
                 }
-                _context.WorkflowStream = (IAsyncEnumerable<Wait>)parentInvoker(_context.WorkflowInstance, parentStateParam);
+                _context.WorkflowStream = CastOrConvertStream(parentInvoker(_context.WorkflowInstance, parentStateParam));
             }
             finally
             {
                 _context.CurrentSubWorkflow = previousSub;
+            }
+        }
+
+        private async Task ResumeNestedSubWorkflowsAsync(WaitInfrastructureDto wait)
+        {
+            if (wait == null) return;
+
+            if (wait is SubWorkflowWaitDto subWorkflow)
+            {
+                await ResumeSubWorkflowAsync(subWorkflow);
+            }
+
+            if (wait.ChildWaits != null)
+            {
+                var children = new List<WaitInfrastructureDto>(wait.ChildWaits);
+                foreach (var child in children)
+                {
+                    await ResumeNestedSubWorkflowsAsync(child);
+                }
+            }
+
+            if (wait is ExternalGroupWaitDto extGroup && extGroup.ExternalChildWaits != null)
+            {
+                var children = new List<WaitInfrastructureDto>(extGroup.ExternalChildWaits);
+                foreach (var child in children)
+                {
+                    await ResumeNestedSubWorkflowsAsync(child);
+                }
             }
         }
 
@@ -264,7 +287,7 @@ namespace Workflows.Runner
         }
 
         private void ValidateExecutionWait(
-            Wait yieldedWait,
+            WaitInfrastructureDto yieldedWait,
             List<WaitInfrastructureDto> existingWaits,
             string workflowType)
         {
@@ -300,14 +323,14 @@ namespace Workflows.Runner
         }
 
         private void ValidateWaitTreeRecursive(
-            Wait wait,
+            WaitInfrastructureDto wait,
             HashSet<string> seenNames,
             string workflowType)
         {
             if (wait == null) return;
 
             var name = wait.WaitName;
-            if (wait is CompensationWait compWait)
+            if (wait is CompensationWaitDto compWait)
             {
                 name = compWait.Token;
             }
@@ -331,20 +354,42 @@ namespace Workflows.Runner
             }
         }
 
-        private void SaveWaitStatesToMachineState(Wait wait, WorkflowStateObject stateObject)
+        private void SaveWaitStatesToMachineState(WaitInfrastructureDto waitDto, WorkflowStateObject stateObject)
         {
-            if (wait.ExplicitState == null) return;
+            if (waitDto == null || _context.WorkflowInstance?.WaitsStates == null) return;
+            if (waitDto.StateKey == Guid.Empty) return;
 
             stateObject.Locals ??= new Dictionary<string, object>();
 
-            if (wait.StateKey != Guid.Empty && !stateObject.Locals.ContainsKey(wait.StateKey.ToString()))
+            if (!_context.WorkflowInstance.WaitsStates.TryGetValue(waitDto.StateKey, out var explicitState) || explicitState == null)
             {
-                stateObject.Locals[wait.StateKey.ToString()] = wait.ExplicitState;
+                return;
             }
 
-            if (!stateObject.Locals.ContainsKey(wait.Id.ToString()))
+            if (!stateObject.Locals.ContainsKey(waitDto.StateKey.ToString()))
             {
-                stateObject.Locals[wait.Id.ToString()] = wait.ExplicitState;
+                stateObject.Locals[waitDto.StateKey.ToString()] = explicitState;
+            }
+
+            if (!stateObject.Locals.ContainsKey(waitDto.Id))
+            {
+                stateObject.Locals[waitDto.Id] = explicitState;
+            }
+        }
+
+        private static IAsyncEnumerable<WaitInfrastructureDto> CastOrConvertStream(object rawStream)
+        {
+            if (rawStream is IAsyncEnumerable<WaitInfrastructureDto> dtoStream)
+            {
+                return dtoStream;
+            }
+            else if (rawStream is IAsyncEnumerable<Wait> waitStream)
+            {
+                return new Pipeline.WaitInfrastructureDtoStreamWrapper(waitStream);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Invalid workflow stream type: {rawStream?.GetType().FullName}");
             }
         }
     }

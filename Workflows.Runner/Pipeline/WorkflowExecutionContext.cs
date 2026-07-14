@@ -42,7 +42,7 @@ namespace Workflows.Runner.Pipeline
         /// <summary>
         /// The stream to advance (parent or child workflow).
         /// </summary>
-        public IAsyncEnumerable<Wait> WorkflowStream { get; set; }
+        public IAsyncEnumerable<WaitInfrastructureDto> WorkflowStream { get; set; }
 
         /// <summary>
         /// Indicates whether the execution loop should continue immediately after processing a wait.
@@ -66,9 +66,9 @@ namespace Workflows.Runner.Pipeline
         public List<string> ConsumedWaitsIds { get; } = new List<string>();
 
         /// <summary>
-        /// Serializes the yielded wait and updates the context state.
+        /// Serializes the yielded wait DTO and updates the context state.
         /// </summary>
-        public async Task SaveStateAsync(Wait yieldedWait)
+        public async Task SaveStateAsync(WaitInfrastructureDto yieldedWait)
         {
             if (yieldedWait == null) throw new ArgumentNullException(nameof(yieldedWait));
 

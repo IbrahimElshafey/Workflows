@@ -22,6 +22,7 @@
     <None Include="$(MSBuildThisFileDirectory)Architecture\Workflow Engine Storage Architecture.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Workflow Messaging Architecture.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Workflow Schema Compatibility Verification.md" />
+    <None Include="$(MSBuildThisFileDirectory)Architecture\Workflow Side-by-Side %28SxS%29 Execution Architecture.md" />
     <None Include="$(MSBuildThisFileDirectory)Archive\PIPELINE_IMPLEMENTATION_COMPLETE.md" />
     <None Include="$(MSBuildThisFileDirectory)Archive\Refactored_Runner_Review_Report.md" />
     <None Include="$(MSBuildThisFileDirectory)Design_Patterns\Recursive Matcher Pattern.md" />
@@ -36,6 +37,7 @@
     <None Include="$(MSBuildThisFileDirectory)HowTo\index.md" />
     <None Include="$(MSBuildThisFileDirectory)HowTo\Migrating_Workflows_By_Sample.md" />
     <None Include="$(MSBuildThisFileDirectory)ProjectDependencies.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\Source Generator Workflow Registration Plan.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Task List.md" />
     <None Include="$(MSBuildThisFileDirectory)_todo.md" />
     <None Include="$(MSBuildThisFileDirectory)README.md" />

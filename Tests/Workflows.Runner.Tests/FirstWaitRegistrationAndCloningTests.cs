@@ -229,15 +229,23 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    public class InvalidFirstWaitWorkflowState
+    {
+    }
+
     [Workflow("InvalidFirstWaitWorkflow", 1)]
     public sealed class InvalidFirstWaitWorkflow : WorkflowContainer
     {
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(InvalidFirstWaitWorkflowState state = null!)
         {
             yield return ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPayment",
                 new ProcessPaymentCommand { OrderId = "ORD-001", Amount = 100 });
         }
+    }
+
+    public class SignalFirstWaitWorkflowState
+    {
     }
 
     [Workflow("SignalFirstWaitWorkflow", 1)]
@@ -246,7 +254,7 @@ namespace Workflows.Runner.Tests
         public bool Completed { get; set; }
         public string ReceivedOrderId { get; set; }
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(SignalFirstWaitWorkflowState state = null!)
         {
             yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "First")
                 .AfterMatch(signal => {

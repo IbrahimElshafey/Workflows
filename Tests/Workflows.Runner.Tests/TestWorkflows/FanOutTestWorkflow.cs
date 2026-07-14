@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Definition;
 using Workflows.Primitives;
 
@@ -10,7 +11,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
         public List<string> CompletedSignals { get; set; } = new();
         public bool Completed { get; set; }
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<WaitInfrastructureDto> Run(FanOutTestWorkflowState state = null!)
         {
             yield return WaitMany(new Wait[]
             {
@@ -28,7 +29,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     {
         public bool Completed { get; set; }
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<WaitInfrastructureDto> Run(FanOutAnyTestWorkflowState state = null!)
         {
             yield return WaitAny(new Wait[]
             {
@@ -44,5 +45,13 @@ namespace Workflows.Runner.Tests.TestWorkflows
     public sealed class FanOutSignal
     {
         public string Value { get; set; } = string.Empty;
+    }
+
+    public class FanOutTestWorkflowState
+    {
+    }
+
+    public class FanOutAnyTestWorkflowState
+    {
     }
 }

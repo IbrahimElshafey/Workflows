@@ -718,7 +718,7 @@ namespace Workflows.Runner.Tests
         public bool Completed { get; set; }
         public List<string> ReceivedValues { get; set; } = new();
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(FanOutManyIntegrationWorkflowState state = null!)
         {
             yield return WaitMany(new Wait[]
             {
@@ -739,7 +739,7 @@ namespace Workflows.Runner.Tests
     {
         public bool Completed { get; set; }
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(FanOutAnyIntegrationWorkflowState state = null!)
         {
             yield return WaitAny(new Wait[]
             {
@@ -764,7 +764,7 @@ namespace Workflows.Runner.Tests
     {
         public static bool Completed { get; set; }
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(ShortDelayWorkflowState state = null!)
         {
             var delay = WaitDelay(TimeSpan.FromMilliseconds(50), "ShortDelay", "50ms delay");
             var dummySignal = WaitSignal<OrderReceivedSignal>("DummyOrderReceived", "Dummy");
@@ -779,7 +779,7 @@ namespace Workflows.Runner.Tests
         public bool Completed { get; set; }
         public System.Threading.Tasks.TaskStatus ReceivedStatus { get; set; }
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(EnumMatchingWorkflowState state = null!)
         {
             yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "EnumWait")
                 .MatchIf(signal => signal.Status == System.Threading.Tasks.TaskStatus.Running)
@@ -797,7 +797,7 @@ namespace Workflows.Runner.Tests
         public bool Completed { get; set; }
         public int Threshold { get; set; }
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(DynamicThresholdWorkflowState state = null!)
         {
             yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "ThresholdWait")
                 .WithState(Threshold)
@@ -815,7 +815,7 @@ namespace Workflows.Runner.Tests
         public bool Completed { get; set; }
         public static Guid InstanceId { get; set; }
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(ConcurrencyRetryTestWorkflowState state = null!)
         {
             yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "WaitA")
                 .AfterMatch(signal =>
@@ -824,5 +824,12 @@ namespace Workflows.Runner.Tests
                 });
         }
     }
+
+    public class FanOutManyIntegrationWorkflowState {}
+    public class FanOutAnyIntegrationWorkflowState {}
+    public class ShortDelayWorkflowState {}
+    public class EnumMatchingWorkflowState {}
+    public class DynamicThresholdWorkflowState {}
+    public class ConcurrencyRetryTestWorkflowState {}
 }
 

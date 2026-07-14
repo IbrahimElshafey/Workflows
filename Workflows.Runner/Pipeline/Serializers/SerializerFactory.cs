@@ -1,4 +1,5 @@
 using System;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Runner;
 using Workflows.Definition;
 using Workflows.Runner.ExpressionTransformers;
@@ -44,36 +45,25 @@ namespace Workflows.Runner.Pipeline.Serializers
             _compensationSerializer = new CompensationWaitSerializer(_mapper);
         }
 
-        public WaitSerializer GetSerializer(Wait yieldedWait)
+        public WaitSerializer GetSerializer(WaitInfrastructureDto yieldedWait)
         {
             if (yieldedWait == null)
             {
                 throw new ArgumentNullException(nameof(yieldedWait));
             }
 
-            // Check for specific wait types
-            if (yieldedWait is ISignalWait)
-                return _signalWaitSerializer;
-
-            if (yieldedWait is TimeWait)
-                return _timeWaitSerializer;
-
-            if (yieldedWait.WaitType == Workflows.Primitives.WaitType.Command)
+            // Check for specific wait DTO types
+            return yieldedWait switch
             {
-                // All commands are now serialized the same way (defer to CommandSerializer)
-                return _deferredCommandSerializer;
-            }
-
-            if (yieldedWait is GroupWait)
-                return _groupWaitSerializer;
-
-            if (yieldedWait is ExternalGroupWait)
-                return _externalGroupWaitSerializer;
-
-            if (yieldedWait is CompensationWait)
-                return _compensationSerializer;
-
-            throw new NotSupportedException($"No serializer found for wait type: {yieldedWait.GetType().Name}");
+                SignalWaitDto _ => _signalWaitSerializer,
+                TimeWaitDto _ => _timeWaitSerializer,
+                CommandWaitDto _ => _deferredCommandSerializer,
+                GroupWaitDto _ => _groupWaitSerializer,
+                ExternalGroupWaitDto _ => _externalGroupWaitSerializer,
+                SubWorkflowWaitDto _ => _groupWaitSerializer, // Sub-workflow DTOs are handled by group serializer logic
+                CompensationWaitDto _ => _compensationSerializer,
+                _ => throw new NotSupportedException($"No serializer found for wait DTO type: {yieldedWait.GetType().Name}")
+            };
         }
     }
 }

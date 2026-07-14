@@ -45,15 +45,15 @@ The Workflows engine is built on a strict separation between **Domain Definition
 ---
 
 ### 4. Communication Abstraction (The Decoupling Layer)
-**Responsibility:** Ensure the Orchestrator and Runner are physically and logically decoupled, allowing the system to scale from a single-process monolith to a distributed microservice architecture.
+**Responsibility:** Ensure the Orchestrator and Runner are logically decoupled, allowing execution loops to run safely and asynchronously with zero-network overhead.
 
-* **Transport Agnostic:** Communication is defined by interfaces (e.g., `IWorkflowRunnerClient`, `IWorkflowRunResultSender`), meaning the underlying transport can be swapped between direct in-memory calls, RabbitMQ, Azure Service Bus, or Kafka.
+* **Transport Agnostic:** Communication is defined by interfaces (e.g., `IWorkflowRunnerClient`), but the runtime is configured to use a high-performance in-memory loopback transport (`InProcessMessageTransport`, `InProcessMessageSubscriber`) and `System.Threading.Channels` (`WorkflowExecutionChannel`).
 * **The Flow:**
     1.  **Signal Arrival:** Orchestrator receives an external event.
-    2.  **Dispatch to Compute:** Orchestrator places a `RunWorkflowCommand` (containing the Signal Payload and `WorkflowRunContext`) onto the bus.
-    3.  **Processing:** A Runner node picks up the message, evaluates the exact match, advances the state machine, and generates the new state.
-    4.  **Result Return:** The Runner places a `WorkflowRunResult` (containing the updated Context, the `KeepInCache` flag, and new `WaitDto`s) back onto the bus.
-    5.  **Persistence:** The Orchestrator receives the result and commits the changes to the database in a single transaction.
+    2.  **Dispatch to Compute:** Orchestrator dispatches a `WorkflowExecutionRequest` containing the signal payload and instance state into the in-memory execution channel.
+    3.  **Processing:** The background `RunnerWorker` hosted service reads the request from the channel, routes the version, resolves the correct `WorkflowRunner`, and advances the state machine in a stateless RAM tick.
+    4.  **Result Return:** The Runner returns a `WorkflowRunResult` (containing the updated Context and new wait DTOs) back to the session completion source.
+    5.  **Persistence:** The `CoordinatorCommitWorker` commits the changes to the database in a single ACID transaction.
 * **Cancellation & Compensation:** 
     - **Cancellation:** The Runner evaluates cancellation tokens to fast-forward state (skipping cancelled branches) in its execution index. The actual invocation of the cancel action delegate is handled asynchronously by the Orchestrator using the database outbox.
     - **Sagas & Compensation:** When a compensation wait is yielded, the Runner suspends execution and yields a `CompensationWaitDto`. The Orchestrator / Saga background worker executes the undo/rollback actions sequentially based on the database index in `CompensationWaits`.

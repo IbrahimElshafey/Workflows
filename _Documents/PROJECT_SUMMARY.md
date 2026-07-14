@@ -8,7 +8,7 @@ Unlike traditional workflow engines (such as Temporal or Durable Functions) that
 
 ## 🏛️ Architectural Pillars
 
-The engine is built on a strict separation of **Domain Definition**, **I/O & Persistence**, and **Compute & Execution**, logically decoupled to support scaling from a single-process monolith to a distributed microservice cluster.
+The engine is built on a strict separation of **Domain Definition**, **I/O & Persistence**, and **Compute & Execution**. While logically decoupled to maintain clean boundaries, they are hosted in-process as a single unified unit (via `Workflows.Hosting.InProcess`) to achieve zero-network overhead and simplified operations.
 
 ```mermaid
 graph TD
@@ -26,7 +26,7 @@ graph TD
     end
 
     Client -- Signals/Commands --> Orch
-    Orch -- Hydrated Context --> Runner
+    Orch -- In-Memory Channel (WorkflowExecutionChannel) --> Runner
     Runner -- State Machine Tick --> Runner
     Runner -- Wait DTOs & New State --> Orch
     Orch -- Commit SQL Index & JSON Blob --> DB
@@ -49,7 +49,7 @@ graph TD
 *   **Optimized Hot Paths**: Memory-caches compiled delegates to avoid reflection costs on repeat runs.
 
 ### 4. [Workflows.Abstraction](file:///d:/MySrc/Workflows/Workflows.Abstraction/Workflows.Abstraction.csproj) & [Workflows.Communication.Abstraction](file:///d:/MySrc/Workflows/Workflows.Communication.Abstraction/Workflows.Communication.Abstraction.csproj)
-*   **Responsibility**: The decoupling boundaries of the engine. Defines transports (`IMessageTransport`, `IMessageSubscriber`, `IMessageDispatcher`) so the Orchestrator and Runner can communicate either in-process or over RabbitMQ/Kafka.
+*   **Responsibility**: The decoupling boundaries of the engine. Defines transports (`IMessageTransport`, `IMessageSubscriber`, `IMessageDispatcher`) and routes execution requests via loopback (`InProcessMessageTransport`) by default for zero-overhead in-process communication.
 
 ---
 

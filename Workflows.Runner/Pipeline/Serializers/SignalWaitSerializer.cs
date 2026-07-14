@@ -9,36 +9,27 @@ using Workflows.Runner.ExpressionTransformers;
 namespace Workflows.Runner.Pipeline.Serializers
 {
     /// <summary>
-    /// Handles SignalWait objects after state machine advancement.
-    /// Extracts and transforms new MatchExpression structures, updates exact-match template indexes,
-    /// and appends the wait to the context. Returns false to suspend execution.
+    /// Handles SignalWaitDto objects after state machine advancement.
+    /// The DTO is already enriched by the Wait -> DTO conversion; this serializer
+    /// persists explicit state and appends the wait to the context.
+    /// Returns false to suspend execution.
     /// </summary>
     internal class SignalWaitSerializer : WaitSerializer
     {
-        private readonly Mapper _mapper;
-
         public SignalWaitSerializer(Mapper mapper)
         {
-            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            if (mapper == null) throw new ArgumentNullException(nameof(mapper));
         }
 
-        public override Task<bool> Serialize(Wait yieldedWait, WorkflowExecutionContext context)
+        public override Task<bool> Serialize(WaitInfrastructureDto yieldedWait, WorkflowExecutionContext context)
         {
-            var signalWait = yieldedWait as ISignalWait;
-            if (signalWait == null)
+            if (yieldedWait is not SignalWaitDto signalWaitDto)
             {
-                throw new InvalidOperationException("SignalWaitSerializer requires an ISignalWait.");
+                throw new InvalidOperationException("SignalWaitSerializer requires a SignalWaitDto.");
             }
 
-            // Map to DTO
-            var signalWaitDto = _mapper.MapToDto(yieldedWait) as SignalWaitDto;
-            if (signalWaitDto == null)
-            {
-                throw new InvalidOperationException("Failed to map SignalWait to SignalWaitDto.");
-            }
-
-            // Save ExplicitState to WorkflowStateObject.WaitStatesObjects
-            SaveWaitStatesToMachineState(yieldedWait, context.WorkflowState.StateObject);
+            // Save ExplicitState to WorkflowStateObject.Locals
+            SaveWaitStatesToMachineState(signalWaitDto, context.WorkflowState.StateObject, context.WorkflowInstance);
 
             // Add to new waits
             context.WorkflowState.Waits.Add(signalWaitDto);

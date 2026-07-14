@@ -7,65 +7,38 @@ using Workflows.Primitives;
 namespace Workflows.Runner.Pipeline.Serializers
 {
     /// <summary>
-    /// Handles deferred command dispatch.
-    /// Serializes the contract to an out-of-process messaging shape and bundles
-    /// the dispatch payload into the execution context. Returns false to suspend execution.
+    /// Handles CommandWaitDto objects after state machine advancement.
+    /// The DTO is already enriched by the Wait -> DTO conversion; this serializer
+    /// persists explicit state and appends the wait to the context.
+    /// Returns true for immediate commands to keep in cache, false otherwise.
     /// </summary>
     internal class CommandSerializer : WaitSerializer
     {
-        private readonly Mapper _mapper;
-
         public CommandSerializer(Mapper mapper)
         {
-            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            if (mapper == null) throw new ArgumentNullException(nameof(mapper));
         }
 
-        public override Task<bool> Serialize(Wait yieldedWait, WorkflowExecutionContext context)
+        public override Task<bool> Serialize(WaitInfrastructureDto yieldedWait, WorkflowExecutionContext context)
         {
-            if (yieldedWait.WaitType != WaitType.Command)
+            if (yieldedWait is not CommandWaitDto commandWaitDto)
             {
-                throw new InvalidOperationException("CommandSerializer requires a CommandWait.");
+                throw new InvalidOperationException("CommandSerializer requires a CommandWaitDto.");
             }
 
-            // Get command data for serialization
-            var commandWaitType = yieldedWait.GetType();
-            var commandDataProperty = commandWaitType.GetProperty("CommandData", 
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            var commandData = commandDataProperty?.GetValue(yieldedWait);
-
-            // Serialize command to out-of-process messaging shape
-            // This would typically involve:
-            // 1. Extracting command type and data
-            // 2. Creating a dispatch envelope with routing metadata
-            // 3. Storing in a dispatch queue or message bus integration point
-            // For now, we'll bundle the essential information into the DTO
-            var commandDto = _mapper.MapToDto(yieldedWait) as CommandWaitDto;
-            if (commandDto != null && commandData != null)
+            if (commandWaitDto.WaitType != WaitType.Command)
             {
-                // Note: Actual serialization to message bus would happen in the Orchestrator
-                // after receiving this DTO. The runner just marks it for dispatch.
+                throw new InvalidOperationException("CommandSerializer requires a CommandWaitDto with WaitType.Command.");
             }
 
-            // Save ExplicitState to WorkflowStateObject.WaitStatesObjects
-            SaveWaitStatesToMachineState(yieldedWait, context.WorkflowState.StateObject);
+            // Save ExplicitState to WorkflowStateObject.Locals
+            SaveWaitStatesToMachineState(commandWaitDto, context.WorkflowState.StateObject, context.WorkflowInstance);
 
-            // Map to DTO and add to waits collection
-            var waitDto = commandDto ?? _mapper.MapToDto(yieldedWait);
-            context.WorkflowState.Waits.Add(waitDto);
+            // Add to waits collection
+            context.WorkflowState.Waits.Add(commandWaitDto);
 
             // Determine if this is a synchronous (immediate) command to keep in cache
-            bool isImmediate = false;
-            var executionModeProperty = commandWaitType.GetProperty("ExecutionMode",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-
-            if (executionModeProperty != null)
-            {
-                var executionMode = executionModeProperty.GetValue(yieldedWait);
-                if (executionMode != null && executionMode.ToString() == "Immediate")
-                {
-                    isImmediate = true;
-                }
-            }
+            bool isImmediate = commandWaitDto.ExecutionMode == CommandExecutionMode.Immediate;
 
             return Task.FromResult(isImmediate);
         }

@@ -19,7 +19,7 @@ namespace Workflows.Runner.Tests
 {
     public class AnalyzerTests
     {
-        private async Task<List<Diagnostic>> RunAnalyzerAsync(string source)
+        private async Task<List<Diagnostic>> RunAnalyzerAsync(string source, bool includeWF211 = false)
         {
             var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
@@ -40,7 +40,12 @@ namespace Workflows.Runner.Tests
                 ImmutableArray.Create<DiagnosticAnalyzer>(new WorkflowAnalyzer()));
 
             var diagnostics = await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
-            return diagnostics.ToList();
+            var list = diagnostics.ToList();
+            if (!includeWF211)
+            {
+                list.RemoveAll(d => d.Id == "WF211");
+            }
+            return list;
         }
 
         [Fact]
@@ -855,6 +860,84 @@ namespace TestWorkflows
             var diagnostics = await RunAnalyzerAsync(source);
             diagnostics.Should().ContainSingle(d => d.Id == "WF209");
             diagnostics.First(d => d.Id == "WF209").GetMessage().Should().Contain("is missing [WorkflowAttribute]");
+        }
+
+        [Fact]
+        public async Task WF211_MethodWithNoParameter_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""TestWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public async IAsyncEnumerable<Wait> Run()
+        {
+            yield break;
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source, includeWF211: true);
+            diagnostics.Should().ContainSingle(d => d.Id == "WF211");
+            diagnostics.First(d => d.Id == "WF211").GetMessage().Should().Contain("must accept a state DTO parameter");
+        }
+
+        [Fact]
+        public async Task WF211_MethodWithMultipleParameters_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""TestWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public class MyState {}
+
+        public async IAsyncEnumerable<Wait> Run(MyState state, int otherParam)
+        {
+            yield break;
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source, includeWF211: true);
+            diagnostics.Should().ContainSingle(d => d.Id == "WF211");
+            diagnostics.First(d => d.Id == "WF211").GetMessage().Should().Contain("must accept a state DTO parameter");
+        }
+
+        [Fact]
+        public async Task WF211_MethodWithExactlyOneParameter_ShouldNotTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""TestWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public class MyState {}
+
+        public async IAsyncEnumerable<Wait> Run(MyState state)
+        {
+            yield break;
+        }
+    }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source, includeWF211: true);
+            diagnostics.Where(d => d.Id == "WF211").Should().BeEmpty();
         }
     }
 

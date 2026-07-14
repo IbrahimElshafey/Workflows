@@ -8,7 +8,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(NestedGroupsTestWorkflowState state = null!)
         {
             ExecutionLog.Add("Start");
 
@@ -71,6 +71,10 @@ namespace Workflows.Runner.Tests.TestWorkflows
             ExecutionLog.Add("Order fulfilled from one warehouse");
             ExecutionLog.Add("End");
         }
+    }
+
+    public class NestedGroupsTestWorkflowState
+    {
     }
 }
 

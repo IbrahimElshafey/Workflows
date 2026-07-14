@@ -11,7 +11,7 @@ namespace WorkflowSample
         public string CurrentCustomer { get; set; } = string.Empty;
         public int ProcessCount { get; set; }
 
-        public async IAsyncEnumerable<Wait> Run(OrderProcessingWorkflowState state)
+        public async IAsyncEnumerable<Wait> Run(OrderProcessingWorkflowState state = null!)
         {
             // Initialize domain state
             ProcessCount = 10;
@@ -61,7 +61,7 @@ namespace WorkflowSample
             ).MatchIf(() => ProcessCount >= 10); // Domain state evaluation
 
             // 5. Yield execution to a sub-workflow
-            yield return WaitSubWorkflow(ShippingSubWorkflow(), "Run Shipping Sub-Workflow");
+            yield return WaitSubWorkflow(ShippingSubWorkflow(new ShippingSubWorkflowState()), "Run Shipping Sub-Workflow");
 
             Console.WriteLine($"[Workflow] Order {CurrentOrderId} processing complete!");
         }
@@ -70,7 +70,7 @@ namespace WorkflowSample
         /// Sub-workflows also strictly follow the Explicit State Hand-off rule.
         /// </summary>
         [SubWorkflow]
-        private async IAsyncEnumerable<Wait> ShippingSubWorkflow()
+        private async IAsyncEnumerable<Wait> ShippingSubWorkflow(ShippingSubWorkflowState state = null!)
         {
             var marker = "test";
 
@@ -95,6 +95,10 @@ namespace WorkflowSample
     }
 
     public class OrderProcessingWorkflowState
+    {
+    }
+
+    public class ShippingSubWorkflowState
     {
     }
 }

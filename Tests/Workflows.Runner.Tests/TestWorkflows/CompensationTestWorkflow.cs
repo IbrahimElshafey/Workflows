@@ -8,7 +8,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(CompensationTestWorkflowState state = null!)
         {
             ExecutionLog.Add("Start");
 
@@ -55,6 +55,10 @@ namespace Workflows.Runner.Tests.TestWorkflows
         }
 
         public bool ShouldFail { get; set; }
+    }
+
+    public class CompensationTestWorkflowState
+    {
     }
 }
 

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Runner;
+using Workflows.Definition;
 
 namespace Workflows.Runner.Pipeline
 {
@@ -81,11 +83,8 @@ namespace Workflows.Runner.Pipeline
             var stateType = workflowTypes.StateType;
             if (!state.StateObject.Locals.TryGetValue("state", out var stateObj) || stateObj == null)
             {
-                if (stateType != typeof(object))
-                {
-                    stateObj = Activator.CreateInstance(stateType);
-                    state.StateObject.Locals["state"] = stateObj;
-                }
+                stateObj = Activator.CreateInstance(stateType);
+                state.StateObject.Locals["state"] = stateObj;
             }
 
             // Restore cancelled tokens from history
@@ -99,7 +98,10 @@ namespace Workflows.Runner.Pipeline
                 ? FindWaitById(state.Waits, triggeringWaitDto.ParentWaitId) as SubWorkflowWaitDto
                 : null;
 
-            IAsyncEnumerable<Definition.Wait> workflowStream;
+            // Ensure the Wait -> DTO converter is configured for this workflow invocation
+            WaitDtoConversion.Converter = wait => _mapper.MapToDto(wait);
+
+            IAsyncEnumerable<WaitInfrastructureDto> workflowStream;
 
             if (parentSubWorkflowDto != null)
             {
@@ -112,35 +114,33 @@ namespace Workflows.Runner.Pipeline
                 }
 
                 var callerName = string.IsNullOrEmpty(parentSubWorkflowDto.CallerName) ? "Run" : parentSubWorkflowDto.CallerName;
-                
-                // Get the sub-workflow state type from parameter
+
                 var methodInfo = workflowTypes.WorkflowContainer.GetMethod(
                     callerName,
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                Type subStateType = typeof(object);
-                if (methodInfo != null && methodInfo.GetParameters().Length == 1)
+
+                if (methodInfo == null)
                 {
-                    subStateType = methodInfo.GetParameters()[0].ParameterType;
+                    throw new InvalidOperationException($"Sub-workflow method '{callerName}' not found on '{workflowTypes.WorkflowContainer.FullName}'.");
                 }
+
+                var subStateType = methodInfo.GetParameters()[0].ParameterType;
 
                 if (!childState.Locals.TryGetValue("state", out var childStateObj) || childStateObj == null)
                 {
-                    if (subStateType != typeof(object))
-                    {
-                        childStateObj = Activator.CreateInstance(subStateType);
-                        childState.Locals["state"] = childStateObj;
-                    }
+                    childStateObj = Activator.CreateInstance(subStateType);
+                    childState.Locals["state"] = childStateObj;
                 }
 
                 var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName, subStateType);
-                workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance, childStateObj);
+                workflowStream = CastOrConvertStream(invoker(workflowInstance, childStateObj));
             }
             else
             {
                 var callerName = (triggeringWaitDto != null && !string.IsNullOrEmpty(triggeringWaitDto.CallerName)) ? triggeringWaitDto.CallerName : workflowTypes.StartMethod;
                 var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName, stateType);
                 state.StateObject.Locals.TryGetValue("state", out var st);
-                workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance, st);
+                workflowStream = CastOrConvertStream(invoker(workflowInstance, st));
             }
 
             context.Signal = incomingRequest.Signal;
@@ -328,7 +328,7 @@ namespace Workflows.Runner.Pipeline
             return null;
         }
 
-        public IAsyncEnumerable<Definition.Wait> GetParentWorkflowStream(
+        public IAsyncEnumerable<WaitInfrastructureDto> GetParentWorkflowStream(
             string workflowType,
             Definition.WorkflowContainer workflowInstance,
             string callerName)
@@ -338,7 +338,7 @@ namespace Workflows.Runner.Pipeline
 
             var actualCallerName = string.IsNullOrEmpty(callerName) ? workflowTypes.StartMethod : callerName;
 
-            Type stateType = typeof(object);
+            Type stateType;
             if (actualCallerName == workflowTypes.StartMethod)
             {
                 stateType = workflowTypes.StateType;
@@ -348,20 +348,19 @@ namespace Workflows.Runner.Pipeline
                 var methodInfo = workflowTypes.WorkflowContainer.GetMethod(
                     actualCallerName,
                     System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                if (methodInfo != null && methodInfo.GetParameters().Length == 1)
+                if (methodInfo == null)
                 {
-                    stateType = methodInfo.GetParameters()[0].ParameterType;
+                    throw new InvalidOperationException($"Method '{actualCallerName}' not found on '{workflowTypes.WorkflowContainer.FullName}'.");
                 }
+                stateType = methodInfo.GetParameters()[0].ParameterType;
             }
 
-            object? stateObj = null;
-            if (stateType != typeof(object))
-            {
-                stateObj = Activator.CreateInstance(stateType);
-            }
+            object stateObj = Activator.CreateInstance(stateType);
+
+            WaitDtoConversion.Converter = wait => _mapper.MapToDto(wait);
 
             var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, actualCallerName, stateType);
-            return (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance, stateObj);
+            return CastOrConvertStream(invoker(workflowInstance, stateObj));
         }
 
         /// <summary>
@@ -384,11 +383,7 @@ namespace Workflows.Runner.Pipeline
             var workflowInstance = _hydrator.CreateInstance(workflowTypes.WorkflowContainer);
 
             var stateType = workflowTypes.StateType;
-            object? stateObj = null;
-            if (stateType != typeof(object))
-            {
-                stateObj = Activator.CreateInstance(stateType);
-            }
+            object stateObj = Activator.CreateInstance(stateType);
 
             // Copy public properties of the input object to the instantiated workflow container and/or state POCO
             if (input != null)
@@ -448,10 +443,13 @@ namespace Workflows.Runner.Pipeline
                 }
             }
 
+            // Ensure the Wait -> DTO converter is configured for this workflow invocation
+            WaitDtoConversion.Converter = wait => _mapper.MapToDto(wait);
+
             // Get the top-level start point stream
             var startMethod = workflowTypes.StartMethod;
             var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, startMethod, stateType);
-            var workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance, stateObj);
+            var workflowStream = CastOrConvertStream(invoker(workflowInstance, stateObj));
 
             var resolvedVersion = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<Definition.WorkflowAttribute>(workflowTypes.WorkflowContainer)?.Version ?? 1;
 
@@ -484,5 +482,44 @@ namespace Workflows.Runner.Pipeline
             context.ContinueExecutionLoop = false;
             context.ConsumedWaitsIds.Clear();
         }
+
+        private static IAsyncEnumerable<WaitInfrastructureDto> CastOrConvertStream(object rawStream)
+        {
+            if (rawStream is IAsyncEnumerable<WaitInfrastructureDto> dtoStream)
+            {
+                return dtoStream;
+            }
+            else if (rawStream is IAsyncEnumerable<Wait> waitStream)
+            {
+                return new WaitInfrastructureDtoStreamWrapper(waitStream);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Invalid workflow stream type: {rawStream?.GetType().FullName}");
+            }
+        }
+    }
+
+    internal class WaitInfrastructureDtoStreamWrapper : IAsyncEnumerable<WaitInfrastructureDto>, IAsyncEnumerator<WaitInfrastructureDto>
+    {
+        private readonly IAsyncEnumerator<Wait> _inner;
+
+        public WaitInfrastructureDtoStreamWrapper(IAsyncEnumerable<Wait> innerStream)
+        {
+            _inner = innerStream.GetAsyncEnumerator();
+        }
+
+        public IAsyncEnumerator<WaitInfrastructureDto> GetAsyncEnumerator(System.Threading.CancellationToken cancellationToken = default)
+        {
+            return this;
+        }
+
+        public WaitInfrastructureDto Current => WaitDtoConversion.Converter(_inner.Current);
+
+        public ValueTask<bool> MoveNextAsync() => _inner.MoveNextAsync();
+
+        public ValueTask DisposeAsync() => _inner.DisposeAsync();
+
+        public object InnerEnumerator => _inner;
     }
 }

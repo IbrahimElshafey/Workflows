@@ -26,7 +26,8 @@ When calling `AddWorkflowsInProcessHost`, the engine registers:
 
 *   **SQLite Database Provider:** Sets up the Entity Framework Core migrations and SQLite connection.
 *   **In-Process Message Transport:** Creates a loopback communication queue (`InProcessMessageTransport`) for request-response signaling between the orchestrator and the runner.
-*   **Background Scheduler:** Spins up a background .NET `IHostedService` to query database timers and dispatch signals when delays expire.
+*   **In-Memory Channels & Hosted Workers:** Sets up `WorkflowExecutionChannel` (using `System.Threading.Channels`) and background hosted services like `RunnerWorker` to process execution tasks asynchronously without network overhead.
+*   **Background Scheduler:** Spins up a background .NET `IHostedService` (`Scheduler`) to query database timers and dispatch signals when delays expire.
 *   **Runner Proxy:** Configures the client to route execution requests through the loopback bus to the stateless `Runner` logic.
 
 ---

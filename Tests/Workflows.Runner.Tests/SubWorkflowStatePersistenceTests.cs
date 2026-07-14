@@ -249,16 +249,16 @@ namespace Workflows.Runner.Tests
     [Workflow("ImmediateSubWorkflow", 1)]
     public sealed class ImmediateSubWorkflowTestWorkflow : WorkflowContainer
     {
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(ImmediateSubWorkflowState state = null!)
         {
-            yield return WaitSubWorkflow(ImmediateChild(), "ImmediateChild", "Runs to completion immediately");
+            yield return WaitSubWorkflow(ImmediateChild(new ImmediateChildState()), "ImmediateChild", "Runs to completion immediately");
 
             // After sub-workflow completes, suspend on a signal so we can inspect the persisted state
             yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "Final signal");
         }
 
         [SubWorkflow]
-        private async IAsyncEnumerable<Wait> ImmediateChild()
+        private async IAsyncEnumerable<Wait> ImmediateChild(ImmediateChildState state = null!)
         {
             // A single immediate (active) command wait — runs synchronously and completes.
             yield return ExecuteImmediate<ReserveInventoryCommand, ReserveInventoryResult>(
@@ -273,12 +273,12 @@ namespace Workflows.Runner.Tests
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(GroupOfSubWorkflowsState state = null!)
         {
             ExecutionLog.Add("Parent: Start");
 
-            var sub1 = WaitSubWorkflow(Child1(), "Child1", "First Child");
-            var sub2 = WaitSubWorkflow(Child2(), "Child2", "Second Child");
+            var sub1 = WaitSubWorkflow(Child1(new Child1State()), "Child1", "First Child");
+            var sub2 = WaitSubWorkflow(Child2(new Child2State()), "Child2", "Second Child");
 
             yield return WaitGroup([
                 sub1,
@@ -292,7 +292,7 @@ namespace Workflows.Runner.Tests
         }
 
         [SubWorkflow]
-        private async IAsyncEnumerable<Wait> Child1()
+        private async IAsyncEnumerable<Wait> Child1(Child1State state = null!)
         {
             ExecutionLog.Add("Child1: Start");
             yield return WaitSignal<PaymentConfirmedSignal>("Payment1", "Child1 Payment");
@@ -300,13 +300,19 @@ namespace Workflows.Runner.Tests
         }
 
         [SubWorkflow]
-        private async IAsyncEnumerable<Wait> Child2()
+        private async IAsyncEnumerable<Wait> Child2(Child2State state = null!)
         {
             ExecutionLog.Add("Child2: Start");
             yield return WaitSignal<PaymentConfirmedSignal>("Payment2", "Child2 Payment");
             ExecutionLog.Add("Child2: End");
         }
     }
+
+    public class ImmediateSubWorkflowState {}
+    public class ImmediateChildState {}
+    public class GroupOfSubWorkflowsState {}
+    public class Child1State {}
+    public class Child2State {}
 
     public class SubWorkflowWithLocalVariablesState
     {

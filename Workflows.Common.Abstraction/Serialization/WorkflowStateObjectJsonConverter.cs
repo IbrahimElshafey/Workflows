@@ -25,24 +25,28 @@ namespace Workflows.Shared.Serialization
             var stateObj = new WorkflowStateObject();
 
             // 1. Read simple properties
-            if (jsonObject.TryGetValue("StateIndex", out var stateIndexToken))
+            var stateIndexToken = jsonObject.GetValue("StateIndex", StringComparison.OrdinalIgnoreCase);
+            if (stateIndexToken != null && stateIndexToken.Type != JTokenType.Null)
             {
                 stateObj.StateIndex = stateIndexToken.Value<int>();
             }
 
-            if (jsonObject.TryGetValue("WorkflowType", out var workflowTypeToken))
+            var workflowTypeToken = jsonObject.GetValue("WorkflowType", StringComparison.OrdinalIgnoreCase);
+            if (workflowTypeToken != null && workflowTypeToken.Type != JTokenType.Null)
             {
                 stateObj.WorkflowType = workflowTypeToken.Value<string>();
             }
 
-            if (jsonObject.TryGetValue("SubWorkflowMethod", out var subWorkflowMethodToken))
+            var subWorkflowMethodToken = jsonObject.GetValue("SubWorkflowMethod", StringComparison.OrdinalIgnoreCase);
+            if (subWorkflowMethodToken != null && subWorkflowMethodToken.Type != JTokenType.Null)
             {
                 stateObj.SubWorkflowMethod = subWorkflowMethodToken.Value<string>();
             }
 
             // 2. Deserialize Instance if present
             Type? containerType = null;
-            if (jsonObject.TryGetValue("Instance", out var instanceToken) && instanceToken.Type != JTokenType.Null)
+            var instanceToken = jsonObject.GetValue("Instance", StringComparison.OrdinalIgnoreCase);
+            if (instanceToken != null && instanceToken.Type != JTokenType.Null)
             {
                 if (!string.IsNullOrEmpty(stateObj.WorkflowType))
                 {
@@ -66,13 +70,15 @@ namespace Workflows.Shared.Serialization
             }
 
             // 3. Deserialize Locals
-            if (jsonObject.TryGetValue("Locals", out var localsToken) && localsToken.Type != JTokenType.Null)
+            var localsToken = jsonObject.GetValue("Locals", StringComparison.OrdinalIgnoreCase);
+            if (localsToken != null && localsToken.Type != JTokenType.Null)
             {
                 var dict = new Dictionary<string, object>();
                 var localsJson = (JObject)localsToken;
 
                 object? statePoco = null;
-                if (localsJson.TryGetValue("state", out var stateToken) && stateToken.Type != JTokenType.Null)
+                var stateToken = localsJson.GetValue("state", StringComparison.OrdinalIgnoreCase);
+                if (stateToken != null && stateToken.Type != JTokenType.Null)
                 {
                     Type? stateType = null;
                     if (!string.IsNullOrEmpty(stateObj.WorkflowType))
@@ -88,10 +94,11 @@ namespace Workflows.Shared.Serialization
                                 var subMethod = tuple.WorkflowContainer.GetMethod(
                                     stateObj.SubWorkflowMethod,
                                     BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                                if (subMethod != null && subMethod.GetParameters().Length == 1)
+                                if (subMethod == null)
                                 {
-                                    stateType = subMethod.GetParameters()[0].ParameterType;
+                                    throw new InvalidOperationException($"Sub-workflow method '{stateObj.SubWorkflowMethod}' not found on '{tuple.WorkflowContainer.FullName}'.");
                                 }
+                                stateType = subMethod.GetParameters()[0].ParameterType;
                             }
                         }
                     }
@@ -171,11 +178,13 @@ namespace Workflows.Shared.Serialization
                         var stateMachineObj = new StateMachineObject();
                         if (prop.Value is JObject propJson)
                         {
-                            if (propJson.TryGetValue("$state", out var stVal))
+                            var stVal = propJson.GetValue("$state", StringComparison.OrdinalIgnoreCase);
+                            if (stVal != null && stVal.Type != JTokenType.Null)
                             {
                                 stateMachineObj.StateIndex = stVal.Value<int>();
                             }
-                            if (propJson.TryGetValue("Instance", out var instVal))
+                            var instVal = propJson.GetValue("Instance", StringComparison.OrdinalIgnoreCase);
+                            if (instVal != null && instVal.Type != JTokenType.Null)
                             {
                                 if (containerType != null)
                                 {
@@ -194,9 +203,9 @@ namespace Workflows.Shared.Serialization
                         dict[prop.Name] = stateMachineObj;
                     }
                     else if (prop.Value is JObject propObj && 
-                             (propObj.TryGetValue("WorkflowType", out _) || 
-                              propObj.TryGetValue("Locals", out _) || 
-                              propObj.TryGetValue("SubWorkflowMethod", out _)))
+                             (propObj.GetValue("WorkflowType", StringComparison.OrdinalIgnoreCase) != null || 
+                              propObj.GetValue("Locals", StringComparison.OrdinalIgnoreCase) != null || 
+                              propObj.GetValue("SubWorkflowMethod", StringComparison.OrdinalIgnoreCase) != null))
                     {
                         using (var subReader = prop.Value.CreateReader())
                         {

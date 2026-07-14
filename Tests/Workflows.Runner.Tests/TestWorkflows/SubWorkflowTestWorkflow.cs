@@ -8,7 +8,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(SubWorkflowTestWorkflowState state = null!)
         {
             ExecutionLog.Add("Parent: Start");
 
@@ -22,7 +22,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
 
             // Execute sub-workflow (resumable function)
             yield return WaitSubWorkflow(
-                ProcessOrderSubWorkflow(),
+                ProcessOrderSubWorkflow(new ProcessOrderState()),
                 "ProcessOrder",
                 "Process order items");
 
@@ -30,7 +30,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
 
             // Another sub-workflow with state
             yield return WaitSubWorkflow(
-                ShipmentSubWorkflow(),
+                ShipmentSubWorkflow(new ShipmentState()),
                 "Shipment",
                 "Handle shipment")
                 .WithState("ShipmentState");
@@ -39,7 +39,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
         }
 
         [SubWorkflow]
-        private async IAsyncEnumerable<Wait> ProcessOrderSubWorkflow()
+        private async IAsyncEnumerable<Wait> ProcessOrderSubWorkflow(ProcessOrderState state = null!)
         {
             ExecutionLog.Add("SubWorkflow1: Start");
 
@@ -62,7 +62,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
         }
 
         [SubWorkflow]
-        private async IAsyncEnumerable<Wait> ShipmentSubWorkflow()
+        private async IAsyncEnumerable<Wait> ShipmentSubWorkflow(ShipmentState state = null!)
         {
             ExecutionLog.Add("SubWorkflow2: Start");
 
@@ -91,6 +91,18 @@ namespace Workflows.Runner.Tests.TestWorkflows
 
             ExecutionLog.Add("SubWorkflow2: End");
         }
+    }
+
+    public class SubWorkflowTestWorkflowState
+    {
+    }
+
+    public class ProcessOrderState
+    {
+    }
+
+    public class ShipmentState
+    {
     }
 }
 

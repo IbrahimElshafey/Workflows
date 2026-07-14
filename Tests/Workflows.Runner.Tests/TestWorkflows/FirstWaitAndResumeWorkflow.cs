@@ -14,7 +14,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
         public List<string> ExecutionLog { get; set; } = new();
         public int ResumeCount { get; set; }
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(FirstWaitAndResumeWorkflowState state = null!)
         {
             ExecutionLog.Add("Execution1: Start");
 
@@ -77,6 +77,10 @@ namespace Workflows.Runner.Tests.TestWorkflows
 
             ExecutionLog.Add($"Execution6: Completed - Total resumes: {ResumeCount}");
         }
+    }
+
+    public class FirstWaitAndResumeWorkflowState
+    {
     }
 }
 

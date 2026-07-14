@@ -12,7 +12,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(SxSWorkflowStateV1 state = null!)
         {
             ExecutionLog.Add("V1: Start");
             yield return WaitSignal<SxSWorkflowSignal>("SxSWorkflowSignal", "Wait for signal");
@@ -28,7 +28,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(SxSWorkflowStateV2 state = null!)
         {
             ExecutionLog.Add("V2: Start");
             yield return WaitSignal<SxSWorkflowSignal>("SxSWorkflowSignal", "Wait for signal");
@@ -39,5 +39,13 @@ namespace Workflows.Runner.Tests.TestWorkflows
     public sealed class SxSWorkflowSignal
     {
         public string Value { get; set; } = string.Empty;
+    }
+
+    public class SxSWorkflowStateV1
+    {
+    }
+
+    public class SxSWorkflowStateV2
+    {
     }
 }

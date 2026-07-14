@@ -13,7 +13,7 @@ namespace WorkflowSample
         public string CustomerEmail { get; set; }
         public decimal OrderAmount { get; set; }
 
-        public async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(OrderWithCommandWorkflowState state = null!)
         {
             // Receive order details via signal
             yield return WaitSignal<OrderReceivedEvent>("OrderReceived", "WaitOrderReceived")
@@ -66,7 +66,7 @@ namespace WorkflowSample
                 })
                 .RegisterCompensation(async (result, email) =>
                 {
-                    Console.WriteLine($"Compensating: Refunding payment for {email}");
+                    Console.WriteLine($"Compensating: Refund payment for {email}");
                     await RefundPaymentAsync();
                 });
 
@@ -97,5 +97,9 @@ namespace WorkflowSample
                 Console.WriteLine("Initiated refund process")
             );
         }
+    }
+
+    public class OrderWithCommandWorkflowState
+    {
     }
 }
