@@ -39,6 +39,46 @@ This document tracks the implementation status, planned roadmap, and key technic
 
 ---
 
+## ⚠️ Outstanding Technical Concerns & Concurrency Safeguards
+
+### 1. Concurrent Mutation of Container-Level Collections
+*   **Problem:** Sibling waits executing in a parallel group (e.g. `WaitGroup`) often mutate container-level properties (e.g., writing results to a shared class `Dictionary`).
+*   **Engine Guarantee:** Sibling executions are *logically parallel but physically sequential*. All signal matches, callbacks, and state transitions are serialized through the Orchestrator using instance-level database locks (`InstanceLockManager`). Sibling threads do not execute concurrently on the same workflow instance, making shared collection mutations safe from raw data races (assuming they don't spawn background tasks).
+
+### 2. Compensation & Cancellation Async Dispatch (Outbox-style)
+*   **How it works:** When a compensation or cancellation is requested, it is not executed immediately in-thread. Instead, the orchestrator records the request and pushes it to a background worker channel (`_channel.CompensationWriter` or `_channel.CancellationWriter`) and persists the status.
+*   **Worker Execution:** The `CompensationWorker` and `CancelerWorker` process these requests asynchronously from the channel and sweep the DB, separating workflow execution from outbox messaging.
+*   **Next Steps:** If a compensation delegate itself fails (e.g. refund error), the worker leaves the instance in `InError` status with the `CompensationWaitDto` stuck in `Waiting`. We must implement a terminal `CompensationFailed` status and dead-letter queue (DLQ) to notify human operators when automated compensation retries are exhausted.
+
+### 3. Solution Plan: Deep Recursive Schema-Drift (`WF301`) Verification
+*   **The Issue:** The current schema validator (`WF301`) only checks top-level properties of the state POCO. Nested classes, collections (like `List<ChapterInfo>`), and transient states passed via `.WithState()` are currently not recursively checked.
+*   **Approved Solution Plan:**
+    1.  **Recursive AST Extractor:** Extend `WorkflowSchemaExtractor.cs` to recursively walk the property types of the workflow container class and its state POCO. For any complex type (classes, records, structs) or generic collections, extract their internal public properties and map them inside `WorkflowName_Vxx_Schema.json`.
+    2.  **Transient State Hook:** Extract generic type arguments of `.WithState<TState>()` calls and map their structures to the schema contract.
+    3.  **Recursive Drift Analyzer:** Update the Roslyn analyzer (`VersioningRules.cs`) to recursively compare the compiled types of the archived class and their nested fields against the generated schema. Any type rename, narrowing, or removal inside nested structures will raise a fatal `WF301` compilation error.
+
+### 4. ALC Memory Lifecycle under Long-Tail Suspension
+*   **Problem:** Suspended instances can wait for human interaction for weeks. Keeping their archived ALCs resident in memory under frequent deploys will cause memory leaks.
+*   **Planned Solution:** Transition the static assembly cache inside `WorkflowRegistry` to use a `WeakReference` or LRU cache model to enable .NET collectible-ALCs to unload completely when instances go to sleep.
+
+### 5. Migration Code Safety & Scrutiny
+*   **Constraint:** Hand-written migration classes (`WorkflowMigration`) are exempt from standard workflow safety rules (like `WF_ERR_UNSAFE_STATE` or `WF000`) because they do not implement async iterator `Run` methods. 
+*   **Requirement:** Since the analyzer safety net does not apply to migration code, any migration script must receive high-scrutiny peer review to ensure state translation correctness.
+
+### 6. Integration Testing State Resumption Semantics
+*   **The Issue (Clarified):** Standard integration tests run workflows from start-to-finish in a single in-memory context. This hides serialization bugs (e.g. declaring a property that fails JSON serialization or using a property marked with `[JsonIgnore]` that is read after a resume point).
+*   **Planned Solution:** Implement a test execution filter/harness that intercepts execution at *every* yield return, serializes the workflow state object to a JSON string, destroys the active runner instance, reconstructs a fresh runner from the DB/JSON state, and then resumes. This guarantees that the workflow is fully serializable and rehydratable at every single suspension point.
+
+### 7. Recursive Sub-Workflow State Bloat (Anti-Pattern)
+*   **The Issue:** Sub-workflow states are serialized inline within the parent's `StateObject.Locals` dictionary. Deep recursion (e.g. looping via `WaitSubWorkflow` repeatedly) causes state-tree nesting bloat, similar to `WaitGroup` scaling issues.
+*   **Design Rule:** For high-count or unbounded loops, recursion via `WaitSubWorkflow` is an anti-pattern. Developers should instead write flat iterative loops (e.g., `while (!state.Approved)`) using properties on the explicit state POCO across suspension points.
+
+### 8. SxS Version Lock Across Recursive Sub-Workflows
+*   **The Guarantee:** When a sub-workflow is invoked, the engine resolves the container type and method metadata using `WorkflowState.WorkflowVersion` loaded from the database record. 
+*   **Version Purity:** The entire recursive execution chain (root and all nested sub-workflows) runs within the ALC of that single instance version. Newly deployed versions are ignored, ensuring zero risk of version mixing or type drift mid-flight.
+
+---
+
 ## 🔍 Detailed Feature Walkthrough
 
 ### 1. Planned but Unimplemented (or Partially Implemented) Features

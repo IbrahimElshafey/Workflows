@@ -40,7 +40,6 @@
     <None Include="$(MSBuildThisFileDirectory)ProjectDependencies.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Source Generator Workflow Registration Plan.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Task List.md" />
-    <None Include="$(MSBuildThisFileDirectory)_todo.md" />
     <None Include="$(MSBuildThisFileDirectory)README.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Commands System Specifications- draft 2.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Proactive Look-Ahead Timer Checking.md" />
