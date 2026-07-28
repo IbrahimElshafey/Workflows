@@ -46,4 +46,55 @@ namespace Workflows.Definition
             }
         }
     }
+
+    public static class WorkflowStateMappingExtensions
+    {
+        public static void AutoMapFrom(this object target, object source)
+        {
+            if (target == null || source == null) return;
+
+            var sourceProps = source.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            var targetIndex = target.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .ToDictionary(p => p.Name, p => p);
+
+            foreach (var sp in sourceProps)
+            {
+                if (!targetIndex.TryGetValue(sp.Name, out var tp)) continue;
+                if (!tp.PropertyType.IsAssignableFrom(sp.PropertyType)) continue;
+                if (!tp.CanWrite || !sp.CanRead) continue;
+                try
+                {
+                    tp.SetValue(target, sp.GetValue(source));
+                }
+                catch { }
+            }
+        }
+    }
+
+    public class DynamicWorkflowStateWrapper
+    {
+        public WorkflowStateObject StateObject { get; }
+
+        public dynamic State
+        {
+            get
+            {
+                if (StateObject.Locals != null && StateObject.Locals.TryGetValue("state", out var s) && s != null)
+                    return s;
+                return StateObject.Instance ?? StateObject;
+            }
+        }
+
+        public DynamicWorkflowStateWrapper(WorkflowStateObject stateObject)
+        {
+            StateObject = stateObject ?? new WorkflowStateObject();
+        }
+
+        public void AutoMapFrom(object source)
+        {
+            object targetObj = State;
+            object sourceObj = source is DynamicWorkflowStateWrapper dw ? dw.State : source;
+            WorkflowStateMappingExtensions.AutoMapFrom(targetObj, sourceObj);
+        }
+    }
 }

@@ -67,9 +67,11 @@ namespace Workflows.Runner.Tests
     [WorkflowMigration("OrderWorkflow", fromVersion: 1, toVersion: 2)]
     public class OrderWorkflowMigration_V1_To_V2 : WorkflowMigration<OrderWorkflowV1, OrderWorkflowV2>
     {
-        public override void MigrateInstance(OrderWorkflowV1 old, OrderWorkflowV2 _new)
+        public override void MigrateState(OrderWorkflowV1 old, OrderWorkflowV2 _new)
         {
-            _new.AutoMapFrom(old);
+            _new.Instance.OrderId = old.Instance.OrderId;
+            _new.Instance.CustomerName = old.Instance.CustomerName;
+            _new.Instance.Amount = old.Instance.Amount;
             _new.Instance.OrderNumber = $"ORD-{old.OrderId:N}".ToUpper().Substring(0, 16);
             ScheduleCommand("test-dispatched-command");
         }

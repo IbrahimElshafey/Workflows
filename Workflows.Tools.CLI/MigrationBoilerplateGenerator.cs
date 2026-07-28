@@ -18,45 +18,41 @@ namespace Workflows.Tools.CLI
             waitNames ??= new List<string> { "ApprovalWait", "PaymentCallbackWait", "CustomerNotificationWait" };
             subWorkflowNames ??= new List<string> { "PaymentProcessorSubWorkflow", "InventoryAllocationSubWorkflow" };
 
+            var v1Wrapper = $"{workflowName}V{fromVersion}Wrapper";
+            var v2Wrapper = $"{workflowName}V{toVersion}Wrapper";
+            var v1Poco = $"{workflowName}State_V{fromVersion}";
+            var v2Poco = $"{workflowName}State_V{toVersion}";
+
             var sb = new StringBuilder();
             sb.AppendLine("using System;");
+            sb.AppendLine("using Workflows.Abstraction.DTOs;");
             sb.AppendLine("using Workflows.Abstraction.DTOs.Waits;");
             sb.AppendLine("using Workflows.Definition;");
-            sb.AppendLine("using Workflows.Runner.Migration;");
             sb.AppendLine();
             sb.AppendLine($"namespace Workflows.Migrations");
             sb.AppendLine("{");
             sb.AppendLine($"    /// <summary>");
-            sb.AppendLine($"    /// Auto-generated migration script for {workflowName} from V{fromVersion} to V{toVersion}.");
+            sb.AppendLine($"    /// Auto-generated strongly-typed migration script for {workflowName} from V{fromVersion} to V{toVersion}.");
             sb.AppendLine($"    /// </summary>");
             sb.AppendLine($"    [WorkflowMigration(\"{workflowName}\", fromVersion: {fromVersion}, toVersion: {toVersion})]");
-            sb.AppendLine($"    public class {workflowName}Migration_V{fromVersion}_To_V{toVersion} : WorkflowMigration");
+            sb.AppendLine($"    public class {workflowName}Migration_V{fromVersion}_To_V{toVersion} : WorkflowMigration<{v1Wrapper}, {v2Wrapper}>");
             sb.AppendLine("    {");
             sb.AppendLine("        // =========================================================================");
-            sb.AppendLine("        // 1. STATE MIGRATION (Phase 1)");
+            sb.AppendLine("        // 1. STRONGLY-TYPED POCO STATE MIGRATION (Phase 1)");
             sb.AppendLine("        // =========================================================================");
-            sb.AppendLine("        /// <summary>");
-            sb.AppendLine("        /// Migrates top-level workflow state properties from V1 to V2.");
-            sb.AppendLine("        /// </summary>");
-            sb.AppendLine("        public override void MigrateState(dynamic old, dynamic _new)");
+            sb.AppendLine($"        public override void MigrateState({v1Wrapper} old, {v2Wrapper} _new)");
             sb.AppendLine("        {");
-            sb.AppendLine("            // Fail-Loud AutoMapFrom Scaffolding:");
-            sb.AppendLine("            // Copies matching properties automatically between V1 and V2 state.");
-            sb.AppendLine("            _new.AutoMapFrom(old);");
-            sb.AppendLine();
-            sb.AppendLine("            // Example custom property transformations:");
-            sb.AppendLine("            // _new.State.AmountInCents = (int)(old.State.Amount * 100);");
-            sb.AppendLine("            // _new.State.ShippingAddress = old.State.Address;");
+            sb.AppendLine("            // Explicit manual property mapping between V1 and V2 POCO states:");
+            sb.AppendLine("            _new.Instance.OrderId = old.Instance.OrderId;");
+            sb.AppendLine("            _new.Instance.CustomerId = old.Instance.CustomerId;");
+            sb.AppendLine("            _new.Instance.Amount = (double)old.Instance.Amount;");
+            sb.AppendLine("            _new.Instance.AmountInCents = (int)(old.Instance.Amount * 100);");
             sb.AppendLine("        }");
             sb.AppendLine();
             sb.AppendLine("        // =========================================================================");
             sb.AppendLine("        // 2. ACTIVE WAIT STATE MIGRATION & RECREATION (Phase 2)");
             sb.AppendLine("        // =========================================================================");
-            sb.AppendLine("        /// <summary>");
-            sb.AppendLine("        /// Recreates active suspended waits for in-flight instances.");
-            sb.AppendLine("        /// Switch based on oldWait.WaitName to customize payload or wait types.");
-            sb.AppendLine("        /// </summary>");
-            sb.AppendLine("        public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, dynamic _new)");
+            sb.AppendLine($"        public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, {v2Wrapper} _new)");
             sb.AppendLine("        {");
             sb.AppendLine("            switch (oldWait.WaitName)");
             sb.AppendLine("            {");
@@ -64,14 +60,11 @@ namespace Workflows.Tools.CLI
             foreach (var wait in waitNames)
             {
                 sb.AppendLine($"                case \"{wait}\":");
-                sb.AppendLine($"                    // Custom wait payload or signal identifier remapping:");
-                sb.AppendLine($"                    // return WaitSignal<Updated{wait}Payload>(\"{wait}Signal\", oldWait.WaitName).Build();");
                 sb.AppendLine($"                    return RecreateWait(oldWait.WaitName);");
                 sb.AppendLine();
             }
 
             sb.AppendLine("                default:");
-            sb.AppendLine("                    // Default auto-recreation of wait by name using V2's compiled CFG manifest.");
             sb.AppendLine("                    return RecreateWait(oldWait.WaitName);");
             sb.AppendLine("            }");
             sb.AppendLine("        }");
@@ -79,10 +72,7 @@ namespace Workflows.Tools.CLI
             sb.AppendLine("        // =========================================================================");
             sb.AppendLine("        // 3. SUB-WORKFLOW STATE MIGRATION (Phase 3)");
             sb.AppendLine("        // =========================================================================");
-            sb.AppendLine("        /// <summary>");
-            sb.AppendLine("        /// Remaps child sub-workflow state pointers and frozen state indices.");
-            sb.AppendLine("        /// </summary>");
-            sb.AppendLine("        public override Wait MigrateSubWorkflowState(SubWorkflowWaitDto oldSubWait, dynamic _new)");
+            sb.AppendLine($"        public override Wait MigrateSubWorkflowState(SubWorkflowWaitDto oldSubWait, {v2Wrapper} _new)");
             sb.AppendLine("        {");
             sb.AppendLine("            switch (oldSubWait.MethodFullPath)");
             sb.AppendLine("            {");
@@ -90,7 +80,6 @@ namespace Workflows.Tools.CLI
             foreach (var sub in subWorkflowNames)
             {
                 sb.AppendLine($"                case \"{sub}\":");
-                sb.AppendLine($"                    // Recreates sub-workflow wait and remaps child CFG pointers:");
                 sb.AppendLine($"                    return SubWorkflow_RecreateWait(oldSubWait.MethodFullPath, oldSubWait.WaitName);");
                 sb.AppendLine();
             }
@@ -102,21 +91,31 @@ namespace Workflows.Tools.CLI
             sb.AppendLine("    }");
             sb.AppendLine();
             sb.AppendLine("    // =========================================================================");
-            sb.AppendLine("    // 4. STRONGLY-TYPED POCO CONTRACT SNAPSHOTS");
+            sb.AppendLine("    // 4. STRONGLY-TYPED POCO CONTRACT SNAPSHOTS & WRAPPERS");
             sb.AppendLine("    // =========================================================================");
-            sb.AppendLine($"    public class {workflowName}State_V{fromVersion}");
+            sb.AppendLine($"    public class {v1Poco}");
             sb.AppendLine("    {");
             sb.AppendLine("        public Guid OrderId { get; set; }");
             sb.AppendLine("        public decimal Amount { get; set; }");
             sb.AppendLine("        public string CustomerId { get; set; } = \"\";");
             sb.AppendLine("    }");
             sb.AppendLine();
-            sb.AppendLine($"    public class {workflowName}State_V{toVersion}");
+            sb.AppendLine($"    public class {v2Poco}");
             sb.AppendLine("    {");
             sb.AppendLine("        public Guid OrderId { get; set; }");
             sb.AppendLine("        public double Amount { get; set; }");
             sb.AppendLine("        public string CustomerId { get; set; } = \"\";");
             sb.AppendLine("        public int AmountInCents { get; set; }");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+            sb.AppendLine($"    public class {v1Wrapper} : WorkflowStateWrapper<{v1Poco}>");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        public {v1Wrapper}(WorkflowStateDto dto, {v1Poco} instance) : base(dto, instance) {{ }}");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+            sb.AppendLine($"    public class {v2Wrapper} : WorkflowStateWrapper<{v2Poco}>");
+            sb.AppendLine("    {");
+            sb.AppendLine($"        public {v2Wrapper}(WorkflowStateDto dto, {v2Poco} instance) : base(dto, instance) {{ }}");
             sb.AppendLine("    }");
 
             foreach (var sub in subWorkflowNames)

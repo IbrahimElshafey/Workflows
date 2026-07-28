@@ -217,6 +217,13 @@ namespace Workflows.Runner.Migration
             var v2Manifest = WorkflowVersionManifest.Load(attr.WorkflowName, attr.ToVersion);
             var resolvedWaits = ResolveStateIndices(migratedWaits, v2Manifest);
 
+            // Remap top-level StateIndex to the primary active wait's StateAfterWait in V2
+            var primaryActiveWait = resolvedWaits.FirstOrDefault(w => w.Status == WaitStatus.Waiting);
+            if (primaryActiveWait != null && primaryActiveWait.StateAfterWait >= 0)
+            {
+                v2State.StateObject.StateIndex = primaryActiveWait.StateAfterWait;
+            }
+
             // ── 6. Atomic DB update (new WorkflowStore method) ───────────────────
             await _store.ReplaceMigratedStateAsync(
                 workflowInstanceId,

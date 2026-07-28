@@ -49,7 +49,7 @@ namespace Workflows.Runner.Tests
                 File.Exists(migFile).Should().BeTrue();
                 string content = File.ReadAllText(migFile);
                 content.Should().Contain("TestOrderWorkflowMigration_V1_To_V2");
-                content.Should().Contain("AutoMapFrom");
+                content.Should().Contain("_new.Instance.OrderId = old.Instance.OrderId;");
             }
             finally
             {
