@@ -1,3 +1,4 @@
+[Outdated]
 # Architecture Guide: Command Execution Modes
 
 The `CommandExecutionMode` dictates how a command's execution and result are handled by the Runner and Orchestrator. Regardless of the mode, all command yields suspend the Runner's in-memory C# execution loop to permit persistence, outbox message queuing, and proper tracking.
