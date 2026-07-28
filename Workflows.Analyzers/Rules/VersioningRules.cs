@@ -49,7 +49,7 @@ namespace Workflows.Analyzers.Rules
                     foreach (Match match in propMatches)
                     {
                         var propName = match.Groups[1].Value;
-                        if (propName == "SchemaVersion" || propName == "WorkflowName" || propName == "AssemblyRootNamespace") continue;
+                        if (propName == "SchemaVersion" || propName == "WorkflowName" || propName == "AssemblyRootNamespace" || propName == "TypeFqn") continue;
 
                         if (!liveProps.Contains(propName))
                         {
@@ -85,7 +85,7 @@ namespace Workflows.Analyzers.Rules
                         {
                             var syntax = attr.ApplicationSyntaxReference!.GetSyntax(context.CancellationToken);
                             
-                            var props = ImmutableDictionary<string, string>.Empty
+                            var props = ImmutableDictionary<string, string?>.Empty
                                 .Add("WorkflowName", wfName)
                                 .Add("FromVersion", schemaVersion.ToString())
                                 .Add("ToVersion", wfVersion.ToString());

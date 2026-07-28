@@ -15,7 +15,7 @@
 		<ProjectReference Include="..\..\Hosting\Workflows.Hosting.InProcess\Workflows.Hosting.InProcess.csproj" />
 		<ProjectReference Include="..\..\DataStore\Workflows.Storage.Sqlite\Workflows.Storage.Sqlite.csproj" />
 		<ProjectReference Include="..\..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
-		<ProjectReference Include="..\..\Workflows.Common.Abstraction\Workflows.Shared.csproj" />
+		<ProjectReference Include="..\..\Workflows.Common.Abstraction\Workflows.Common.Abstraction.csproj" />
 	</ItemGroup>
 
 </Project>

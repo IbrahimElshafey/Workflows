@@ -7,18 +7,20 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="_docs\**" />
+    <EmbeddedResource Remove="_docs\**" />
+    <None Remove="_docs\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
-    <ProjectReference Include="..\Workflows.Common.Abstraction\Workflows.Shared.csproj" />
+    <ProjectReference Include="..\Workflows.Common.Abstraction\Workflows.Common.Abstraction.csproj" />
     <ProjectReference Include="..\Workflows.Communication.Abstraction\Workflows.Communication.Abstraction.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="_docs\" />
   </ItemGroup>
 
 </Project>

@@ -28,7 +28,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Workflows.Analyzers\Workflows.Analyzers.csproj" />
-    <ProjectReference Include="..\..\Workflows.Common.Abstraction\Workflows.Shared.csproj" />
+    <ProjectReference Include="..\..\Workflows.Common.Abstraction\Workflows.Common.Abstraction.csproj" />
     <ProjectReference Include="..\..\Workflows.Runner\Workflows.Runner.csproj" />
     <ProjectReference Include="..\..\Workflows.Definition\Workflows.Definition.csproj" />
     <ProjectReference Include="..\..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
@@ -39,6 +39,7 @@
     <ProjectReference Include="..\..\Workflows.Client\Workflows.Client.gRPC\Workflows.Client.gRPC.csproj" />
     <ProjectReference Include="..\..\DataStore\Workflows.Storage.EntityFrameworkCore\Workflows.Storage.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\DataStore\Workflows.Storage.Sqlite\Workflows.Storage.Sqlite.csproj" />
+    <ProjectReference Include="..\..\Workflows.Tools.CLI\Workflows.Tools.CLI.csproj" />
   </ItemGroup>
 
 </Project>

@@ -424,3 +424,28 @@ ChildWaits during migration:
 
 > [!IMPORTANT]
 > The V2 rebuilt group must preserve the `Completed` status of already-finished children. If the developer returns a fully rebuilt `WaitGroup`, they must explicitly carry over the completion state from the old group's `ChildWaits` via `old.Child("ShippingSubWorkflow").Status` or the engine will reset all children to `Waiting`, breaking the `MatchAll` accumulation logic.
+
+---
+
+## 8. Failure Isolation & Rollback Guarantees
+
+### 8.1 Batch Migration Blast Radius Isolation
+During batch migrations against live DB rows:
+- Each workflow instance executes inside an **isolated DB savepoint**.
+- If `AutoMapFrom` or user migration logic throws a `WorkflowMigrationException` for instance `#105`:
+  - Instance `#105`'s migration rolls back to `StateObject_PreMigration_V1`.
+  - Its status is updated to `MigrationFailed` / `Quarantined` and logged to `WorkflowExecutionErrors`.
+  - Instance `#105` remains on Version 1 and continues executing on Worker V1.
+  - Sibling instances (`#101–#104`, `#106+`) in the batch complete their migration normally.
+
+### 8.2 Archived Binary Respawn Guarantee
+If Worker V1 was decommissioned and a late trigger (e.g. saga compensation 3 days later) arrives:
+- The Host Supervisor resolves the exact version binary archive (`/Archive/Binaries/V1/Workflows.Worker.dll`) registered for `WorkflowVersion = 1`.
+- It executes: `dotnet Workflows.Worker.dll --version 1.0.0 --archive-path /Archive/Binaries/V1`.
+- It **never** spins up latest V2 binaries to run a V1 instance.
+
+### 8.3 Rollback & Late Compensation Concurrency Guard
+During the 15-minute `DrainingGracePeriod` post-migration:
+- All state migrations, rollbacks, and incoming signal/compensation dispatches for a given `WorkflowInstanceId` are strictly serialized using the Orchestrator's row-level `InstanceLockManager`.
+- If a post-migration anomaly triggers a DB rollback to `StateObject_PreMigration_V1` while a late compensation event arrives concurrently, the rollback acquires the instance lock first. The incoming compensation request waits in queue until the rollback completes, then executes cleanly against the pre-migration V1 state on Worker V1.
+
