@@ -10,6 +10,8 @@ using Newtonsoft.Json;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Runner;
 
+using System.Threading.Channels;
+
 namespace Workflows.Runner
 {
     public class IpcMessage
@@ -30,13 +32,22 @@ namespace Workflows.Runner
         private readonly string _pipeName;
         private readonly string _version;
         private readonly string? _assemblyPath;
+        private readonly Channel<(IpcMessage Msg, TaskCompletionSource<IpcResponse> Tcs)> _requestChannel;
         private IServiceProvider? _serviceProvider;
 
-        public IpcWorkerServer(string pipeName, string version, string? assemblyPath)
+        public IpcWorkerServer(string pipeName, string version, string? assemblyPath, int channelCapacity = 1000)
         {
             _pipeName = pipeName;
             _version = version;
             _assemblyPath = assemblyPath;
+
+            var options = new BoundedChannelOptions(channelCapacity)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = false,
+                SingleWriter = false
+            };
+            _requestChannel = Channel.CreateBounded<(IpcMessage, TaskCompletionSource<IpcResponse>)>(options);
         }
 
         public async Task StartAsync(CancellationToken ct)
@@ -56,6 +67,9 @@ namespace Workflows.Runner
                     Console.WriteLine($"[Runner Worker] Failed to load assembly from {_assemblyPath}: {ex.Message}");
                 }
             }
+
+            // Start background consumer loop to process requests from bounded channel
+            var consumerTask = Task.Run(() => ProcessChannelRequestsAsync(ct), ct);
 
             while (!ct.IsCancellationRequested)
             {
@@ -79,7 +93,10 @@ namespace Workflows.Runner
                     var msg = JsonConvert.DeserializeObject<IpcMessage>(line);
                     if (msg == null) continue;
 
-                    var response = await ProcessCommandAsync(msg);
+                    var tcs = new TaskCompletionSource<IpcResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    await _requestChannel.Writer.WriteAsync((msg, tcs), ct);
+
+                    var response = await tcs.Task;
                     await writer.WriteLineAsync(JsonConvert.SerializeObject(response));
 
                     if (msg.Command == "Shutdown")
@@ -97,7 +114,27 @@ namespace Workflows.Runner
                     Console.WriteLine($"[Runner Worker] IPC Error: {ex.Message}");
                 }
             }
+
+            _requestChannel.Writer.TryComplete();
+            try { await consumerTask; } catch { }
         }
+
+        private async Task ProcessChannelRequestsAsync(CancellationToken ct)
+        {
+            await foreach (var (msg, tcs) in _requestChannel.Reader.ReadAllAsync(ct))
+            {
+                try
+                {
+                    var response = await ProcessCommandAsync(msg);
+                    tcs.TrySetResult(response);
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetResult(new IpcResponse { Success = false, Error = ex.ToString() });
+                }
+            }
+        }
+
 
         private async Task<IpcResponse> ProcessCommandAsync(IpcMessage msg)
         {

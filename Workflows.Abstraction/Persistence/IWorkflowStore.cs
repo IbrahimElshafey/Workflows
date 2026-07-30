@@ -66,5 +66,15 @@ namespace Workflows.Abstraction.Persistence
         /// Retrieves live active running instance counts grouped by DLL release version.
         /// </summary>
         Task<Dictionary<string, int>> GetActiveInstanceCountsByDllVersionAsync(System.Threading.CancellationToken ct = default);
+
+        /// <summary>
+        /// Atomically claims up to <paramref name="batchSize"/> due timers for an engine node, transitioning their status to Matched (200).
+        /// </summary>
+        Task<List<TimeWaitDto>> ClaimDueTimersAsync(int batchSize, string nodeId, System.Threading.CancellationToken ct = default);
+
+        /// <summary>
+        /// Resets Matched timers back to Waiting if an engine node crashed mid-execution.
+        /// </summary>
+        Task RecoverStaleTimersAsync(TimeSpan staleThreshold, System.Threading.CancellationToken ct = default);
     }
 }

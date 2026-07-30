@@ -1249,7 +1249,57 @@ namespace Workflows.Storage.EntityFrameworkCore
             return dllCounts;
         }
 
+        public async Task<List<TimeWaitDto>> ClaimDueTimersAsync(int batchSize, string nodeId, CancellationToken ct = default)
+        {
+            var now = DateTime.UtcNow;
+            var dueEntities = await _dbContext.TimeWaits
+                .Where(w => w.Status == (int)WaitStatus.Waiting && w.ExecutionTime <= now)
+                .OrderBy(w => w.ExecutionTime)
+                .Take(batchSize)
+                .ToListAsync(ct);
+
+            if (dueEntities.Count == 0)
+                return new List<TimeWaitDto>();
+
+            var claimedDtos = new List<TimeWaitDto>();
+
+            foreach (var entity in dueEntities)
+            {
+                entity.Status = (int)WaitStatus.Matched;
+                _dbContext.TimeWaits.Update(entity);
+
+                claimedDtos.Add(new TimeWaitDto
+                {
+                    Id = entity.Id.ToString(),
+                    UniqueMatchId = entity.UniqueMatchId,
+                    ExecutionTime = entity.ExecutionTime
+                });
+            }
+
+            await _dbContext.SaveChangesAsync(ct);
+            return claimedDtos;
+        }
+
+        public async Task RecoverStaleTimersAsync(TimeSpan staleThreshold, CancellationToken ct = default)
+        {
+            var cutoff = DateTime.UtcNow.Subtract(staleThreshold);
+            var staleTimers = await _dbContext.TimeWaits
+                .Where(w => w.Status == (int)WaitStatus.Matched && w.ExecutionTime <= cutoff)
+                .ToListAsync(ct);
+
+            if (staleTimers.Count > 0)
+            {
+                foreach (var timer in staleTimers)
+                {
+                    timer.Status = (int)WaitStatus.Waiting;
+                    _dbContext.TimeWaits.Update(timer);
+                }
+                await _dbContext.SaveChangesAsync(ct);
+            }
+        }
+
         #endregion
     }
 }
+
 

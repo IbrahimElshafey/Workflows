@@ -10,7 +10,7 @@ This document serves as the single master source of truth tracking the feature s
 
 | # | Feature | Status | Implementation Details / Commit | Reference Spec |
 |---|---------|--------|----------------------------------|----------------|
-| **1.1** | Distributed Timer Scheduling (`TimeWait`) | 🟡 Partial | `Scheduler.cs` & `TimeWaitEntity` implemented; native DB `SKIP LOCKED` poller planned | [Timer Scheduling](file:///d:/MySrc/Workflows/_Documents/Architecture/Orchestrator-Side%20Distributed%20Timer%20Scheduling.md) |
+| **1.1** | Distributed Timer Scheduling (`TimeWait`) | ✅ Implemented | Native clustered DB timer engine (`ClaimDueTimersAsync`), bounded `System.Threading.Channels` pipelining, and zero duplicate multi-node claims | [Timer Scheduling](file:///d:/MySrc/Workflows/_Documents/Architecture/Orchestrator-Side%20Distributed%20Timer%20Scheduling.md) |
 | **1.2** | Side-by-Side (SxS) Version Routing | ✅ Implemented | `014eafc` (Out-of-process worker supervision & ALC compiled project routing) | [SxS Architecture](file:///d:/MySrc/Workflows/_Documents/Architecture/Workflow%20Side-by-Side%20(SxS)%20Execution%20Architecture.md) |
 | **1.3** | Composite Wait Group & Pruning (`GroupWait`) | ✅ Implemented | Runner + Store (Recursive downward pruning of non-completed siblings) | — |
 | **1.4** | Optimistic Concurrency & ConcurrencyToken | ✅ Implemented | Mapped `ConcurrencyToken` in EF Core; verified in `ConcurrencyAndSoftDeleteTests.cs` | — |
