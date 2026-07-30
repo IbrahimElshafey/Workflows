@@ -51,5 +51,20 @@ namespace Workflows.Abstraction.Persistence
             List<WaitInfrastructureDto> newWaits,
             int newVersion,
             System.Threading.CancellationToken ct);
+
+        /// <summary>
+        /// Registers or updates the workflow capability map for a worker DLL release version.
+        /// </summary>
+        Task RegisterWorkerCapabilitiesAsync(string dllVersion, IEnumerable<(string workflowType, int workflowVersion)> capabilities, System.Threading.CancellationToken ct = default);
+
+        /// <summary>
+        /// Retrieves active DLL release versions that host a specific workflow type and version.
+        /// </summary>
+        Task<List<string>> GetActiveDllVersionsForWorkflowAsync(string workflowType, int workflowVersion, System.Threading.CancellationToken ct = default);
+
+        /// <summary>
+        /// Retrieves live active running instance counts grouped by DLL release version.
+        /// </summary>
+        Task<Dictionary<string, int>> GetActiveInstanceCountsByDllVersionAsync(System.Threading.CancellationToken ct = default);
     }
 }

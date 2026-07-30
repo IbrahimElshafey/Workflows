@@ -76,7 +76,7 @@ namespace Workflows.Runner.Tests
             ScheduleCommand("test-dispatched-command");
         }
 
-        public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
+        public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
         {
             // Recreate wait by name
             return RecreateWait(oldWait.WaitName);

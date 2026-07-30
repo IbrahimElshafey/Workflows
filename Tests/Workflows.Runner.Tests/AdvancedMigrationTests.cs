@@ -70,7 +70,7 @@ namespace Workflows.Runner.Tests
             MigrateState(old, _new);
         }
 
-        public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, AdvancedOrderWorkflowV2Wrapper _new)
+        public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, AdvancedOrderWorkflowV2Wrapper _new)
         {
             switch (oldWait.WaitName)
             {

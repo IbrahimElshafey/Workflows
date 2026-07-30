@@ -83,7 +83,7 @@ namespace MyCompany.Workflows.Billing.Migrations
         // _new.Instance provides access to the already-migrated V2 domain fields.
         // =========================================================================
 
-        public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
+        public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
         {
             // -----------------------------------------------------------------
             // CASE A: Suspended at "VerifyStock" in V1.

@@ -1166,6 +1166,90 @@ namespace Workflows.Storage.EntityFrameworkCore
                 || status == WorkflowInstanceStatus.Canceled;
         }
 
+        public async Task RegisterWorkerCapabilitiesAsync(
+            string dllVersion,
+            IEnumerable<(string workflowType, int workflowVersion)> capabilities,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrEmpty(dllVersion) || capabilities == null) return;
+
+            foreach (var (workflowType, workflowVersion) in capabilities)
+            {
+                var existing = await _dbContext.WorkerCapabilities.FirstOrDefaultAsync(
+                    c => c.DllVersion == dllVersion && c.WorkflowType == workflowType && c.WorkflowVersion == workflowVersion, ct);
+
+                if (existing == null)
+                {
+                    _dbContext.WorkerCapabilities.Add(new WorkerCapabilityEntity
+                    {
+                        DllVersion = dllVersion,
+                        WorkflowType = workflowType,
+                        WorkflowVersion = workflowVersion,
+                        RegisteredAt = DateTime.UtcNow,
+                        IsActive = true
+                    });
+                }
+                else if (!existing.IsActive)
+                {
+                    existing.IsActive = true;
+                    existing.RegisteredAt = DateTime.UtcNow;
+                    _dbContext.WorkerCapabilities.Update(existing);
+                }
+            }
+
+            await _dbContext.SaveChangesAsync(ct);
+        }
+
+        public async Task<List<string>> GetActiveDllVersionsForWorkflowAsync(
+            string workflowType,
+            int workflowVersion,
+            CancellationToken ct = default)
+        {
+            return await _dbContext.WorkerCapabilities
+                .Where(c => c.WorkflowType == workflowType && c.WorkflowVersion == workflowVersion && c.IsActive)
+                .Select(c => c.DllVersion)
+                .Distinct()
+                .ToListAsync(ct);
+        }
+
+        public async Task<Dictionary<string, int>> GetActiveInstanceCountsByDllVersionAsync(
+            CancellationToken ct = default)
+        {
+            var capabilities = await _dbContext.WorkerCapabilities
+                .Where(c => c.IsActive)
+                .ToListAsync(ct);
+
+            var activeInstances = await _dbContext.WorkflowInstances
+                .Where(i => i.Status == (int)WorkflowInstanceStatus.Running || i.Status == (int)WorkflowInstanceStatus.InProgress || i.Status == (int)WorkflowInstanceStatus.New)
+                .Select(i => new { i.WorkflowType, i.WorkflowVersion })
+                .ToListAsync(ct);
+
+
+            var instanceCounts = activeInstances
+                .GroupBy(i => new { i.WorkflowType, i.WorkflowVersion })
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            var dllCounts = new Dictionary<string, int>();
+
+            var groupedByDll = capabilities.GroupBy(c => c.DllVersion);
+            foreach (var group in groupedByDll)
+            {
+                int totalActiveForDll = 0;
+                foreach (var cap in group)
+                {
+                    var key = new { WorkflowType = cap.WorkflowType, WorkflowVersion = cap.WorkflowVersion };
+                    if (instanceCounts.TryGetValue(key, out var count))
+                    {
+                        totalActiveForDll += count;
+                    }
+                }
+                dllCounts[group.Key] = totalActiveForDll;
+            }
+
+            return dllCounts;
+        }
+
         #endregion
     }
 }
+

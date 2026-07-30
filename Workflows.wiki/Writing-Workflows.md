@@ -7,9 +7,9 @@ Workflows are defined as C# classes that inherit from `WorkflowContainer` and im
 ## 1. Declaring a Workflow
 
 To author a workflow:
-1.  Decorate the class with the `[Workflow]` attribute to specify its unique name and version.
-2.  Declare the class as `sealed` (enforced by code analyzer).
-3.  Add serializable properties on the class to represent your persistent domain state.
+1. Decorate the class with the `[Workflow]` attribute to specify its unique name and version.
+2. Declare the class as `sealed` (enforced by the `Workflows.Analyzers` Roslyn analyzer).
+3. Add serializable properties on the class to represent your persistent domain state.
 
 ```csharp
 using Workflows.Definition;
@@ -76,9 +76,19 @@ private async IAsyncEnumerable<Wait> FulfillmentSubWorkflow()
 
 ---
 
-## 3. Strict No-Closure Enforcement (Important)
+## 3. Roslyn Static Analysis Rules (`Workflows.Analyzers`)
 
-Because lambda expressions (such as `MatchIf` and `AfterMatch` expressions) are compiled into memory caches and evaluated dynamically across processes, **they cannot capture local variables from the stack**. 
+Workflow container classes are checked at compilation time by Roslyn analyzers to guarantee execution safety across process boundaries:
+
+* **Unsealed Container Check**: All classes inheriting `WorkflowContainer` must be declared `sealed`.
+* **Closure Capture Prevention**: Lambda matchers (`MatchIf`, `AfterMatch`) are forbidden from capturing stack-local variables.
+* **WF300 Version Drift Warning**: Triggered when a `[Workflow("Name", version)]` version is incremented, offering an IDE quick-fix to archive the old version layout and extract contract schemas.
+
+---
+
+## 4. Strict No-Closure Enforcement (Important)
+
+Because lambda expressions (such as `MatchIf` and `AfterMatch` expressions) are compiled into memory caches and evaluated dynamically across processes, **they cannot capture local variables from the stack**.
 
 The Roslyn static code analyzer (`Workflows.Analyzers`) will throw a build error if a lambda expression captures external local variables.
 
@@ -110,3 +120,17 @@ public async IAsyncEnumerable<Wait> Run(OrderState state)
 
 > [!NOTE]
 > Referencing `this` pointer properties (e.g., `this.UserId`) inside lambdas is perfectly safe and allowed because `this` refers to the `WorkflowContainer` instance itself, which is already a stable reference fully serialized by the engine.
+
+---
+
+## 5. CLI Tooling & Schema Verification (`dotnet-wf`)
+
+Once workflows are defined, use the `dotnet-wf` CLI tool to export contracts and verify breaking changes:
+
+```bash
+# Export versioned contract schema JSON
+dotnet wf schema --assembly "./bin/Release/net10.0/OrderWorkflows.dll" --out "./_Schemas"
+
+# Verify compatibility against prior assembly versions in CI/CD pipeline
+dotnet wf verify --old "./bin/V1/OrderWorkflows.dll" --new "./bin/V2/OrderWorkflows.dll"
+```

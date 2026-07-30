@@ -77,6 +77,19 @@ namespace Workflows.Definition
         protected void ScheduleCommand(object command)
             => _scheduledCommands.Add(command);
 
+        /// <summary>
+        /// Combines a Wait object with an optional target StateIndex for MigrationActiveWait.
+        /// </summary>
+        protected MigratedWait MigratedWait(Wait wait, int? targetStateIndex = null)
+            => new MigratedWait(wait, targetStateIndex);
+
+        /// <summary>
+        /// Alias for MigratedWait.
+        /// </summary>
+        protected MigratedWait MigrationWait(Wait wait, int? targetStateIndex = null)
+            => new MigratedWait(wait, targetStateIndex);
+
+
         // Internal — used by WorkflowMigrationExecutor
         internal WorkflowContainer? _context;
         internal readonly List<object> _scheduledCommands = new();

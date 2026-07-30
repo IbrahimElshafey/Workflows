@@ -15,7 +15,7 @@ namespace Workflows.Migrations
             _new.AutoMapFrom(old);
         }
 
-        public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, dynamic _new)
+        public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, dynamic _new)
         {
             // Auto-generated wait recreation stub
             return RecreateWait(oldWait.WaitName);

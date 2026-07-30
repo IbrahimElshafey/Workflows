@@ -10,6 +10,7 @@ graph TD
     Communication["Workflows.Communication.Abstraction"]
     Definition["Workflows.Definition"]
     CommonAbstraction["Workflows.Common.Abstraction"]
+    CommonShared["Workflows.Common (Workflows.Shared)"]
 
     Abstraction --> Primitives
     Definition --> Primitives
@@ -17,6 +18,7 @@ graph TD
     CommonAbstraction --> Abstraction
     CommonAbstraction --> Communication
     CommonAbstraction --> Definition
+    CommonShared --> CommonAbstraction
 
     %% Runtime
     Runner["Workflows.Runner"]
@@ -52,14 +54,20 @@ graph TD
     ClientWebApi --> Client
     ClientGrpc --> Client
 
-    %% Admin UI
+    %% Admin UI & Tools
     AdminUI["Workflows.Admin.UI"]
+    ToolsCLI["Workflows.Tools.CLI"]
+    Analyzers["Workflows.Analyzers"]
 
     AdminUI --> Abstraction
     AdminUI --> StorageEF
     AdminUI --> StorageSqlite
     AdminUI --> StorageSqlServer
     AdminUI --> StoragePostgres
+
+    ToolsCLI --> Analyzers
+    ToolsCLI --> Definition
+    ToolsCLI --> CommonShared
 
     %% Hosting
     HostingInProcess["Workflows.Hosting.InProcess"]
@@ -68,12 +76,10 @@ graph TD
     HostingInProcess --> Runner
     HostingInProcess --> StorageSqlite
 
-    %% Tools
-    Analyzers["Workflows.Analyzers"]
-
     %% Samples
     SampleInProcessSqlite["InProcessSqliteSample"]
     SampleAdminUI["Workflows.Admin.UI.Sample"]
+    SampleOutOfProcess["OutOfProcessWorkerSample"]
     SampleWorkflow["WorkflowSample"]
 
     SampleInProcessSqlite --> Analyzers
@@ -87,6 +93,12 @@ graph TD
     SampleAdminUI --> Orchestrator
     SampleAdminUI --> HostingInProcess
     SampleAdminUI --> StorageSqlite
+
+    SampleOutOfProcess --> HostingInProcess
+    SampleOutOfProcess --> ToolsCLI
+    SampleOutOfProcess --> Runner
+    SampleOutOfProcess --> Abstraction
+    SampleOutOfProcess --> CommonAbstraction
 
     SampleWorkflow --> Analyzers
     SampleWorkflow --> Definition
@@ -117,8 +129,10 @@ graph TD
 ## Key Observations
 
 - **Foundational layer**: `Workflows.Primitives` is referenced by `Workflows.Abstraction` and `Workflows.Definition`.
-- **Central hub**: `Workflows.Common.Abstraction` pulls together `Workflows.Abstraction`, `Workflows.Communication.Abstraction`, and `Workflows.Definition`, and is consumed by `Workflows.Runner`, `Workflows.Orchestrator`, and several tests/samples.
+- **Central hub**: `Workflows.Common.Abstraction` pulls together `Workflows.Abstraction`, `Workflows.Communication.Abstraction`, and `Workflows.Definition`, and is consumed by `Workflows.Runner`, `Workflows.Orchestrator`, tests, and samples.
 - **Storage providers**: `Workflows.Storage.Sqlite`, `Workflows.Storage.Postgres`, and `Workflows.Storage.SqlServer` all depend on `Workflows.Storage.EntityFrameworkCore`.
 - **Client stack**: `Workflows.Client.WebApi` and `Workflows.Client.gRPC` both depend on the shared `Workflows.Client` project.
-- **Richest consumer**: `Workflows.Runner.Tests` references the most projects, covering runtime, hosting, clients, and storage.
-- **Leaf tool project**: `Workflows.Analyzers` has no project references of its own.
+- **CLI & Tools**: `Workflows.Tools.CLI` brings together Roslyn `Workflows.Analyzers`, `Workflows.Definition`, and `Workflows.Common` to offer schema extraction, verification, manifest generation, and migration boilerplate creation.
+- **Out-of-Process Worker Supervision**: `Samples/OutOfProcessWorkerSample` references `Workflows.Hosting.InProcess` (which contains `WorkerProcessSupervisor`), `Workflows.Tools.CLI`, and `Workflows.Runner` for managing dynamic out-of-process worker execution over IPC.
+- **Admin Dashboard UI**: `Workflows.Admin.UI` integrates directly with all EF Core storage providers (`Sqlite`, `SqlServer`, `Postgres`) to render live database metrics, DAG topology networks, and instance execution traces.
+- **Leaf analyzer**: `Workflows.Analyzers` has no project references of its own and targets `netstandard2.0` for Roslyn compiler integration.

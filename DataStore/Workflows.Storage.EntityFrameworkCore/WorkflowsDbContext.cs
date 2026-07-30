@@ -27,6 +27,7 @@ namespace Workflows.Storage.EntityFrameworkCore
         public DbSet<OutboxMessageEntity> OutboxMessages { get; set; }
         public DbSet<CommandResultEntity> CommandResults { get; set; }
         public DbSet<SignalInboxEntity> SignalInbox { get; set; }
+        public DbSet<WorkerCapabilityEntity> WorkerCapabilities { get; set; }
 
 
         public WorkflowsDbContext(DbContextOptions<WorkflowsDbContext> options) : this(options, null)
@@ -291,6 +292,13 @@ namespace Workflows.Storage.EntityFrameworkCore
                 entity.ToTable("SignalInbox");
                 entity.HasKey(e => e.MessageId);
                 entity.HasIndex(e => e.WorkflowInstanceId);
+            });
+
+            modelBuilder.Entity<WorkerCapabilityEntity>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.WorkflowType, e.WorkflowVersion, e.IsActive });
+                entity.HasIndex(e => new { e.DllVersion, e.IsActive });
             });
         }
 

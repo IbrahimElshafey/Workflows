@@ -74,7 +74,7 @@ namespace MyCompany.Workflows.Fulfillment.Migrations
         // identical syntax to the workflow DSL, no wrapper or adapter needed.
         // =========================================================================
 
-        public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, FulfillmentWorkflowV2 _new)
+        public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, FulfillmentWorkflowV2 _new)
         {
             switch (oldWait)
             {

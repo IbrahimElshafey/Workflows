@@ -20,7 +20,10 @@ namespace Workflows.Hosting.InProcess
     public class WorkerProcessSupervisor
     {
         private readonly ConcurrentDictionary<string, WorkerProcessInfo> _workers = new();
+        private readonly ConcurrentDictionary<(string Type, int Version), HashSet<string>> _capabilityMap = new();
         private readonly string _workerExecutablePath;
+
+        public IReadOnlyDictionary<string, WorkerProcessInfo> ActiveWorkers => _workers;
 
         public WorkerProcessSupervisor(string? workerExecutablePath = null)
         {
@@ -31,6 +34,36 @@ namespace Workflows.Hosting.InProcess
             {
                 _workerExecutablePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Workflows.Runner.dll");
             }
+        }
+
+        public void RegisterCapabilities(string version, System.Collections.Generic.IEnumerable<(string workflowType, int workflowVersion)> capabilities)
+        {
+            foreach (var (workflowType, workflowVersion) in capabilities)
+            {
+                var key = (workflowType, workflowVersion);
+                _capabilityMap.AddOrUpdate(key, 
+                    _ => new HashSet<string> { version }, 
+                    (_, set) => { lock (set) set.Add(version); return set; });
+            }
+        }
+
+        public string? ResolveWorkerVersionForWorkflow(string workflowType, int workflowVersion)
+        {
+            var key = (workflowType, workflowVersion);
+            if (_capabilityMap.TryGetValue(key, out var versions))
+            {
+                lock (versions)
+                {
+                    foreach (var ver in versions)
+                    {
+                        if (_workers.TryGetValue(ver, out var info) && !info.Process.HasExited)
+                        {
+                            return ver;
+                        }
+                    }
+                }
+            }
+            return null;
         }
 
         public async Task<WorkerProcessInfo> EnsureWorkerAsync(string version, string? assemblyPath = null, CancellationToken ct = default)

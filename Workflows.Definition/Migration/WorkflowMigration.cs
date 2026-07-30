@@ -17,10 +17,11 @@ namespace Workflows.Definition
         public virtual void MigrateInstance(TOld old, TNew _new) => MigrateState(old, _new);
 
         /// <summary>
-        /// Phase 2: Map each active wait DTO to its V2 equivalent. Called once per
+        /// Phase 2: Map each active wait DTO to its V2 equivalent and target StateIndex. Called once per
         /// active wait (including recursion into GroupWait children — the engine handles recursion).
         /// </summary>
-        public abstract Wait MigrateActiveWait(WaitInfrastructureDto oldWait, TNew _new);
+        public abstract MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, TNew _new);
+
 
         /// <summary>
         /// Phase 3: Called after MigrateActiveWait returns a SubWorkflowWait, to remap

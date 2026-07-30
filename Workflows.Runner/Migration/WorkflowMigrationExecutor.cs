@@ -324,12 +324,23 @@ namespace Workflows.Runner.Migration
                     continue;
                 }
 
-                var newWait = migration.MigrateActiveWait(wait, _new);
+                var migratedWaitObj = migration.MigrateActiveWait(wait, _new);
+                var newWait = migratedWaitObj.Wait;
+                var targetStateIndex = migratedWaitObj.TargetStateIndex;
 
                 if (wait is GroupWaitDto group)
                 {
                     var newGroupDto = _mapper.MapToDto(newWait) as GroupWaitDto
                         ?? new GroupWaitDto { WaitName = newWait.WaitName };
+
+                    if (targetStateIndex.HasValue)
+                    {
+                        newGroupDto.StateAfterWait = targetStateIndex.Value;
+                    }
+                    else if (newGroupDto.StateAfterWait == 0)
+                    {
+                        newGroupDto.StateAfterWait = group.StateAfterWait;
+                    }
 
                     newGroupDto.ChildWaits = MigrateWaitsRecursive(group.ChildWaits, migration, _new);
                     result.Add(newGroupDto);
@@ -346,14 +357,25 @@ namespace Workflows.Runner.Migration
                         WaitName = oldSub.WaitName,
                         MethodFullPath = oldSub.MethodFullPath,
                         StateMachineObjectId = oldSub.StateMachineObjectId,
-                        StateAfterWait = oldSub.StateAfterWait,
+                        StateAfterWait = targetStateIndex ?? oldSub.StateAfterWait,
                         ChildWaits = MigrateWaitsRecursive(oldSub.ChildWaits, migration, _new)
                     };
                     result.Add(newSubDto);
                     continue;
                 }
 
-                result.Add(_mapper.MapToDto(newWait));
+                var mappedDto = _mapper.MapToDto(newWait);
+                if (targetStateIndex.HasValue)
+                {
+                    mappedDto.StateAfterWait = targetStateIndex.Value;
+                }
+                else if (mappedDto.StateAfterWait == 0)
+                {
+                    mappedDto.StateAfterWait = wait.StateAfterWait;
+                }
+                result.Add(mappedDto);
+
+
             }
 
             return result;

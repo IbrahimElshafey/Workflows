@@ -52,7 +52,7 @@ namespace Workflows.Runner.Tests
             _new.Instance.Status = old.Instance.Status;
         }
 
-        public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, ComplexOrderV2Wrapper _new)
+        public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, ComplexOrderV2Wrapper _new)
         {
             switch (oldWait.WaitName)
             {

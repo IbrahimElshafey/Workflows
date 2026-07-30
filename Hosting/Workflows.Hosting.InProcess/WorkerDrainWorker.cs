@@ -31,7 +31,7 @@ namespace Workflows.Hosting.InProcess
                 try
                 {
                     await Task.Delay(_checkInterval, stoppingToken);
-                    // Drain check logic: Supervisor checks active versions
+                    await CheckAndDrainWorkersAsync(stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -43,5 +43,22 @@ namespace Workflows.Hosting.InProcess
                 }
             }
         }
+
+        public async Task CheckAndDrainWorkersAsync(CancellationToken ct = default)
+        {
+            var activeCounts = await _store.GetActiveInstanceCountsByDllVersionAsync(ct);
+            var runningWorkers = _supervisor.ActiveWorkers.ToList();
+
+            foreach (var kvp in runningWorkers)
+            {
+                string dllVersion = kvp.Key;
+                if (activeCounts.TryGetValue(dllVersion, out int activeCount) && activeCount == 0)
+                {
+                    _logger?.LogInformation("DLL Version {DllVersion} has 0 active running workflow instances. Terminating worker sub-process.", dllVersion);
+                    await _supervisor.ShutdownWorkerAsync(dllVersion, ct);
+                }
+            }
+        }
     }
 }
+

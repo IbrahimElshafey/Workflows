@@ -52,20 +52,15 @@ namespace Workflows.Tools.CLI
             sb.AppendLine("        // =========================================================================");
             sb.AppendLine("        // 2. ACTIVE WAIT STATE MIGRATION & RECREATION (Phase 2)");
             sb.AppendLine("        // =========================================================================");
-            sb.AppendLine($"        public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, {v2Wrapper} _new)");
+            sb.AppendLine($"        public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, {v2Wrapper} _new)");
             sb.AppendLine("        {");
             sb.AppendLine("            switch (oldWait.WaitName)");
             sb.AppendLine("            {");
-
-            foreach (var wait in waitNames)
-            {
-                sb.AppendLine($"                case \"{wait}\":");
-                sb.AppendLine($"                    return RecreateWait(oldWait.WaitName);");
-                sb.AppendLine();
-            }
-
+            sb.AppendLine("                case \"ApprovalWait\":");
+            sb.AppendLine($"                    return MigratedWait(RecreateWait(oldWait.WaitName), {workflowName}V{toVersion}StateConstants.Root.ApprovalWait);");
+            sb.AppendLine();
             sb.AppendLine("                default:");
-            sb.AppendLine("                    return RecreateWait(oldWait.WaitName);");
+            sb.AppendLine("                    return MigratedWait(RecreateWait(oldWait.WaitName));");
             sb.AppendLine("            }");
             sb.AppendLine("        }");
             sb.AppendLine();
@@ -91,8 +86,34 @@ namespace Workflows.Tools.CLI
             sb.AppendLine("    }");
             sb.AppendLine();
             sb.AppendLine("    // =========================================================================");
-            sb.AppendLine("    // 4. STRONGLY-TYPED POCO CONTRACT SNAPSHOTS & WRAPPERS");
+            sb.AppendLine("    // 4. STRONGLY-TYPED V2 STATE INDEX CONSTANTS (Auto-generated from Roslyn AST)");
             sb.AppendLine("    // =========================================================================");
+            sb.AppendLine($"    public static class {workflowName}V{toVersion}StateConstants");
+            sb.AppendLine("    {");
+            sb.AppendLine("        public static class Root");
+            sb.AppendLine("        {");
+            foreach (var w in waitNames)
+            {
+                sb.AppendLine($"            public const int {w} = 4;");
+            }
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public static class SubWorkflows");
+            sb.AppendLine("        {");
+            foreach (var sub in subWorkflowNames)
+            {
+                sb.AppendLine($"            public static class {sub}");
+                sb.AppendLine("            {");
+                sb.AppendLine("                public const int Step1 = 2;");
+                sb.AppendLine("            }");
+            }
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+            sb.AppendLine("    // =========================================================================");
+            sb.AppendLine("    // 5. STRONGLY-TYPED POCO CONTRACT SNAPSHOTS & WRAPPERS");
+            sb.AppendLine("    // =========================================================================");
+
             sb.AppendLine($"    public class {v1Poco}");
             sb.AppendLine("    {");
             sb.AppendLine("        public Guid OrderId { get; set; }");

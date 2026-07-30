@@ -35,7 +35,7 @@ namespace Workflows.Migrations
         /// Recreates active suspended waits for in-flight instances.
         /// Switch based on oldWait.WaitName to customize payload or wait types.
         /// </summary>
-        public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, dynamic _new)
+        public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, dynamic _new)
         {
             switch (oldWait.WaitName)
             {

@@ -1,23 +1,21 @@
-# Workflows.Shared
+# Workflows.Common.Abstraction
 
-## 1. What is this?
-A utility library (targeting `netstandard2.1`) that provides default implementations for serialization and registers shared services for dependency injection.
+The central abstraction and contract definition library (targeting `netstandard2.1`) for the **Workflows Engine**.
 
-Key features:
-- **Expression Serialization**: Uses Nuqleon Bonsai and FastExpressionCompiler to serialize complex C# lambda expressions safely, allowing workflow match rules and execution trees to be saved to and loaded from database stores.
-- **JSON Serialization**: Implements the `IObjectSerializer` interface using `System.Text.Json` to handle standard payload conversion.
-- **DI Bootstrapping**: Exposes standard methods to set up core infrastructure services.
+---
 
-## 2. How to use?
-Reference this project in your host startup projects and register the shared services using the dependency injection extensions.
+## 🚀 Key Features
 
-### Example:
-```csharp
-using Microsoft.Extensions.DependencyInjection;
-using Workflows.Common;
+* **Serialization Contracts:** Defines interfaces for expression serialization (`IExpressionSerializer`), JSON serialization (`IObjectSerializer`), and type converters.
+* **Wait DTO Abstractions:** Defines shared internal/external wait DTO abstractions consumed by both `Workflows.Runner` and `Workflows.Orchestrator`.
+* **Logging & Messaging Contracts:** Shared logging adapters and core abstraction contracts.
 
-var services = new ServiceCollection();
+---
 
-// Registers expression serializers and JSON serialization providers
-services.AddWorkflowsShared();
+## 🛠️ Usage
+
+Reference this package when building custom transport libraries, storage adapters, or client host extensions:
+
+```xml
+<ProjectReference Include="..\Workflows.Common.Abstraction\Workflows.Common.Abstraction.csproj" />
 ```
