@@ -14,6 +14,7 @@ using Workflows.Abstraction.Helpers;
 using Workflows.Abstraction.Persistence;
 using Workflows.Definition;
 using Workflows.Communication.Abstraction;
+using Workflows.Abstraction.Orchestrator;
 
 namespace Workflows.Runner.Migration
 {
@@ -194,17 +195,20 @@ namespace Workflows.Runner.Migration
         private readonly IObjectSerializer _serializer;
         private readonly Mapper _mapper;
         private readonly IMessageDispatcher _messageDispatcher;
+        private readonly IOrchestrator? _orchestrator;
 
         public WorkflowMigrationExecutor(
             IWorkflowStore store,
             IObjectSerializer serializer,
             Mapper mapper,
-            IMessageDispatcher messageDispatcher)
+            IMessageDispatcher messageDispatcher,
+            IOrchestrator? orchestrator = null)
         {
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _messageDispatcher = messageDispatcher ?? throw new ArgumentNullException(nameof(messageDispatcher));
+            _orchestrator = orchestrator;
         }
 
         public async Task MigrateAsync(Guid workflowInstanceId, CancellationToken ct)
@@ -253,59 +257,104 @@ namespace Workflows.Runner.Migration
             // ── 3. Phase 1 — MigrateInstance ─────────────────────────────────────
             var migration = new TMigration();
             
-            // Resolve registry context if needed
-            // migration._context = ... (can be assigned if needed, or left null)
-
-            migration.MigrateInstance(v1Wrapper, v2Wrapper);
-
-            // Resolve target container instance type
-            object? containerInstance = null;
-            if (global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows.TryGetValue(attr.WorkflowName, out var tuple))
+            try
             {
-                try
+                if (migration.Strategy == MigrationStrategy.CancelAndRespawn)
                 {
-                    containerInstance = Activator.CreateInstance(tuple.WorkflowContainer);
+                    Guid? newInstanceId = await migration.OnMigrateAsync(v1Wrapper, v2Wrapper, _orchestrator, ct)
+                        ?? await migration.OnMigrateAsync(v1Wrapper, _orchestrator, ct);
+
+                    // Atomically cancel V1 instance with audit link pointing to V2 instance
+                    v1State.Status = WorkflowInstanceStatus.Canceled;
+                    v1State.CancellationHistory.Add(new CancellationHistoryEntry
+                    {
+                        Token = "CancelAndRespawn",
+                        CancelledAt = DateTime.UtcNow,
+                        Reason = $"Replaced and respawned as V2 workflow instance ({attr.WorkflowName} v{attr.ToVersion}).",
+                        ReplacementWorkflowInstanceId = newInstanceId?.ToString(),
+                        AuditLink = newInstanceId.HasValue ? $"Respawned as V2 Instance ID: {newInstanceId.Value}" : null
+                    });
+
+                    await _store.ReplaceMigratedStateAsync(
+                        workflowInstanceId,
+                        v1State,
+                        v1State.Waits,
+                        newVersion: v1State.WorkflowVersion,
+                        ct);
+
+                    return;
                 }
-                catch { }
+
+                migration.MigrateInstance(v1Wrapper, v2Wrapper);
+
+                // Resolve target container instance type
+                object? containerInstance = null;
+                if (global::Workflows.Definition.Registration.WorkflowDefinitionRegistry.Workflows.TryGetValue(attr.WorkflowName, out var tuple))
+                {
+                    try
+                    {
+                        containerInstance = Activator.CreateInstance(tuple.WorkflowContainer);
+                    }
+                    catch { }
+                }
+
+                // Populate state object properties on V2 DTO
+                v2State.StateObject = new WorkflowStateObject
+                {
+                    WorkflowType = attr.WorkflowName,
+                    Instance = containerInstance,
+                    StateIndex = v1State.StateObject.StateIndex,
+                    Locals = v1State.StateObject.Locals ?? new Dictionary<string, object>()
+                };
+                v2State.StateObject.Locals["state"] = v2Instance;
+
+                // ── 4. Phase 2+3 — Walk and migrate all active waits ─────────────────
+                var waitsToMigrate = v1State.Waits.Where(w => w.Status == WaitStatus.Waiting);
+                var migratedWaits = MigrateWaitsRecursive(waitsToMigrate, migration, v2Wrapper);
+
+                // ── 5. Resolve PlaceholderWait → real StateAfterWait from V2 manifest ─
+                var v2Manifest = WorkflowVersionManifest.Load(attr.WorkflowName, attr.ToVersion);
+                var resolvedWaits = ResolveStateIndices(migratedWaits, v2Manifest);
+
+                // Remap top-level StateIndex to the primary active wait's StateAfterWait in V2
+                var primaryActiveWait = resolvedWaits.FirstOrDefault(w => w.Status == WaitStatus.Waiting);
+                if (primaryActiveWait != null && primaryActiveWait.StateAfterWait >= 0)
+                {
+                    v2State.StateObject.StateIndex = primaryActiveWait.StateAfterWait;
+                }
+
+                // ── 6. Atomic DB update (new WorkflowStore method) ───────────────────
+                await _store.ReplaceMigratedStateAsync(
+                    workflowInstanceId,
+                    v2State,
+                    resolvedWaits,
+                    newVersion: attr.ToVersion,
+                    ct);
+
+                // ── 7. Dispatch scheduled commands (POST-commit, fire-and-forget) ─────
+                foreach (var cmd in migration._scheduledCommands)
+                {
+                    await _messageDispatcher.DispatchAsync(cmd);
+                }
             }
-
-            // Populate state object properties on V2 DTO
-            v2State.StateObject = new WorkflowStateObject
+            catch (WorkflowMigrationCancelledException ex)
             {
-                WorkflowType = attr.WorkflowName,
-                Instance = containerInstance,
-                StateIndex = v1State.StateObject.StateIndex,
-                Locals = v1State.StateObject.Locals ?? new Dictionary<string, object>()
-            };
-            v2State.StateObject.Locals["state"] = v2Instance;
+                // Intercept WorkflowMigrationCancelledException to transition the instance to WorkflowInstanceStatus.Canceled (400),
+                // append a CancellationHistoryEntry, and stop execution.
+                v1State.Status = WorkflowInstanceStatus.Canceled;
+                v1State.CancellationHistory.Add(new CancellationHistoryEntry
+                {
+                    Token = "Migration",
+                    CancelledAt = DateTime.UtcNow,
+                    Reason = ex.Reason
+                });
 
-            // ── 4. Phase 2+3 — Walk and migrate all active waits ─────────────────
-            var waitsToMigrate = v1State.Waits.Where(w => w.Status == WaitStatus.Waiting);
-            var migratedWaits = MigrateWaitsRecursive(waitsToMigrate, migration, v2Wrapper);
-
-            // ── 5. Resolve PlaceholderWait → real StateAfterWait from V2 manifest ─
-            var v2Manifest = WorkflowVersionManifest.Load(attr.WorkflowName, attr.ToVersion);
-            var resolvedWaits = ResolveStateIndices(migratedWaits, v2Manifest);
-
-            // Remap top-level StateIndex to the primary active wait's StateAfterWait in V2
-            var primaryActiveWait = resolvedWaits.FirstOrDefault(w => w.Status == WaitStatus.Waiting);
-            if (primaryActiveWait != null && primaryActiveWait.StateAfterWait >= 0)
-            {
-                v2State.StateObject.StateIndex = primaryActiveWait.StateAfterWait;
-            }
-
-            // ── 6. Atomic DB update (new WorkflowStore method) ───────────────────
-            await _store.ReplaceMigratedStateAsync(
-                workflowInstanceId,
-                v2State,
-                resolvedWaits,
-                newVersion: attr.ToVersion,
-                ct);
-
-            // ── 7. Dispatch scheduled commands (POST-commit, fire-and-forget) ─────
-            foreach (var cmd in migration._scheduledCommands)
-            {
-                await _messageDispatcher.DispatchAsync(cmd);
+                await _store.ReplaceMigratedStateAsync(
+                    workflowInstanceId,
+                    v1State,
+                    v1State.Waits,
+                    newVersion: v1State.WorkflowVersion,
+                    ct);
             }
         }
 

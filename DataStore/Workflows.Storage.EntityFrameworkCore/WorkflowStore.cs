@@ -1048,6 +1048,7 @@ namespace Workflows.Storage.EntityFrameworkCore
 
                     await _dbContext.SaveChangesAsync(ct);
                     await transaction.CommitAsync(ct);
+                    _cache?.Remove(instanceId);
                 }
                 catch (Exception)
                 {

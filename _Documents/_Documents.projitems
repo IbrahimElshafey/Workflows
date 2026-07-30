@@ -16,6 +16,7 @@
     <None Include="$(MSBuildThisFileDirectory)Architecture\Granular State Hydration and Wait Tree Lazy-Loading.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Idempotent Signal Processing.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Orchestrator-Side Distributed Timer Scheduling.md" />
+    <None Include="$(MSBuildThisFileDirectory)Roadmap\ROADMAP.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Out-of-Process Worker Supervisor Architecture.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Poison Message &amp; DLQ Handling.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Pre-Publish Comparison &amp; Impact Wizard.md" />
