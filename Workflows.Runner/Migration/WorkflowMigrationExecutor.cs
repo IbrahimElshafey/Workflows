@@ -66,6 +66,76 @@ namespace Workflows.Runner.Migration
             return sub?.BasicBlocks.FirstOrDefault(b => string.Equals(b.YieldWaitName, waitName, StringComparison.OrdinalIgnoreCase));
         }
 
+        public static int ResolveExactYieldOrdinal(Type? workflowContainerType, string waitName, int fallbackOrdinal)
+        {
+            if (workflowContainerType == null || string.IsNullOrEmpty(waitName))
+                return fallbackOrdinal;
+
+            try
+            {
+                var nestedTypes = workflowContainerType.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic);
+                var stateMachineType = nestedTypes.FirstOrDefault(t => t.Name.StartsWith("<") && t.Name.Contains(">d__"));
+                if (stateMachineType == null) return fallbackOrdinal;
+
+                var moveNextMethod = stateMachineType.GetMethod("MoveNext", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (moveNextMethod == null) return fallbackOrdinal;
+
+                var body = moveNextMethod.GetMethodBody();
+                if (body == null) return fallbackOrdinal;
+
+                var ilBytes = body.GetILAsByteArray();
+                if (ilBytes == null) return fallbackOrdinal;
+
+                var module = moveNextMethod.Module;
+                int lastLoadedStateIndex = -1;
+
+                for (int i = 0; i < ilBytes.Length; i++)
+                {
+                    byte b = ilBytes[i];
+
+                    // ldc.i4.0 to ldc.i4.8 (0x16 to 0x1E)
+                    if (b >= 0x16 && b <= 0x1E)
+                    {
+                        lastLoadedStateIndex = b - 0x16;
+                    }
+                    // ldc.i4.s (0x1F)
+                    else if (b == 0x1F && i + 1 < ilBytes.Length)
+                    {
+                        lastLoadedStateIndex = (sbyte)ilBytes[i + 1];
+                        i += 1;
+                    }
+                    // ldc.i4 (0x20)
+                    else if (b == 0x20 && i + 4 < ilBytes.Length)
+                    {
+                        lastLoadedStateIndex = BitConverter.ToInt32(ilBytes, i + 1);
+                        i += 4;
+                    }
+                    // ldstr (0x72)
+                    else if (b == 0x72 && i + 4 < ilBytes.Length)
+                    {
+                        int token = BitConverter.ToInt32(ilBytes, i + 1);
+                        i += 4;
+                        try
+                        {
+                            string str = module.ResolveString(token);
+                            if (string.Equals(str, waitName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (lastLoadedStateIndex >= 0)
+                                {
+                                    return lastLoadedStateIndex;
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch
+            {
+            }
+            return fallbackOrdinal;
+        }
+
         public static WorkflowVersionManifest Load(string workflowName, int version)
         {
             var baseDirs = new[]
@@ -266,13 +336,19 @@ namespace Workflows.Runner.Migration
                     continue;
                 }
 
-                if (wait is SubWorkflowWaitDto oldSub && newWait is SubWorkflowWait)
+                if (wait is SubWorkflowWaitDto oldSub)
                 {
                     var childMigrated = migration.MigrateSubWorkflowState(oldSub, _new);
-                    var newSubDto = _mapper.MapToDto(newWait) as SubWorkflowWaitDto
-                        ?? new SubWorkflowWaitDto { WaitName = newWait.WaitName };
-                    
-                    newSubDto.StateMachineObjectId = oldSub.StateMachineObjectId;
+                    var newSubDto = new SubWorkflowWaitDto
+                    {
+                        Id = oldSub.Id,
+                        Status = oldSub.Status,
+                        WaitName = oldSub.WaitName,
+                        MethodFullPath = oldSub.MethodFullPath,
+                        StateMachineObjectId = oldSub.StateMachineObjectId,
+                        StateAfterWait = oldSub.StateAfterWait,
+                        ChildWaits = MigrateWaitsRecursive(oldSub.ChildWaits, migration, _new)
+                    };
                     result.Add(newSubDto);
                     continue;
                 }
@@ -284,7 +360,7 @@ namespace Workflows.Runner.Migration
         }
 
         private List<WaitInfrastructureDto> ResolveStateIndices(
-            List<WaitInfrastructureDto> waits, WorkflowVersionManifest manifest)
+            List<WaitInfrastructureDto> waits, WorkflowVersionManifest manifest, string? parentSubWorkflowMethodFullPath = null)
         {
             var resolved = new List<WaitInfrastructureDto>();
 
@@ -294,7 +370,9 @@ namespace Workflows.Runner.Migration
 
                 if (currentWait is PlaceholderWaitDto ph)
                 {
-                    var block = manifest.FindBlockByName(ph.WaitName);
+                    var block = !string.IsNullOrEmpty(parentSubWorkflowMethodFullPath)
+                        ? manifest.FindSubWorkflowBlockByName(parentSubWorkflowMethodFullPath, ph.WaitName)
+                        : manifest.FindBlockByName(ph.WaitName);
                     if (block != null)
                     {
                         currentWait = CreateConcreteDtoFromSchema(ph, block);
@@ -310,7 +388,10 @@ namespace Workflows.Runner.Migration
                 }
                 else
                 {
-                    var block = manifest.FindBlockByName(currentWait.WaitName);
+                    var block = !string.IsNullOrEmpty(parentSubWorkflowMethodFullPath)
+                        ? manifest.FindSubWorkflowBlockByName(parentSubWorkflowMethodFullPath, currentWait.WaitName)
+                        : manifest.FindBlockByName(currentWait.WaitName);
+
                     if (block != null)
                     {
                         currentWait.StateAfterWait = block.YieldOrdinal;
@@ -319,7 +400,11 @@ namespace Workflows.Runner.Migration
 
                 if (currentWait.ChildWaits?.Count > 0)
                 {
-                    currentWait.ChildWaits = ResolveStateIndices(currentWait.ChildWaits, manifest);
+                    string? nextSubPath = (currentWait is SubWorkflowWaitDto sub)
+                        ? sub.MethodFullPath
+                        : parentSubWorkflowMethodFullPath;
+
+                    currentWait.ChildWaits = ResolveStateIndices(currentWait.ChildWaits, manifest, nextSubPath);
                 }
 
                 resolved.Add(currentWait);
