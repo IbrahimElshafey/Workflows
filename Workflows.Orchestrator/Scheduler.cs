@@ -170,20 +170,39 @@ namespace Workflows.Orchestrator
 
         private async Task RunChannelConsumerLoopAsync(CancellationToken cancellationToken)
         {
-            await foreach (var signalDto in _dispatchChannel.Reader.ReadAllAsync(cancellationToken))
+            try
             {
-                try
+                await foreach (var signalDto in _dispatchChannel.Reader.ReadAllAsync(cancellationToken))
                 {
-                    using (var scope = _serviceProvider.CreateScope())
+                    try
                     {
-                        var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
-                        await orchestrator.ProcessSignalAsync(signalDto);
+                        using (var scope = _serviceProvider.CreateScope())
+                        {
+                            var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
+                            await orchestrator.ProcessSignalAsync(signalDto);
+                        }
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        break;
+                    }
+                    catch (Exception)
+                    {
+                        // Fail-safe dispatch catch
                     }
                 }
-                catch (Exception)
-                {
-                    // Fail-safe dispatch catch
-                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected on cancellation
+            }
+            catch (ObjectDisposedException)
+            {
+                // Expected on container shutdown
             }
         }
 
