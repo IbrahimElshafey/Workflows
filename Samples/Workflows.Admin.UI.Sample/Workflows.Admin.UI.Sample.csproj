@@ -11,6 +11,7 @@
     <ProjectReference Include="..\..\Workflows.Orchestrator\Workflows.Orchestrator.csproj" />
     <ProjectReference Include="..\..\Hosting\Workflows.Hosting.InProcess\Workflows.Hosting.InProcess.csproj" />
     <ProjectReference Include="..\..\DataStore\Workflows.Storage.Sqlite\Workflows.Storage.Sqlite.csproj" />
+    <ProjectReference Include="..\..\DataStore\Workflows.Storage.SqlServer\Workflows.Storage.SqlServer.csproj" />
   </ItemGroup>
 
 </Project>
