@@ -939,6 +939,202 @@ namespace TestWorkflows
             var diagnostics = await RunAnalyzerAsync(source, includeWF211: true);
             diagnostics.Where(d => d.Id == "WF211").Should().BeEmpty();
         }
+
+        [Fact]
+        public async Task WF008_ContainerPropertyInWithState_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""TestWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public int MinOrderId { get; set; }
+
+        public async IAsyncEnumerable<Wait> Run(MyState state)
+        {
+            yield return WaitSignal<string>(""MySignal"")
+                .WithState(MinOrderId)
+                .MatchIf((sig, id) => sig.Length > id);
+        }
+    }
+
+    public class MyState { }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            diagnostics.Should().ContainSingle(d => d.Id == "WF008");
+            diagnostics.First(d => d.Id == "WF008").GetMessage().Should().Contain("is a member of the workflow container");
+            diagnostics.Where(d => d.Id == "WF009").Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task WF008_ThisQualifiedPropertyInWithState_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""TestWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public string CurrentCustomer { get; set; } = string.Empty;
+
+        public async IAsyncEnumerable<Wait> Run(MyState state)
+        {
+            yield return WaitSignal<string>(""MySignal"")
+                .WithState(this.CurrentCustomer)
+                .MatchIf((sig, customer) => sig == customer);
+        }
+    }
+
+    public class MyState { }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            diagnostics.Should().ContainSingle(d => d.Id == "WF008");
+        }
+
+        [Fact]
+        public async Task WF008_LocalVariableInWithState_ShouldNotTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""TestWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public int MinOrderId { get; set; }
+
+        public async IAsyncEnumerable<Wait> Run(MyState state)
+        {
+            int minOrderId = MinOrderId;
+
+            yield return WaitSignal<string>(""MySignal"")
+                .WithState(minOrderId)
+                .MatchIf((sig, id) => sig.Length > id);
+        }
+    }
+
+    public class MyState { }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            diagnostics.Where(d => d.Id == "WF008").Should().BeEmpty();
+            diagnostics.Where(d => d.Id == "WF009").Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task WF008_NewObjectInWithState_ShouldNotTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""TestWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public int CurrentOrderId { get; set; }
+
+        public async IAsyncEnumerable<Wait> Run(MyState state)
+        {
+            yield return WaitSignal<string>(""MySignal"")
+                .WithState(new MatchState { TargetOrderId = CurrentOrderId })
+                .MatchIf((sig, st) => sig == st.TargetOrderId.ToString());
+        }
+    }
+
+    public class MatchState { public int TargetOrderId { get; set; } }
+
+    public class MyState { }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            diagnostics.Where(d => d.Id == "WF008").Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task WF009_InputStateParameterInWithState_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System;
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""TestWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public async IAsyncEnumerable<Wait> Run(MyState state)
+        {
+            yield return WaitSignal<string>(""MySignal"")
+                .WithState(state)
+                .MatchIf((sig, st) => sig == st.Name);
+        }
+    }
+
+    public class MyState { public string Name { get; set; } = string.Empty; }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            diagnostics.Should().ContainSingle(d => d.Id == "WF009");
+            diagnostics.First(d => d.Id == "WF009").GetMessage().Should().Contain("workflow input state parameter");
+            diagnostics.Where(d => d.Id == "WF008").Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task WF009_HelperMethodParameterInWithState_ShouldNotTriggerDiagnostic()
+        {
+            // A builder helper receives a value that is not stored in the machine state, so the
+            // explicit hand-off is the only way to make it reachable after a resume.
+            var source = @"
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""TestWorkflow"", 1)]
+    public sealed class TestWorkflow : WorkflowContainer
+    {
+        public async IAsyncEnumerable<Wait> Run(MyState state)
+        {
+            var wait = CreateWait(state.Name);
+            yield return wait;
+        }
+
+        private SignalWait<string> CreateWait(string name)
+        {
+            return WaitSignal<string>(""MySignal"").WithState(name);
+        }
+    }
+
+    public class MyState { public string Name { get; set; } = string.Empty; }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            diagnostics.Where(d => d.Id == "WF009" || d.Id == "WF008").Should().BeEmpty();
+        }
     }
 
     public class InMemoryAdditionalText : AdditionalText
@@ -959,4 +1155,3 @@ namespace TestWorkflows
         }
     }
 }
-

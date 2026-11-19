@@ -9,7 +9,9 @@ Key validation checks include:
 - Enforcing that all workflow container classes are declared as `sealed`.
 - Ensuring lambda expressions (such as match filters) do not capture variables from external scopes (closures).
 - Preventing usage of unserializable local types in lambda expressions.
+- Rejecting anonymous types passed to `.WithState(...)` (`WF003`): they are compiler-generated and cannot be deserialized after a resume. `WithState` throws `ArgumentException` at runtime for the same reason.
 - Disallowing forbidden runtime-specific calls (e.g., `AsyncLocal` or `HttpContext`) that break in distributed execution environments.
+- Warning about redundant `.WithState(...)` hand-offs: container members and the workflow input state parameter are already reachable from the persisted instance (`WF008`/`WF009`). Only stack locals and helper-method parameters need an explicit hand-off.
 
 ## 2. How to use?
 Reference the project as an Analyzer inside your project's `.csproj` file. This prevents the analyzer assembly from being bundled as a direct runtime dependency while enabling build-time analysis.

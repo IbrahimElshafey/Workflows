@@ -29,6 +29,8 @@ namespace Workflows.Analyzers
         public const string DiagnosticIdWF207 = "WF207";
         public const string DiagnosticIdWF208 = "WF208";
         public const string DiagnosticIdWF209 = "WF209";
+        public const string DiagnosticIdWF008 = "WF008";
+        public const string DiagnosticIdWF009 = "WF009";
 
         private static readonly DiagnosticDescriptor WF000 = new DiagnosticDescriptor(
             DiagnosticIdWF000,
@@ -167,6 +169,26 @@ namespace Workflows.Analyzers
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
 
+        // WF008: redundant hand-off of a workflow container member
+        private static readonly DiagnosticDescriptor WF008 = new DiagnosticDescriptor(
+            DiagnosticIdWF008,
+            "Redundant WithState Hand-off",
+            "'{0}' is a member of the workflow container and is already available inside the matcher and wait callbacks. Pass only stack locals and method parameters to '.WithState(...)'; container members are rebound to the live instance.",
+            "Workflow.Safety",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "Container properties/fields are serialized with the workflow instance. Handing them off freezes a snapshot at wait-creation time and duplicates it into the persisted wait payload.");
+
+        // WF009: redundant hand-off of the workflow input state parameter
+        private static readonly DiagnosticDescriptor WF009 = new DiagnosticDescriptor(
+            DiagnosticIdWF009,
+            "Input State Hand-off",
+            "'{0}' is the workflow input state parameter. Copy the values you need into container properties or locals, then read those inside the matcher instead of passing the whole POCO to '.WithState(...)'.",
+            "Workflow.Safety",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true,
+            description: "Persisting the input state POCO per wait duplicates it into the workflow snapshot and freezes stale values.");
+
         public const string DiagnosticIdWFUnsafeState = "WF_ERR_UNSAFE_STATE";
 
         private static readonly DiagnosticDescriptor WF_ERR_UNSAFE_STATE = new DiagnosticDescriptor(
@@ -219,7 +241,7 @@ namespace Workflows.Analyzers
             isEnabledByDefault: true);
 
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(
-            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209, WF_ERR_UNSAFE_STATE, WF210, WF211, WF300, WF301);
+            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF008, WF009, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209, WF_ERR_UNSAFE_STATE, WF210, WF211, WF300, WF301);
 
         public override void Initialize(AnalysisContext context)
         {
@@ -279,6 +301,7 @@ namespace Workflows.Analyzers
             var invocation = (InvocationExpressionSyntax)context.Node;
             Rules.SerializationRules.AnalyzeWithStateInvocation(context, invocation, WF005);
             Rules.SerializationRules.AnalyzeWithStateAnonymousType(context, invocation, WF003);
+            Rules.StateHandoffRules.AnalyzeWithStateInvocation(context, invocation, WF008, WF009);
 
             var methodSymbol = context.SemanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
             if (methodSymbol == null) return;
