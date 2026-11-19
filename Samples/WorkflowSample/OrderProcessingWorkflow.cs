@@ -15,13 +15,13 @@ namespace WorkflowSample
         {
             // Initialize domain state
             ProcessCount = 10;
-            int minOrderId = 0; // Local variable, but we will NOT capture it in a closure
+            int minOrderId = 0; // Stack local - cannot be captured, so it is handed off via WithState
 
             // 1. Wait for a specific signal (Order Submitted)
-            // We use .WithState(minOrderId) to explicitly pass the local variable as a data contract
+            // Only the local minOrderId is handed off; CurrentCustomer is a property
             yield return WaitSignal<OrderSubmittedEvent>("OrderSubmittedSignal", "Wait for Order Submission")
                 .WithState(minOrderId)
-                .MatchIf((order, minId) => order.OrderId > minId && order.CustomerName == CurrentCustomer) // Pure lambda (no closure)
+                .MatchIf((order, minId) => order.OrderId > minId && order.CustomerName == CurrentCustomer)
                 .AfterMatch((order) =>
                 {
                     // Accessing 'this.' creates a stable <>4__this pointer, NOT a volatile closure
@@ -36,26 +36,23 @@ namespace WorkflowSample
             yield return WaitDelay(TimeSpan.FromMinutes(5), "Wait 5 minutes before charging");
 
             // 3. Wait for payment
-            // Explicitly pass this.CurrentOrderId as the state context to avoid capturing 'this' implicitly in MatchIf
+            // CurrentOrderId is a container property, so the matcher is rebound to the live instance
             yield return WaitSignal<PaymentProcessedEvent>("PaymentProcessedSignal", "Wait for Payment")
-                .WithState(CurrentOrderId)
-                .MatchIf((payment, targetOrderId) => payment.OrderId == targetOrderId)
-                .AfterMatch((payment, targetOrderId) =>
+                .MatchIf((payment) => payment.OrderId == CurrentOrderId)
+                .AfterMatch((payment) =>
                 {
-                    Console.WriteLine($"[Workflow] Payment success for {targetOrderId}: {payment.IsSuccessful}");
+                    Console.WriteLine($"[Workflow] Payment success for {CurrentOrderId}: {payment.IsSuccessful}");
                 });
 
             // 4. Parallel Fulfillment Prep
-            // Explicitly passing CurrentOrderId into the child waits
+            // Child waits read CurrentOrderId from the live container - no WithState needed
             yield return WaitGroup(
                [
                     (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated", "WaitInventoryAllocated")
-                        .WithState(CurrentOrderId)
-                        .MatchIf((shipping, targetId) => shipping.OrderId == targetId),
+                        .MatchIf((shipping) => shipping.OrderId == CurrentOrderId),
 
                     (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted", "WaitLabelPrinted")
-                        .WithState(CurrentOrderId)
-                        .MatchIf((shipping, targetId) => shipping.OrderId == targetId)
+                        .MatchIf((shipping) => shipping.OrderId == CurrentOrderId)
                 ],
                 "Parallel Fulfillment Prep"
             ).MatchIf(() => ProcessCount >= 10); // Domain state evaluation
@@ -72,20 +69,20 @@ namespace WorkflowSample
         [SubWorkflow]
         private async IAsyncEnumerable<Wait> ShippingSubWorkflow(ShippingSubWorkflowState state = null!)
         {
+            // Only stack locals need an explicit hand-off - CurrentOrderId is read from the live container
             var marker = "test";
 
-            // Pass a Tuple to .WithState to pass multiple variables cleanly
             yield return WaitSignal<ShippingEvent>("OrderShipped", "Wait for Courier Pickup")
-                .WithState((OrderId: CurrentOrderId, Marker: marker))
-                .MatchIf((shipping, state) => shipping.OrderId == state.OrderId && state.Marker == "test")
-                .AfterMatch((shipping, state) =>
+                .WithState(marker)
+                .MatchIf((shipping, marker) => shipping.OrderId == CurrentOrderId && marker == "test")
+                .AfterMatch((shipping) =>
                 {
                     Console.WriteLine($"[SubWorkflow] Order shipped! Tracking: {shipping.TrackingNumber}");
                 })
                 .WithCancelToken("sdldfjk")
-                .OnCanceled(async (state) =>
+                .OnCanceled(async () =>
                 {
-                    Console.WriteLine($"[SubWorkflow] Order shipment canceled for Order {state.OrderId} marker:{state.Marker}");
+                    Console.WriteLine($"[SubWorkflow] Order shipment canceled for Order {CurrentOrderId}");
                     await Task.CompletedTask;
                 });
 

@@ -22,8 +22,14 @@ namespace InProcessSqliteSample
 
         public string ShippingAddress { get; set; } = string.Empty;
 
-        // Processing state — set by subsequent state-aware waits
+        // Processing state — set by the callbacks of subsequent waits
         public bool PaymentAuthorized { get; set; }
+
+        public bool StockOk { get; set; }
+
+        public bool CustomerOk { get; set; }
+
+        public bool OrderShipped { get; set; }
 
         public string TrackingCode { get; set; } = string.Empty;
 
@@ -61,14 +67,13 @@ namespace InProcessSqliteSample
             // ---------------------------------------------------------------
             ExecutionLog.Add("Waiting for stock confirmation and customer verification.");
             var stockWait = WaitSignal<StockConfirmedSignal>("StockConfirmed", "WaitStock")
-                .WithState(state)
-                .MatchIf((sig, st) => sig.OrderId == OrderId)   // state exists — safe to filter
+                .MatchIf((sig) => sig.OrderId == OrderId)   // domain property, rebound to the live instance
                 .AfterMatch(
-                    (sig, st) =>
+                    sig =>
                     {
                         if (sig.Status == "Available")
                         {
-                            st.StockOk = true;
+                            StockOk = true;
                             ExecutionLog.Add("Stock confirmed available.");
                         }
                         else
@@ -78,12 +83,11 @@ namespace InProcessSqliteSample
                         }
                     });
             var customerWait = WaitSignal<CustomerVerifiedSignal>("CustomerVerified", "WaitCustomer")
-                .WithState(state)
-                .MatchIf((sig, st) => sig.CustomerEmail == CustomerEmail)   // state exists — safe to filter
+                .MatchIf((sig) => sig.CustomerEmail == CustomerEmail)
                 .AfterMatch(
-                    (sig, st) =>
+                    sig =>
                     {
-                        st.CustomerOk = sig.Verified;
+                        CustomerOk = sig.Verified;
                         ExecutionLog.Add(
                             sig.Verified ? "Customer verification succeeded." : "Customer verification failed.");
                         if (!sig.Verified)
@@ -95,10 +99,10 @@ namespace InProcessSqliteSample
                 "ParallelVerification")
                 .MatchAll();
 
-            if (!state.StockOk || !state.CustomerOk)
+            if (!StockOk || !CustomerOk)
             {
                 ExecutionLog.Add(
-                    $"Aborting before payment — StockOk={state.StockOk}, CustomerOk={state.CustomerOk}. Reason: {ErrorReason}");
+                    $"Aborting before payment — StockOk={StockOk}, CustomerOk={CustomerOk}. Reason: {ErrorReason}");
                 yield break;
             }
 
@@ -133,11 +137,10 @@ namespace InProcessSqliteSample
             yield return ExecuteDeferred<ShipOrderCommand, ShipOrderResult>(
                 "ShipOrder",
                 new ShipOrderCommand { OrderId = OrderId, ShippingAddress = ShippingAddress })
-                .WithState(state)
                 .OnResult(
-                    (result, st) =>
+                    result =>
                     {
-                        st.OrderShipped = result.Success;
+                        OrderShipped = result.Success;
                         TrackingCode = result.TrackingNumber;
                         ExecutionLog.Add(
                             result.Success ? $"Order shipped. Tracking: {TrackingCode}" : "Shipping failed.");
@@ -151,9 +154,7 @@ namespace InProcessSqliteSample
 
     public class OrderWorkflowState
     {
-        public bool StockOk { get; set; }
-        public bool CustomerOk { get; set; }
-        public bool OrderShipped { get; set; }
+        // Only the input DTO lives here; domain/processing state is kept on the container properties.
         public int X { get; set; }
     }
 }

@@ -533,15 +533,14 @@ namespace InProcessSqliteSample
 
             if (state.StateObject?.Instance is OrderProcessingWorkflow orderWorkflow)
             {
-                var workflowState = state.StateObject.Locals.TryGetValue("state", out var st) ? st as OrderWorkflowState : null;
                 Console.WriteLine("\n--- Workflow Domain Properties ---");
                 Console.WriteLine($"OrderId:           {orderWorkflow.OrderId}");
                 Console.WriteLine($"CustomerEmail:     {orderWorkflow.CustomerEmail}");
                 Console.WriteLine($"Amount:            {orderWorkflow.Amount:C}");
                 Console.WriteLine($"PaymentAuthorized: {orderWorkflow.PaymentAuthorized}");
-                Console.WriteLine($"StockOk:           {workflowState?.StockOk}");
-                Console.WriteLine($"CustomerOk:        {workflowState?.CustomerOk}");
-                Console.WriteLine($"OrderShipped:      {workflowState?.OrderShipped}");
+                Console.WriteLine($"StockOk:           {orderWorkflow.StockOk}");
+                Console.WriteLine($"CustomerOk:        {orderWorkflow.CustomerOk}");
+                Console.WriteLine($"OrderShipped:      {orderWorkflow.OrderShipped}");
                 Console.WriteLine($"TrackingCode:      {orderWorkflow.TrackingCode}");
                 Console.WriteLine($"ErrorReason:       {orderWorkflow.ErrorReason}");
 

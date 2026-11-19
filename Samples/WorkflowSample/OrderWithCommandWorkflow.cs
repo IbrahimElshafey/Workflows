@@ -17,8 +17,7 @@ namespace WorkflowSample
         {
             // Receive order details via signal
             yield return WaitSignal<OrderReceivedEvent>("OrderReceived", "WaitOrderReceived")
-                .WithState(0)
-                .MatchIf((x, minOrderId) => x.OrderId > minOrderId)
+                .MatchIf((x) => x.OrderId > 0)
                 .WithCancelToken("order-received-token")
                 .AfterMatch(order =>
                 {
@@ -36,11 +35,10 @@ namespace WorkflowSample
                     Subject = "Order Confirmation",
                     Body = $"Your order {CurrentOrderId} has been received."
                 })
-                .WithState(CurrentOrderId)
                 .WithRetries(maxAttempts: 3, backoff: TimeSpan.FromSeconds(5))
-                .OnResult((result, orderId) =>
+                .OnResult((result) =>
                 {
-                    Console.WriteLine($"Confirmation email sent with MessageId: {result.MessageId} for order {orderId}");
+                    Console.WriteLine($"Confirmation email sent with MessageId: {result.MessageId} for order {CurrentOrderId}");
                 })
                 .RegisterCompensation(result =>
                 {
@@ -57,16 +55,15 @@ namespace WorkflowSample
                     Amount = OrderAmount,
                     PaymentMethod = "CreditCard"
                 })
-                .WithState(CustomerEmail)
                 .WithRetries(maxAttempts: 2, backoff: TimeSpan.FromSeconds(10))
-                .OnResult((result, email) =>
+                .OnResult((result) =>
                 {
-                    Console.WriteLine($"Payment processed with TransactionId: {result.TransactionId} for {email}");
+                    Console.WriteLine($"Payment processed with TransactionId: {result.TransactionId} for {CustomerEmail}");
                     return;
                 })
-                .RegisterCompensation(async (result, email) =>
+                .RegisterCompensation(async (result) =>
                 {
-                    Console.WriteLine($"Compensating: Refund payment for {email}");
+                    Console.WriteLine($"Compensating: Refund payment for {CustomerEmail}");
                     await RefundPaymentAsync();
                 });
 

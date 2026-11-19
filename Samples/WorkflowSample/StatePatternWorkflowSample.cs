@@ -74,8 +74,8 @@ namespace WorkflowSample
 
             yield return WaitGroup(
                     [
-                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated", "WaitInventoryAllocated").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId),
-                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted", "WaitLabelPrinted").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId)
+                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated", "WaitInventoryAllocated").MatchIf((x) => x.OrderId == CurrentOrderId),
+                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted", "WaitLabelPrinted").MatchIf((x) => x.OrderId == CurrentOrderId)
                     ],
                     "Stateful group wait")
                 .MatchIf(() => CurrentOrderId > 0);
@@ -101,12 +101,11 @@ namespace WorkflowSample
         private async IAsyncEnumerable<Wait> ShippingSubWorkflow(StatePatternShippingState state = null!)
         {
             yield return WaitSignal<ShippingEvent>("OrderShipped", "Stateful shipping signal")
-                .WithState(CurrentOrderId)
-                .AfterMatch((ShippingEvent shipping, int orderId) =>
+                .AfterMatch((shipping) =>
                 {
-                    Console.WriteLine($"[StatePattern] Shipping matched for order {orderId}, tracking:{shipping.TrackingNumber}");
+                    Console.WriteLine($"[StatePattern] Shipping matched for order {CurrentOrderId}, tracking:{shipping.TrackingNumber}");
                 })
-                .MatchIf((shipping, orderId) => shipping.OrderId == orderId);
+                .MatchIf((shipping) => shipping.OrderId == CurrentOrderId);
 
             await Task.CompletedTask;
         }
