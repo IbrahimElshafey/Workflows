@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.DTOs.Waits;
 
 namespace Workflows.Storage.EntityFrameworkCore
 {
@@ -13,11 +14,28 @@ namespace Workflows.Storage.EntityFrameworkCore
 
         public int Status { get; set; } // Map from WorkflowInstanceStatus
         public string WorkflowType { get; set; } = string.Empty;
+        public int WorkflowVersion { get; set; } = 1;
+
+        // Distributed instance-level lock fields.
+        // LockedBy holds the node identifier that currently owns the lock.
+        // LockExpiresAt is the absolute UTC time at which the lock expires (TTL safety).
+        public string? LockedBy { get; set; }
+        public DateTime? LockedAt { get; set; }
+        public DateTime? LockExpiresAt { get; set; }
+
+        // Denormalized admin/query-friendly columns (maintained by WorkflowStore)
+        public DateTime? CompletedAt { get; set; }
+        public int ActiveWaitCount { get; set; }
+        public string? ErrorMessage { get; set; }
+        public string? LastAdvanceReason { get; set; }
 
         // JSON Owned property
         public WorkflowStateObject StateObject { get; set; } = new();
 
         // Stored using value converter to serialize/deserialize List<CancellationHistoryEntry> to JSON string
         public List<CancellationHistoryEntry> CancellationHistory { get; set; } = new();
+
+        // Stored using value converter to serialize/deserialize List<WaitInfrastructureDto> to JSON string
+        public List<WaitInfrastructureDto> Waits { get; set; } = new();
     }
 }

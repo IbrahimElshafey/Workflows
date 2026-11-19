@@ -1,11 +1,11 @@
 using Workflows.Abstraction.DTOs;
-using Workflows.Definition;
+using Workflows.Abstraction.DTOs.Waits;
 
 namespace Workflows.Runner.DataObjects
 {
     public class AdvancerResult
     {
-        public Wait Wait { get; set; }
+        public WaitInfrastructureDto Wait { get; set; }
         public WorkflowStateObject State { get; set; }
     }
 }

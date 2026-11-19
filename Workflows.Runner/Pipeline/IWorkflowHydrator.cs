@@ -23,6 +23,6 @@ namespace Workflows.Runner.Pipeline
         /// <exception cref="InvalidOperationException">
         /// Thrown when <paramref name="methodName"/> is not found on <paramref name="containerType"/>.
         /// </exception>
-        Func<object, object> GetInvoker(Type containerType, string methodName);
+        Func<object, object?, object> GetInvoker(Type containerType, string methodName, Type stateType);
     }
 }

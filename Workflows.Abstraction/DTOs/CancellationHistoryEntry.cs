@@ -22,5 +22,15 @@ namespace Workflows.Abstraction.DTOs
         /// Optional reason or context for the cancellation.
         /// </summary>
         public string Reason { get; set; }
+
+        /// <summary>
+        /// Optional identifier of the replacement V2 workflow instance if respawned.
+        /// </summary>
+        public string? ReplacementWorkflowInstanceId { get; set; }
+
+        /// <summary>
+        /// Optional audit link pointing to the newly spawned V2 instance.
+        /// </summary>
+        public string? AuditLink { get; set; }
     }
 }

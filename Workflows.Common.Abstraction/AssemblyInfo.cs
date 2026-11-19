@@ -15,4 +15,4 @@ using System.Runtime.InteropServices;
 // The following GUID is for the ID of the typelib if this project is exposed to COM.
 
 [assembly: Guid("5f7efa19-d7a1-4741-8500-4c42745ca5f5")]
-//[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Workflows.Common.Abstraction.Tests")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Workflows.Runner.Tests")]

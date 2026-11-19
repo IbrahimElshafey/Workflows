@@ -28,5 +28,10 @@ namespace Workflows.Abstraction.DTOs.Registration
         public TimeSpan DefaultTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
         public CommandExecutionMode ExecutionMode { get; set; }
+
+        /// <summary>
+        /// True when the command payload type implements IDeferredCommand and supplies a MatchingFunction.
+        /// </summary>
+        public bool HasMatchingFunction { get; set; }
     }
 }

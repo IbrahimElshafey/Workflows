@@ -3,6 +3,7 @@ using Workflows.Definition;
 
 namespace WorkflowSample
 {
+    [Workflow("StatePatternWorkflowSample", 1)]
     public sealed class StatePatternWorkflowSample : WorkflowContainer
     {
         public int CurrentOrderId { get; set; }
@@ -26,7 +27,7 @@ namespace WorkflowSample
             public string Reason { get; set; }
         }
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(StatePatternWorkflowSampleState state = null!)
         {
             yield return WaitSignal<OrderReceivedEvent>("OrderReceived", "Receive order with explicit state")
                 .WithState(new SignalState { MinOrderId = 1, Status = "Received" })
@@ -46,7 +47,7 @@ namespace WorkflowSample
                     return ValueTask.CompletedTask;
                 });
 
-            yield return ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
+            yield return ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                     "ProcessPayment",
                     new ProcessPaymentCommand
                     {
@@ -73,13 +74,13 @@ namespace WorkflowSample
 
             yield return WaitGroup(
                     [
-                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId),
-                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId)
+                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated", "WaitInventoryAllocated").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId),
+                        (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted", "WaitLabelPrinted").WithState(CurrentOrderId).MatchIf((x, orderId) => x.OrderId == orderId)
                     ],
                     "Stateful group wait")
                 .MatchIf(() => CurrentOrderId > 0);
 
-            yield return WaitSubWorkflow(ShippingSubWorkflow(), "Stateful sub-workflow")
+            yield return WaitSubWorkflow(ShippingSubWorkflow(new StatePatternShippingState()), "Stateful sub-workflow")
                 .WithState(new CancelState { OrderId = CurrentOrderId, Reason = "Sub-workflow canceled" })
                 .OnCanceled((CancelState state) =>
                 {
@@ -96,7 +97,8 @@ namespace WorkflowSample
                 });
         }
 
-        private async IAsyncEnumerable<Wait> ShippingSubWorkflow()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> ShippingSubWorkflow(StatePatternShippingState state = null!)
         {
             yield return WaitSignal<ShippingEvent>("OrderShipped", "Stateful shipping signal")
                 .WithState(CurrentOrderId)
@@ -108,5 +110,13 @@ namespace WorkflowSample
 
             await Task.CompletedTask;
         }
+    }
+
+    public class StatePatternWorkflowSampleState
+    {
+    }
+
+    public class StatePatternShippingState
+    {
     }
 }

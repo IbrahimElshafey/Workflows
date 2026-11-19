@@ -26,14 +26,14 @@ namespace Workflows.Runner.Tests
             var workflowInstance = new SubWorkflowTestWorkflow();
             var stateMachine = new WorkflowStateObject
             {
+                WorkflowType = "SubWorkflowTest",
                 StateIndex = -1,
                 Instance = workflowInstance,
-                StateMachinesObjects = new Dictionary<string, object>(),
-                WaitStatesObjects = new Dictionary<Guid, object>()
+                Locals = new Dictionary<string, object>()
             };
 
             var request = builder.CreateExecutionRequest<SubWorkflowTestWorkflow>(
-                Guid.Empty,
+                string.Empty,
                 "SubWorkflowTest",
                 stateObject: stateMachine);
 

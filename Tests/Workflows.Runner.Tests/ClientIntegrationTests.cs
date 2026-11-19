@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Xunit;
 using FluentAssertions;
 using Grpc.Net.Client;
@@ -33,9 +34,12 @@ using Workflows.Storage.EntityFrameworkCore;
 
 namespace Workflows.Runner.Tests
 {
-    public class TestCommand 
+    public class TestCommand : IDeferredCommand<TestCommand, TestResult>
     { 
         public string Message { get; set; } = string.Empty;
+
+        System.Linq.Expressions.Expression<Func<TestCommand, TestResult, bool>> IDeferredCommand<TestCommand, TestResult>.MatchingFunction =>
+            (input, result) => result.Response == "hello-echo";
     }
 
     public class TestResult 
@@ -51,21 +55,29 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    public class ClientIntegrationWorkflowState
+    {
+    }
+
+    [Workflow("ClientIntegrationWorkflow", 1)]
     public sealed class ClientIntegrationWorkflow : WorkflowContainer
     {
         public string CommandResponse { get; set; } = string.Empty;
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(ClientIntegrationWorkflowState state = null!)
         {
-            yield return ExecuteCommand<TestCommand, TestResult>(
-                "test-handler",
-                new TestCommand { Message = "hello" }
-            )
-            .WithExecutionMode(CommandExecutionMode.Deferred)
-            .OnResult(result =>
+            yield return WaitGroup(new Wait[]
             {
-                CommandResponse = result.Response;
-            });
+                ExecuteDeferred<TestCommand, TestResult>(
+                    "test-handler",
+                    new TestCommand { Message = "hello" }
+                )
+                .OnResult(result =>
+                {
+                    CommandResponse = result.Response;
+                }),
+                WaitSignal<string>("DummyStartSignal", "Dummy")
+            }, "FirstGroup").MatchAny();
 
             yield return WaitSignal<string>("Finished", "Finish signal")
                 .MatchIf(msg => msg == CommandResponse);
@@ -76,6 +88,7 @@ namespace Workflows.Runner.Tests
 
     public class ClientIntegrationTests
     {
+
         [Fact]
         public async Task Test_Web_API_Client_Server_Integration_Loop()
         {
@@ -122,18 +135,18 @@ namespace Workflows.Runner.Tests
                 })
                 .Configure(app =>
                 {
+                    using (var scope = app.ApplicationServices.CreateScope())
+                    {
+                        var context = scope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+                        context.Database.EnsureCreated();
+                    }
                     app.UseRouting();
                     app.UseEndpoints(endpoints => endpoints.MapWorkflowOrchestratorEndpoints());
                 });
 
             serverHost = new TestServer(serverBuilder);
 
-            // Ensure DB schema is created
-            using (var scope = serverHost.Services.CreateScope())
-            {
-                var context = scope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
-                await context.Database.EnsureCreatedAsync();
-            }
+
 
             // Define the client TestServer
             var clientBuilder = new WebHostBuilder()
@@ -142,7 +155,7 @@ namespace Workflows.Runner.Tests
                     services.AddRouting();
                     services.AddWorkflowsShared();
                     services.AddWorkflowsClient()
-                        .AddCommandExecutor<TestCommand, TestResult, TestExecutor>(typeof(TestCommand).FullName!);
+                        .AddCommandExecutor<TestCommand, TestResult, TestExecutor>("test-handler");
                     services.AddWorkflowsHttpTransport();
 
                     // Register custom transport that sends signal/command results to the server host
@@ -174,7 +187,7 @@ namespace Workflows.Runner.Tests
                 var definitionRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
                 var builder = (WorkflowBuilder)scope.ServiceProvider.GetRequiredService<IWorkflowRegistry>();
                 
-                builder.RegisterWorkflow<ClientIntegrationWorkflow>("ClientIntegrationWorkflow", "1.0");
+                builder.RegisterWorkflow<ClientIntegrationWorkflow>("ClientIntegrationWorkflow", 1);
                 builder.RegisterCommand<TestCommand, TestResult>("test-handler", default!, CommandExecutionMode.Deferred);
 
                 // Extract package using reflection
@@ -193,35 +206,59 @@ namespace Workflows.Runner.Tests
                 }
             }
 
-            // Start client background executor service
-            var clientWorker = clientHost.Services.GetRequiredService<Microsoft.Extensions.Hosting.IHostedService>();
-            await clientWorker.StartAsync(default);
+
 
             // --- 3. EXECUTE INTEGRATION WORKFLOW ---
             Guid workflowId;
             using (var scope = serverHost.Services.CreateScope())
             {
                 var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
-                workflowId = await orchestrator.StartWorkflowAsync("ClientIntegrationWorkflow", "1.0", new object());
+                workflowId = await orchestrator.StartWorkflowAsync("ClientIntegrationWorkflow", 1, new object());
             }
 
             // Give background executor thread time to execute the command loop
-            await Task.Delay(1500);
+            WorkflowStateDto? state = null;
+            for (int i = 0; i < 100; i++)
+            {
+                using (var scope = serverHost.Services.CreateScope())
+                {
+                    var workflowStore = scope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+                    state = await workflowStore.GetInstanceStateAsync(workflowId);
+                }
 
-            // Verify that the command executed and result was posted back
+                if (state != null && state.Waits.Any(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting))
+                {
+                    break;
+                }
+                await Task.Delay(100);
+            }
+            if (state != null)
+            {
+                var waitsList = System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select(state.Waits, w => new { w.WaitType, w.Status, w.WaitName, ChildrenCount = w.ChildWaits?.Count ?? 0 }));
+                Console.WriteLine($"[TEST DEBUG] Waits in state: {string.Join(", ", waitsList)}");
+                var childWaits = System.Linq.Enumerable.ToList(System.Linq.Enumerable.SelectMany(System.Linq.Enumerable.Where(state.Waits, w => w.ChildWaits != null), w => w.ChildWaits).Select(cw => new { cw.WaitType, cw.Status, cw.WaitName }));
+                Console.WriteLine($"[TEST DEBUG] Child waits: {string.Join(", ", childWaits)}");
+            }
             using (var scope = serverHost.Services.CreateScope())
             {
-                var workflowStore = scope.ServiceProvider.GetRequiredService<IWorkflowStore>();
-                var state = await workflowStore.GetInstanceStateAsync(workflowId);
-
-                state.Should().NotBeNull();
-                // Since the command completed and returned "hello-echo", it should now be waiting for the Finished signal with that value
-                state!.Waits.Should().ContainSingle(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting);
-                var signalWait = (SignalWaitDto)state.Waits[0];
-                signalWait.SignalIdentifier.Should().Be("Finished");
+                var context = scope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+                var outboxCount = System.Linq.Queryable.Count(context.OutboxMessages);
+                var outboxList = System.Linq.Enumerable.ToList(System.Linq.Queryable.Select(context.OutboxMessages, m => new { m.Status, m.CommandWaitId, m.GlobalId }));
+                var inboxCount = System.Linq.Queryable.Count(context.CommandResults);
+                var inboxList = System.Linq.Enumerable.ToList(System.Linq.Queryable.Select(context.CommandResults, r => new { r.Status, r.CommandWaitId, r.IsSuccess }));
+                Console.WriteLine($"[TEST DEBUG] Outbox count: {outboxCount}, Outbox: {string.Join(", ", outboxList)}");
+                Console.WriteLine($"[TEST DEBUG] Inbox count: {inboxCount}, Inbox: {string.Join(", ", inboxList)}");
             }
 
-            await clientWorker.StopAsync(default);
+            // Verify that the command executed and result was posted back
+            state.Should().NotBeNull();
+            // Since the command completed and returned "hello-echo", it should now be waiting for the Finished signal with that value
+            state!.Waits.Should().ContainSingle(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting);
+            var signalWait = (SignalWaitDto)state.Waits.First(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting);
+            signalWait.SignalIdentifier.Should().Be("Finished");
+
+            clientHost.Dispose();
+            serverHost.Dispose();
         }
 
         [Fact]
@@ -276,18 +313,18 @@ namespace Workflows.Runner.Tests
                 })
                 .Configure(app =>
                 {
+                    using (var scope = app.ApplicationServices.CreateScope())
+                    {
+                        var context = scope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+                        context.Database.EnsureCreated();
+                    }
                     app.UseRouting();
                     app.UseEndpoints(endpoints => endpoints.MapWorkflowGrpcServices());
                 });
 
             serverHost = new TestServer(serverBuilder);
 
-            // Ensure DB schema is created
-            using (var scope = serverHost.Services.CreateScope())
-            {
-                var context = scope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
-                await context.Database.EnsureCreatedAsync();
-            }
+
 
             // Define the client TestServer
             var clientBuilder = new WebHostBuilder()
@@ -297,7 +334,7 @@ namespace Workflows.Runner.Tests
                     services.AddGrpc();
                     services.AddWorkflowsShared();
                     services.AddWorkflowsClient()
-                        .AddCommandExecutor<TestCommand, TestResult, TestExecutor>(typeof(TestCommand).FullName!);
+                        .AddCommandExecutor<TestCommand, TestResult, TestExecutor>("test-handler");
                     services.AddWorkflowsGrpcTransport();
 
                     // Register custom gRPC service
@@ -333,7 +370,7 @@ namespace Workflows.Runner.Tests
                 var definitionRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
                 var builder = (WorkflowBuilder)scope.ServiceProvider.GetRequiredService<IWorkflowRegistry>();
                 
-                builder.RegisterWorkflow<ClientIntegrationWorkflow>("ClientIntegrationWorkflow", "1.0");
+                builder.RegisterWorkflow<ClientIntegrationWorkflow>("ClientIntegrationWorkflow", 1);
                 builder.RegisterCommand<TestCommand, TestResult>("test-handler", default!, CommandExecutionMode.Deferred);
 
                 // Extract package using reflection
@@ -352,35 +389,42 @@ namespace Workflows.Runner.Tests
                 }
             }
 
-            // Start client background executor service
-            var clientWorker = clientHost.Services.GetRequiredService<Microsoft.Extensions.Hosting.IHostedService>();
-            await clientWorker.StartAsync(default);
+
 
             // --- 3. EXECUTE INTEGRATION WORKFLOW ---
             Guid workflowId;
             using (var scope = serverHost.Services.CreateScope())
             {
                 var orchestrator = scope.ServiceProvider.GetRequiredService<IOrchestrator>();
-                workflowId = await orchestrator.StartWorkflowAsync("ClientIntegrationWorkflow", "1.0", new object());
+                workflowId = await orchestrator.StartWorkflowAsync("ClientIntegrationWorkflow", 1, new object());
             }
 
             // Give background executor thread time to execute the command loop
-            await Task.Delay(1500);
-
-            // Verify that the command executed and result was posted back
-            using (var scope = serverHost.Services.CreateScope())
+            WorkflowStateDto? state = null;
+            for (int i = 0; i < 100; i++)
             {
-                var workflowStore = scope.ServiceProvider.GetRequiredService<IWorkflowStore>();
-                var state = await workflowStore.GetInstanceStateAsync(workflowId);
+                using (var scope = serverHost.Services.CreateScope())
+                {
+                    var workflowStore = scope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+                    state = await workflowStore.GetInstanceStateAsync(workflowId);
+                }
 
-                state.Should().NotBeNull();
-                // Since the gRPC executor completed and returned "hello-echo", it should now be waiting for the Finished signal
-                state!.Waits.Should().ContainSingle(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting);
-                var signalWait = (SignalWaitDto)state.Waits[0];
-                signalWait.SignalIdentifier.Should().Be("Finished");
+                if (state != null && state.Waits.Any(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting))
+                {
+                    break;
+                }
+                await Task.Delay(100);
             }
 
-            await clientWorker.StopAsync(default);
+            // Verify that the command executed and result was posted back
+            state.Should().NotBeNull();
+            // Since the gRPC executor completed and returned "hello-echo", it should now be waiting for the Finished signal
+            state!.Waits.Should().ContainSingle(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting);
+            var signalWait = (SignalWaitDto)state.Waits.First(w => w.WaitType == WaitType.SignalWait && w.Status == WaitStatus.Waiting);
+            signalWait.SignalIdentifier.Should().Be("Finished");
+
+            clientHost.Dispose();
+            serverHost.Dispose();
         }
 
         /// <summary>
@@ -402,3 +446,4 @@ namespace Workflows.Runner.Tests
         }
     }
 }
+

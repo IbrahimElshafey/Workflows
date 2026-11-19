@@ -6,16 +6,17 @@ namespace WorkflowSample
     /// <summary>
     /// Example workflow demonstrating the Command primitive usage.
     /// </summary>
+    [Workflow("OrderWithCommandWorkflow", 1)]
     public sealed class OrderWithCommandWorkflow : WorkflowContainer
     {
         public int CurrentOrderId { get; set; }
         public string CustomerEmail { get; set; }
         public decimal OrderAmount { get; set; }
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(OrderWithCommandWorkflowState state = null!)
         {
             // Receive order details via signal
-            yield return WaitSignal<OrderReceivedEvent>("OrderReceived")
+            yield return WaitSignal<OrderReceivedEvent>("OrderReceived", "WaitOrderReceived")
                 .WithState(0)
                 .MatchIf((x, minOrderId) => x.OrderId > minOrderId)
                 .WithCancelToken("order-received-token")
@@ -27,7 +28,7 @@ namespace WorkflowSample
                 });
 
             // Command 1: Send confirmation email with retry and compensation
-            yield return ExecuteCommand<SendEmailCommand, SendEmailResult>(
+            yield return ExecuteImmediate<SendEmailCommand, SendEmailResult>(
                 "SendConfirmationEmail",
                 new SendEmailCommand
                 {
@@ -48,7 +49,7 @@ namespace WorkflowSample
                 });
 
             // Command 2: Process payment with async compensation
-            yield return ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
+            yield return ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPayment",
                 new ProcessPaymentCommand
                 {
@@ -65,12 +66,12 @@ namespace WorkflowSample
                 })
                 .RegisterCompensation(async (result, email) =>
                 {
-                    Console.WriteLine($"Compensating: Refunding payment for {email}");
+                    Console.WriteLine($"Compensating: Refund payment for {email}");
                     await RefundPaymentAsync();
                 });
 
             // Command 3: Send thank you email
-            yield return ExecuteCommand<SendEmailCommand, SendEmailResult>(
+            yield return ExecuteImmediate<SendEmailCommand, SendEmailResult>(
                 "SendThankYouEmail",
                 new SendEmailCommand
                 {
@@ -96,5 +97,9 @@ namespace WorkflowSample
                 Console.WriteLine("Initiated refund process")
             );
         }
+    }
+
+    public class OrderWithCommandWorkflowState
+    {
     }
 }

@@ -1,0 +1,147 @@
+@model InstanceDetailViewModel
+@{
+    ViewData["Title"] = $"Instance {Model.Id}";
+}
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+    <h1 class="h2">Instance Details</h1>
+    <div>
+        <a href="/admin/Trace/Index/@Model.Id" class="btn btn-outline-info btn-sm">View Trace</a>
+        <a href="/admin/Instances" class="btn btn-outline-secondary btn-sm">Back to List</a>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">Metadata</div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item"><strong>ID:</strong> <code>@Model.Id</code></li>
+                <li class="list-group-item"><strong>Workflow:</strong> @Model.WorkflowType v@(Model.WorkflowVersion)</li>
+                <li class="list-group-item"><strong>Status:</strong> <span class="badge bg-primary">@Model.Status</span></li>
+                <li class="list-group-item"><strong>Created:</strong> @Model.Created.ToString("g")</li>
+                <li class="list-group-item"><strong>Modified:</strong> @(Model.Modified?.ToString("g") ?? "-")</li>
+                <li class="list-group-item"><strong>Completed:</strong> @(Model.CompletedAt?.ToString("g") ?? "-")</li>
+                <li class="list-group-item"><strong>Last Advance:</strong> @(Model.LastAdvanceReason ?? "-")</li>
+                <li class="list-group-item"><strong>Lock:</strong>
+                    @if (!string.IsNullOrEmpty(Model.LockedBy))
+                    {
+                        <span>@Model.LockedBy (expires @(Model.LockExpiresAt?.ToString("g") ?? "-"))</span>
+                    }
+                    else
+                    {
+                        <span class="text-muted">Not locked</span>
+                    }
+                </li>
+            </ul>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">Actions</div>
+            <div class="card-body">
+                @if (Model.CanExecuteActions)
+                {
+                    <form method="post" action="/admin/Actions/Signal/@Model.Id" class="mb-3">
+                        @Html.AntiForgeryToken()
+                        <label class="form-label">Dispatch Signal</label>
+                        <div class="input-group mb-2">
+                            <select name="signalIdentifier" class="form-select" required>
+                                <option value="">Select active signal wait...</option>
+                                @foreach (var signal in Model.ActiveSignalWaits)
+                                {
+                                    <option value="@signal.SignalIdentifier">@signal.SignalIdentifier (@signal.WaitId)</option>
+                                }
+                            </select>
+                        </div>
+                        <textarea name="payloadJson" class="form-control mb-2" rows="3" placeholder="JSON payload (optional)"></textarea>
+                        <button type="submit" class="btn btn-warning btn-sm">Dispatch Signal</button>
+                    </form>
+
+                    <form method="post" action="/admin/Actions/Cancel/@Model.Id" class="mb-3">
+                        @Html.AntiForgeryToken()
+                        <label class="form-label">Cancel Token</label>
+                        <div class="input-group">
+                            <input type="text" name="token" class="form-control" placeholder="Token name" required />
+                            <input type="text" name="reason" class="form-control" placeholder="Reason" />
+                            <button type="submit" class="btn btn-danger btn-sm">Cancel</button>
+                        </div>
+                    </form>
+
+                    <form method="post" action="/admin/Actions/Terminate/@Model.Id" class="d-inline">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-dark btn-sm" onclick="return confirm('Are you sure you want to terminate this instance?');">Terminate</button>
+                    </form>
+                }
+                else
+                {
+                    <div class="alert alert-info">Write actions are disabled. Register <code>IOrchestrator</code> in DI to enable actions.</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Workflow Variables (Instance)</div>
+            <div class="card-body p-0">
+                <pre class="m-0 p-3 bg-light"><code>@Model.VariablesJson</code></pre>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Local Variables</div>
+            <div class="card-body p-0">
+                <pre class="m-0 p-3 bg-light"><code>@Model.LocalsJson</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger mb-4">
+        <strong>Error:</strong> @Model.ErrorMessage
+    </div>
+}
+
+<div class="card mb-4">
+    <div class="card-header">Wait Status Tree</div>
+    <div class="card-body">
+        @if (Model.WaitTree.Any())
+        {
+            <ul class="list-group">
+                @foreach (var wait in Model.WaitTree)
+                {
+                    <partial name="_WaitTreeNode" model="wait" />
+                }
+            </ul>
+        }
+        else
+        {
+            <p class="text-muted">No active waits.</p>
+        }
+    </div>
+</div>
+
+@if (Model.CancellationHistory.Any())
+{
+    <div class="card">
+        <div class="card-header">Cancellation History</div>
+        <ul class="list-group list-group-flush">
+            @foreach (var entry in Model.CancellationHistory)
+            {
+                <li class="list-group-item">
+                    <strong>@entry.Token</strong> at @entry.CancelledAt.ToString("g")
+                    @if (!string.IsNullOrEmpty(entry.Reason))
+                    {
+                        <span class="text-muted">— @entry.Reason</span>
+                    }
+                </li>
+            }
+        </ul>
+    </div>
+}

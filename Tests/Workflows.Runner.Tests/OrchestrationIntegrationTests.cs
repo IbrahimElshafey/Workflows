@@ -45,8 +45,18 @@ namespace Workflows.Runner.Tests
         }
     }
 
-    public class OrchestrationIntegrationTests
+    public class OrchestrationIntegrationTests : IDisposable
     {
+        private readonly List<IHostedService> _startedServices = new();
+
+        public void Dispose()
+        {
+            foreach (var service in _startedServices)
+            {
+                try { service.StopAsync(default).GetAwaiter().GetResult(); } catch {}
+            }
+        }
+
         private ServiceProvider CreateServiceProvider(string dbName, out SqliteConnection connection)
         {
             var services = new ServiceCollection();
@@ -73,16 +83,31 @@ namespace Workflows.Runner.Tests
                 context.Database.EnsureCreated();
             }
 
+            // Configure bypass for synchronous testing
+            var inboxOptions = provider.GetService<InboxOptions>();
+            if (inboxOptions != null)
+            {
+                inboxOptions.BypassInbox = true;
+            }
+
+            // Start background hosted services
+            foreach (var service in provider.GetServices<IHostedService>())
+            {
+                service.StartAsync(default).GetAwaiter().GetResult();
+                _startedServices.Add(service);
+            }
+
             return provider;
         }
 
         private async Task SyncDefinitions(ServiceProvider provider)
         {
             var registry = provider.GetRequiredService<IWorkflowBuilder>();
-            registry.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", "1.0");
-            registry.RegisterWorkflow<ShortDelayWorkflow>("ShortDelayWorkflow", "1.0");
-            registry.RegisterWorkflow<EnumMatchingWorkflow>("EnumMatchingWorkflow", "1.0");
+            registry.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", 1);
+            registry.RegisterWorkflow<ShortDelayWorkflow>("ShortDelayWorkflow", 1);
+            registry.RegisterWorkflow<EnumMatchingWorkflow>("EnumMatchingWorkflow", 1);
             registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
+            registry.RegisterSignal<OrderReceivedSignal>("DummyOrderReceived");
             registry.RegisterSignal<PaymentConfirmedSignal>("Payment1");
             registry.RegisterSignal<PaymentConfirmedSignal>("Payment2");
             registry.RegisterSignal<ShipmentSignal>("FinalShipment");
@@ -97,9 +122,17 @@ namespace Workflows.Runner.Tests
             {
                 var defRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
                 var syncResult = await defRepo.SyncDefinitionsAsync(package);
+                if (!syncResult.Success)
+                {
+                    foreach (var err in syncResult.Errors)
+                    {
+                        Console.WriteLine($"[SYNC ERROR] {err.EntityName} ({err.ErrorType}): {err.Message}");
+                    }
+                }
                 syncResult.Success.Should().BeTrue();
             }
         }
+
 
         [Fact]
         public async Task FullWorkflowLifecycle_ShouldPersist_Hydrate_Prune_AndSucceed()
@@ -114,7 +147,7 @@ namespace Workflows.Runner.Tests
             var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
 
             // Step 1: Start Workflow with reflection-mapped input
-            var instanceId = await orchestrator.StartWorkflowAsync("FirstWaitTest", "1.0", new { ResumeCount = 7 });
+            var instanceId = await orchestrator.StartWorkflowAsync("FirstWaitTest", 1, new { ResumeCount = 7 });
             instanceId.Should().NotBeEmpty();
 
             dbContext.ChangeTracker.Clear();
@@ -133,6 +166,7 @@ namespace Workflows.Runner.Tests
             state.Waits.Should().HaveCount(1);
             state.Waits.First().Should().BeOfType<SignalWaitDto>();
             state.Waits.First().WaitName.Should().Be("First wait");
+            var firstWaitId = state.Waits.First().Id;
 
             // Step 2: Send Signal to advance past First wait
             await orchestrator.ProcessSignalAsync(new SignalDto
@@ -143,25 +177,25 @@ namespace Workflows.Runner.Tests
 
             dbContext.ChangeTracker.Clear();
 
-            // Verify first wait is deleted and second wait (Command) is created
+            // Verify first wait is completed and second wait (Command) is created
             state = await workflowStore.GetInstanceStateAsync(instanceId);
             state.Should().NotBeNull();
-            state!.Waits.Should().HaveCount(1);
-            state.Waits.First().Should().BeOfType<CommandWaitDto>();
-            var commandWait = (CommandWaitDto)state.Waits.First();
+            state!.Waits.Should().HaveCount(2);
+            var commandWait = (CommandWaitDto)state.Waits.First(w => w.Status == WaitStatus.Waiting);
             commandWait.WaitName.Should().Be("ProcessPayment");
 
             // Verify the local state of ResumeCount incremented in the runner
             var instanceStep2 = state.StateObject.Instance as FirstWaitAndResumeWorkflow;
             instanceStep2!.ResumeCount.Should().Be(8, because: $"ExecutionLog: {string.Join(" | ", instanceStep2.ExecutionLog)}");
 
-            // Verify DB doesn't have the old wait
-            var oldWaitInDb = await dbContext.WorkflowWaits.FindAsync(state.Waits.First().Id);
-            // wait we just created IS in DB
-            oldWaitInDb.Should().NotBeNull();
-            // wait we completed is NOT in DB
-            var firstWaitRecord = await dbContext.WorkflowWaits.FirstOrDefaultAsync(w => w.WaitName == "First wait");
-            firstWaitRecord.Should().BeNull();
+            // Verify DB has the new command wait (TPC: look up in CommandWaits)
+            var newWaitInDb = await dbContext.CommandWaits.FindAsync(commandWait.Id);
+            newWaitInDb.Should().NotBeNull();
+            // Verify the old wait we completed is STILL in DB with Completed status
+            var firstWaitRecord = await dbContext.SignalWaits.FindAsync(firstWaitId);
+            firstWaitRecord.Should().NotBeNull();
+            firstWaitRecord!.Status.Should().Be((int)WaitStatus.Completed);
+
 
             // Step 3: Send Command Result to advance past second wait to Group wait
             await orchestrator.ProcessCommandResultAsync(new CommandResultDto
@@ -175,13 +209,15 @@ namespace Workflows.Runner.Tests
             // Verify we advanced to GroupWaitDto containing two children
             state = await workflowStore.GetInstanceStateAsync(instanceId);
             state.Should().NotBeNull();
-            state!.Waits.Should().HaveCount(1);
-            state.Waits.First().Should().BeOfType<GroupWaitDto>();
-            var groupWait = (GroupWaitDto)state.Waits.First();
+            state!.Waits.Should().HaveCount(3);
+            var groupWait = (GroupWaitDto)state.Waits.First(w => w.Status == WaitStatus.Waiting);
             groupWait.WaitName.Should().Be("PaymentGroup");
             groupWait.ChildWaits.Should().HaveCount(2);
             groupWait.ChildWaits[0].ParentWaitId.Should().Be(groupWait.Id);
             groupWait.ChildWaits[1].ParentWaitId.Should().Be(groupWait.Id);
+            var groupWaitId = groupWait.Id;
+            var child1Id = groupWait.ChildWaits[0].Id;
+            var child2Id = groupWait.ChildWaits[1].Id;
 
             var instanceStep3 = state.StateObject.Instance as FirstWaitAndResumeWorkflow;
             instanceStep3!.ResumeCount.Should().Be(9);
@@ -195,22 +231,27 @@ namespace Workflows.Runner.Tests
 
             dbContext.ChangeTracker.Clear();
 
-            // Verify group wait and child waits are removed from the DB, and we advanced to delay wait
+            // Verify group wait and child waits are in the DB with correct statuses, and we advanced to delay wait
             state = await workflowStore.GetInstanceStateAsync(instanceId);
             state.Should().NotBeNull();
-            state!.Waits.Should().HaveCount(1);
-            state.Waits.First().Should().BeOfType<TimeWaitDto>();
-            var timeWait = (TimeWaitDto)state.Waits.First();
+            state!.Waits.Should().HaveCount(4);
+            var timeWait = (TimeWaitDto)state.Waits.First(w => w.Status == WaitStatus.Waiting);
             timeWait.WaitName.Should().Be("DelayWait");
 
             var instanceStep4 = state.StateObject.Instance as FirstWaitAndResumeWorkflow;
             instanceStep4!.ResumeCount.Should().Be(10);
 
-            // Verify all group wait records were pruned from the database
-            var hasGroupWaitRecords = await dbContext.WorkflowWaits.AnyAsync(w =>
-                w.WorkflowInstanceId == instanceId &&
-                (w.WaitName == "PaymentGroup" || w.WaitName == "Payment option 1" || w.WaitName == "Payment option 2"));
-            hasGroupWaitRecords.Should().BeFalse();
+            // Verify all group/child wait records were updated with correct terminal status in the database.
+            // With TPC there is no shared WorkflowWaits base table; check each concrete set.
+            var dbChild1 = await dbContext.SignalWaits.FindAsync(child1Id);
+            var dbChild2 = await dbContext.SignalWaits.FindAsync(child2Id);
+            dbChild1.Should().NotBeNull();
+            dbChild2.Should().NotBeNull();
+            var childStatuses = new[] { dbChild1!.Status, dbChild2!.Status };
+            childStatuses.Should().BeEquivalentTo(new[] { (int)WaitStatus.Completed, (int)WaitStatus.Canceled });
+
+
+
 
             connection.Close();
         }
@@ -235,7 +276,7 @@ namespace Workflows.Runner.Tests
             try
             {
                 // Start the ShortDelayWorkflow
-                var instanceId = await orchestrator.StartWorkflowAsync("ShortDelayWorkflow", "1.0", null);
+                var instanceId = await orchestrator.StartWorkflowAsync("ShortDelayWorkflow", 1, null);
                 instanceId.Should().NotBeEmpty();
 
                 // Wait for the scheduler loop to process the 50ms timer wait and persist to DB
@@ -261,7 +302,8 @@ namespace Workflows.Runner.Tests
                 // Hydrate from database and verify status is Completed
                 state.Should().NotBeNull();
                 state!.Status.Should().Be(WorkflowInstanceStatus.Completed);
-                state.Waits.Should().BeEmpty();
+                state.Waits.Should().NotBeEmpty();
+                state.Waits.Should().OnlyContain(w => w.Status == WaitStatus.Completed);
             }
             finally
             {
@@ -283,7 +325,7 @@ namespace Workflows.Runner.Tests
             var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
 
             // Start the EnumMatchingWorkflow
-            var instanceId = await orchestrator.StartWorkflowAsync("EnumMatchingWorkflow", "1.0", null);
+            var instanceId = await orchestrator.StartWorkflowAsync("EnumMatchingWorkflow", 1, null);
             instanceId.Should().NotBeEmpty();
 
             // Verify a wait is registered
@@ -306,7 +348,8 @@ namespace Workflows.Runner.Tests
             state = await workflowStore.GetInstanceStateAsync(instanceId);
             state.Should().NotBeNull();
             state!.Status.Should().Be(WorkflowInstanceStatus.Completed);
-            state.Waits.Should().BeEmpty();
+            state.Waits.Should().NotBeEmpty();
+            state.Waits.Should().OnlyContain(w => w.Status == WaitStatus.Completed);
 
             var instance = state.StateObject.Instance as EnumMatchingWorkflow;
             instance.Should().NotBeNull();
@@ -315,25 +358,428 @@ namespace Workflows.Runner.Tests
 
             connection.Close();
         }
+
+        [Fact]
+        public async Task Tier15Matching_ShouldFilterOutMismatchedSignals_AndProcessMatchedSignals()
+        {
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            using var provider = CreateServiceProvider(dbName, out var connection);
+            await SyncDefinitions(provider);
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+            var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+
+            // Step 1: Start Workflow with minAmount = 1000 in FirstWaitAndResumeWorkflow
+            var instanceId = await orchestrator.StartWorkflowAsync("FirstWaitTest", 1, new { ResumeCount = 7 });
+            instanceId.Should().NotBeEmpty();
+
+            dbContext.ChangeTracker.Clear();
+
+            // Step 2: Send mismatched signal (Amount = 500 <= 1000)
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "OrderReceived",
+                Data = new OrderReceivedSignal { OrderId = "ORD-LOW", Amount = 500 }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Verify it was filtered out by Tier 1.5 and is still waiting on First Wait
+            var state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            state!.Status.Should().Be(WorkflowInstanceStatus.Running);
+            state.Waits.Should().HaveCount(1);
+            state.Waits.First().Should().BeOfType<SignalWaitDto>();
+            state.Waits.First().WaitName.Should().Be("First wait");
+
+            // Step 3: Send matched signal (Amount = 1500 > 1000)
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "OrderReceived",
+                Data = new OrderReceivedSignal { OrderId = "ORD-HIGH", Amount = 1500 }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Verify it matched and progressed past First Wait to the command wait
+            state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            state!.Waits.Should().HaveCount(2);
+            var activeWait = state.Waits.First(w => w.Status == WaitStatus.Waiting);
+            activeWait.Should().BeOfType<CommandWaitDto>();
+            activeWait.WaitName.Should().Be("ProcessPayment");
+
+            connection.Close();
+        }
+
+        [Fact]
+        public async Task ProcessSignal_WithMultipleCandidateInstances_ShouldEvaluateSequentially_AndStopOnFirstMatch()
+        {
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            using var provider = CreateServiceProvider(dbName, out var connection);
+            
+            // Register workflow
+            var registry = provider.GetRequiredService<IWorkflowBuilder>();
+            registry.RegisterWorkflow<DynamicThresholdWorkflow>("ThresholdWorkflow", 1);
+            registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
+
+            var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
+            var package = (BulkRegistrationPackage)packageField!.GetValue(registry)!;
+
+            using (var scope = provider.CreateScope())
+            {
+                var defRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
+                await defRepo.SyncDefinitionsAsync(package);
+            }
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+            var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+
+            // Start Instance 1 (high threshold = 1000)
+            var id1 = await orchestrator.StartWorkflowAsync("ThresholdWorkflow", 1, new { Threshold = 1000 });
+            
+            // Start Instance 2 (low threshold = 100)
+            var id2 = await orchestrator.StartWorkflowAsync("ThresholdWorkflow", 1, new { Threshold = 100 });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Act - Send signal (Amount = 500)
+            // Amount = 500 <= 1000 (Instance 1 mismatch)
+            // Amount = 500 > 100   (Instance 2 match)
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "OrderReceived",
+                Data = new OrderReceivedSignal { OrderId = "ORD-SEQ-TEST", Amount = 500 }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Assert
+            // Instance 1 should still be running (did not match)
+            var state1 = await workflowStore.GetInstanceStateAsync(id1);
+            state1.Should().NotBeNull();
+            state1!.Status.Should().Be(WorkflowInstanceStatus.Running);
+            var instance1 = state1.StateObject.Instance as DynamicThresholdWorkflow;
+            instance1.Should().NotBeNull();
+            instance1!.Completed.Should().BeFalse();
+
+            // Instance 2 should be completed (matched)
+            var state2 = await workflowStore.GetInstanceStateAsync(id2);
+            state2.Should().NotBeNull();
+            state2!.Status.Should().Be(WorkflowInstanceStatus.Completed);
+            var instance2 = state2.StateObject.Instance as DynamicThresholdWorkflow;
+            instance2.Should().NotBeNull();
+            instance2!.Completed.Should().BeTrue();
+
+            connection.Close();
+        }
+
+        // ── Helper: register FanOut workflows and sync to DB ─────────────────
+        private async Task SyncFanOutDefinitions<TWorkflow>(ServiceProvider provider, string wfName)
+            where TWorkflow : WorkflowContainer, new()
+        {
+            var registry = provider.GetRequiredService<IWorkflowBuilder>();
+            registry.RegisterWorkflow<TWorkflow>(wfName, 1);
+            registry.RegisterSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal");
+
+            var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
+            var package = (BulkRegistrationPackage)packageField!.GetValue(registry)!;
+
+            using var scope = provider.CreateScope();
+            var defRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
+            var syncResult = await defRepo.SyncDefinitionsAsync(package);
+            syncResult.Success.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task WaitMany_WithRealDb_ShouldPersistExternalChildren_HydrateOnReload_AndCompleteAfterAllSignals()
+        {
+            // This test exercises the full DB round-trip:
+            // 1. Start workflow → ExternalChildWaits rows written to DB
+            // 2. GetInstanceStateAsync → rows re-hydrated via HydrateExternalChildWaitsAsync
+            // 3. Send signal for each child → child status updated in ExternalChildWaits table
+            // 4. After last signal → parent ExternalGroupWait completes → workflow completes
+
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            using var provider = CreateServiceProvider(dbName, out var connection);
+            await SyncFanOutDefinitions<FanOutManyIntegrationWorkflow>(provider, "FanOutManyIntegration");
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+            var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+
+            // ── Step 1: Start workflow ─────────────────────────────────────────
+            var instanceId = await orchestrator.StartWorkflowAsync("FanOutManyIntegration", 1, null);
+            instanceId.Should().NotBeEmpty();
+
+            dbContext.ChangeTracker.Clear();
+
+            // ── Step 2: Verify ExternalChildWaits rows exist in DB ────────────
+            var childRows = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            childRows.Should().HaveCount(3, "WaitMany has 3 children");
+            childRows.Should().OnlyContain(c => c.Status == (int)WaitStatus.Waiting);
+            childRows.Should().OnlyContain(c => c.SignalPath == "FanOutIntegrationSignal");
+
+            // ── Step 3: Re-load state — ExternalChildWaits hydrated from DB ───
+            var state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            var parent = state!.Waits.Single(w => w.Status == WaitStatus.Waiting)
+                .Should().BeOfType<ExternalGroupWaitDto>().Subject;
+            parent.WaitType.Should().Be(WaitType.WaitMany);
+            parent.ExternalChildWaits.Should().HaveCount(3, "hydrated from ExternalChildWaits table");
+
+            // ── Step 4: Send signal to child 1 ────────────────────────────────
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "FanOutIntegrationSignal",
+                Data = new FanOutIntegrationSignal { Value = "A" }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Only 1 child row should be Completed; group still Waiting
+            var childRowsAfter1 = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            childRowsAfter1.Count(c => c.Status == (int)WaitStatus.Completed).Should().Be(1);
+            childRowsAfter1.Count(c => c.Status == (int)WaitStatus.Waiting).Should().Be(2);
+
+            var stateAfter1 = await workflowStore.GetInstanceStateAsync(instanceId);
+            stateAfter1!.Status.Should().Be(WorkflowInstanceStatus.Running);
+
+            // ── Step 5: Send signal to child 2 ────────────────────────────────
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "FanOutIntegrationSignal",
+                Data = new FanOutIntegrationSignal { Value = "B" }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            var childRowsAfter2 = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            childRowsAfter2.Count(c => c.Status == (int)WaitStatus.Completed).Should().Be(2);
+
+            var stateAfter2 = await workflowStore.GetInstanceStateAsync(instanceId);
+            stateAfter2!.Status.Should().Be(WorkflowInstanceStatus.Running);
+
+            // ── Step 6: Send signal to child 3 — should complete workflow ─────
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "FanOutIntegrationSignal",
+                Data = new FanOutIntegrationSignal { Value = "C" }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            var finalState = await workflowStore.GetInstanceStateAsync(instanceId);
+            finalState.Should().NotBeNull();
+            finalState!.Status.Should().Be(WorkflowInstanceStatus.Completed);
+            var instance = finalState.StateObject.Instance as FanOutManyIntegrationWorkflow;
+            instance.Should().NotBeNull();
+            instance!.Completed.Should().BeTrue();
+            instance.ReceivedValues.Should().HaveCount(3);
+
+            // All child rows should be Completed in DB
+            var finalChildRows = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            finalChildRows.Should().OnlyContain(c => c.Status == (int)WaitStatus.Completed);
+
+            connection.Close();
+        }
+
+        [Fact]
+        public async Task WaitAny_WithRealDb_ShouldPersistExternalChildren_AndCompleteAfterFirstSignal_WithSiblingsCancelled()
+        {
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            using var provider = CreateServiceProvider(dbName, out var connection);
+            await SyncFanOutDefinitions<FanOutAnyIntegrationWorkflow>(provider, "FanOutAnyIntegration");
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+            var dbContext = mainScope.ServiceProvider.GetRequiredService<WorkflowsDbContext>();
+
+            // ── Step 1: Start workflow ─────────────────────────────────────────
+            var instanceId = await orchestrator.StartWorkflowAsync("FanOutAnyIntegration", 1, null);
+            instanceId.Should().NotBeEmpty();
+
+            dbContext.ChangeTracker.Clear();
+
+            // ── Step 2: Verify all 3 child rows in DB (Waiting) ───────────────
+            var childRows = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            childRows.Should().HaveCount(3);
+            childRows.Should().OnlyContain(c => c.Status == (int)WaitStatus.Waiting);
+
+            // ── Step 3: Re-load — hydrate ExternalChildWaits from DB ──────────
+            var state = await workflowStore.GetInstanceStateAsync(instanceId);
+            var parent = state!.Waits.Single(w => w.Status == WaitStatus.Waiting)
+                .Should().BeOfType<ExternalGroupWaitDto>().Subject;
+            parent.WaitType.Should().Be(WaitType.WaitAny);
+            parent.ExternalChildWaits.Should().HaveCount(3);
+
+            // ── Step 4: Send ONE signal — should complete workflow immediately ─
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "FanOutIntegrationSignal",
+                Data = new FanOutIntegrationSignal { Value = "First" }
+            });
+
+            dbContext.ChangeTracker.Clear();
+
+            // Workflow completes after just the first child fires
+            var finalState = await workflowStore.GetInstanceStateAsync(instanceId);
+            finalState.Should().NotBeNull();
+            finalState!.Status.Should().Be(WorkflowInstanceStatus.Completed);
+            var instance = finalState.StateObject.Instance as FanOutAnyIntegrationWorkflow;
+            instance.Should().NotBeNull();
+            instance!.Completed.Should().BeTrue();
+
+            // Exactly 1 child Completed; remaining 2 are Canceled (pruned by WaitAny)
+            var finalChildRows = await dbContext.ExternalChildWaits
+                .Where(c => c.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+            finalChildRows.Count(c => c.Status == (int)WaitStatus.Completed).Should().Be(1);
+            finalChildRows.Count(c => c.Status == (int)WaitStatus.Canceled).Should().Be(2);
+
+            connection.Close();
+        }
+
+        [Fact]
+        public async Task ConcurrencyRetry_ShouldSuccessfullyRetryAndSucceed_OnConflict()
+        {
+            var dbName = $"OrchestratorIntegration_{Guid.NewGuid():N}";
+            var connectionString = $"Data Source={dbName};Mode=Memory;Cache=Shared";
+
+            using var provider = CreateServiceProvider(dbName, out var connection);
+
+            // Sync definitions
+            var registry = provider.GetRequiredService<IWorkflowBuilder>();
+            registry.RegisterWorkflow<ConcurrencyRetryTestWorkflow>("ConcurrencyRetryTest", 1);
+            registry.RegisterSignal<OrderReceivedSignal>("OrderReceived");
+
+            var packageField = typeof(WorkflowBuilder).GetField("registrationPackage", BindingFlags.NonPublic | BindingFlags.Instance);
+            var package = (BulkRegistrationPackage)packageField!.GetValue(registry)!;
+
+            using (var scope = provider.CreateScope())
+            {
+                var defRepo = scope.ServiceProvider.GetRequiredService<IDefinitionRepository>();
+                await defRepo.SyncDefinitionsAsync(package);
+            }
+
+            using var mainScope = provider.CreateScope();
+            var orchestrator = mainScope.ServiceProvider.GetRequiredService<IOrchestrator>();
+            var workflowStore = mainScope.ServiceProvider.GetRequiredService<IWorkflowStore>();
+
+            // Start workflow
+            var instanceId = await orchestrator.StartWorkflowAsync("ConcurrencyRetryTest", 1, null);
+            instanceId.Should().NotBeEmpty();
+
+            // Setup static conflict parameters
+            Workflows.Storage.EntityFrameworkCore.WorkflowStore.MockConcurrencyRetryCount = 2; // Conflict twice, succeed on 3rd attempt
+
+            // Send Signal to trigger wait
+            await orchestrator.ProcessSignalAsync(new SignalDto
+            {
+                SignalIdentifier = "OrderReceived",
+                Data = new OrderReceivedSignal { OrderId = "ORD-CONC", Amount = 100 }
+            });
+
+            // Verify instance completed successfully
+            var state = await workflowStore.GetInstanceStateAsync(instanceId);
+            state.Should().NotBeNull();
+            state!.Status.Should().Be(WorkflowInstanceStatus.Completed);
+
+            var instance = state.StateObject.Instance as ConcurrencyRetryTestWorkflow;
+            instance.Should().NotBeNull();
+            instance!.Completed.Should().BeTrue();
+            Workflows.Storage.EntityFrameworkCore.WorkflowStore.MockConcurrencyRetryCount.Should().Be(0);
+
+            connection.Close();
+        }
     }
 
-    public sealed class ShortDelayWorkflow : WorkflowContainer
-    {
-        public static bool Completed { get; set; }
+    // ── Fan-out integration workflow definitions ──────────────────────────────
 
-        public override async IAsyncEnumerable<Wait> Run()
+    [Workflow("FanOutManyIntegration", 1)]
+    public sealed class FanOutManyIntegrationWorkflow : WorkflowContainer
+    {
+        public bool Completed { get; set; }
+        public List<string> ReceivedValues { get; set; } = new();
+
+        public async IAsyncEnumerable<Wait> Run(FanOutManyIntegrationWorkflowState state = null!)
         {
-            yield return WaitDelay(TimeSpan.FromMilliseconds(50), "ShortDelay", "50ms delay");
+            yield return WaitMany(new Wait[]
+            {
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "Child1")
+                    .AfterMatch(s => ReceivedValues.Add(s.Value)),
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "Child2")
+                    .AfterMatch(s => ReceivedValues.Add(s.Value)),
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "Child3")
+                    .AfterMatch(s => ReceivedValues.Add(s.Value))
+            }, "WaitForAll3");
+
             Completed = true;
         }
     }
 
+    [Workflow("FanOutAnyIntegration", 1)]
+    public sealed class FanOutAnyIntegrationWorkflow : WorkflowContainer
+    {
+        public bool Completed { get; set; }
+
+        public async IAsyncEnumerable<Wait> Run(FanOutAnyIntegrationWorkflowState state = null!)
+        {
+            yield return WaitAny(new Wait[]
+            {
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "AnyChild1"),
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "AnyChild2"),
+                WaitSignal<FanOutIntegrationSignal>("FanOutIntegrationSignal", "AnyChild3")
+            }, "WaitForAny3");
+
+            Completed = true;
+        }
+    }
+
+    public sealed class FanOutIntegrationSignal
+    {
+        public string Value { get; set; } = string.Empty;
+    }
+
+
+
+    [Workflow("ShortDelayWorkflow", 1)]
+    public sealed class ShortDelayWorkflow : WorkflowContainer
+    {
+        public static bool Completed { get; set; }
+
+        public async IAsyncEnumerable<Wait> Run(ShortDelayWorkflowState state = null!)
+        {
+            var delay = WaitDelay(TimeSpan.FromMilliseconds(50), "ShortDelay", "50ms delay");
+            var dummySignal = WaitSignal<OrderReceivedSignal>("DummyOrderReceived", "Dummy");
+            yield return WaitGroup(new Wait[] { delay, (SignalWait<OrderReceivedSignal>)dummySignal }, "DelayGroup").MatchAny();
+            Completed = true;
+        }
+    }
+
+    [Workflow("EnumMatchingWorkflow", 1)]
     public sealed class EnumMatchingWorkflow : WorkflowContainer
     {
         public bool Completed { get; set; }
         public System.Threading.Tasks.TaskStatus ReceivedStatus { get; set; }
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(EnumMatchingWorkflowState state = null!)
         {
             yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "EnumWait")
                 .MatchIf(signal => signal.Status == System.Threading.Tasks.TaskStatus.Running)
@@ -344,4 +790,46 @@ namespace Workflows.Runner.Tests
                 });
         }
     }
+
+    [Workflow("ThresholdWorkflow", 1)]
+    public sealed class DynamicThresholdWorkflow : WorkflowContainer
+    {
+        public bool Completed { get; set; }
+        public int Threshold { get; set; }
+
+        public async IAsyncEnumerable<Wait> Run(DynamicThresholdWorkflowState state = null!)
+        {
+            yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "ThresholdWait")
+                .WithState(Threshold)
+                .MatchIf((signal, limit) => signal.Amount > limit)
+                .AfterMatch(signal =>
+                {
+                    this.Completed = true;
+                });
+        }
+    }
+
+    [Workflow("ConcurrencyRetryTest", 1)]
+    public sealed class ConcurrencyRetryTestWorkflow : WorkflowContainer
+    {
+        public bool Completed { get; set; }
+        public static Guid InstanceId { get; set; }
+
+        public async IAsyncEnumerable<Wait> Run(ConcurrencyRetryTestWorkflowState state = null!)
+        {
+            yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "WaitA")
+                .AfterMatch(signal =>
+                {
+                    Completed = true;
+                });
+        }
+    }
+
+    public class FanOutManyIntegrationWorkflowState {}
+    public class FanOutAnyIntegrationWorkflowState {}
+    public class ShortDelayWorkflowState {}
+    public class EnumMatchingWorkflowState {}
+    public class DynamicThresholdWorkflowState {}
+    public class ConcurrencyRetryTestWorkflowState {}
 }
+

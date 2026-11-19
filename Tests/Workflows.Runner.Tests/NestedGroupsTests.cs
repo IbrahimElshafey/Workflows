@@ -25,14 +25,14 @@ namespace Workflows.Runner.Tests
             var workflowInstance = new NestedGroupsTestWorkflow();
             var stateMachine = new WorkflowStateObject
             {
+                WorkflowType = "NestedGroupsTest",
                 StateIndex = -1,
                 Instance = workflowInstance,
-                StateMachinesObjects = new Dictionary<string, object>(),
-                WaitStatesObjects = new Dictionary<Guid, object>()
+                Locals = new Dictionary<string, object>()
             };
 
             var request = builder.CreateExecutionRequest<NestedGroupsTestWorkflow>(
-                Guid.Empty,
+                string.Empty,
                 "NestedGroupsTest",
                 stateObject: stateMachine);
 

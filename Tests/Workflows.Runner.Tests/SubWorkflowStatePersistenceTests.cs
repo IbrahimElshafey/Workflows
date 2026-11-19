@@ -63,23 +63,23 @@ namespace Workflows.Runner.Tests
             var resumeResponse = builder.Client.SentResults.Last().Result;
             var resumedState = resumeResponse.UpdatedState;
 
-            // Assert - the resumed state should contain a sub-workflow entry in StateMachinesObjects
-            resumedState.StateObject.StateMachinesObjects
-                .Should().NotBeNull("StateMachinesObjects must be initialized");
+            // Assert - the resumed state should contain a sub-workflow entry in Locals
+            resumedState.StateObject.Locals
+                .Should().NotBeNull("Locals must be initialized");
 
             // The sub-workflow (ProcessOrderSubWorkflow) suspends on PaymentConfirmed signal.
-            // Its WorkflowStateObject must be stored in StateMachinesObjects.
-            var subWorkflowEntry = resumedState.StateObject.StateMachinesObjects
+            // Its WorkflowStateObject must be stored in Locals.
+            var subWorkflowEntry = resumedState.StateObject.Locals
                 .FirstOrDefault(kv => kv.Value is WorkflowStateObject);
 
             subWorkflowEntry.Should().NotBeNull(
-                "a suspended sub-workflow should have its full WorkflowStateObject in StateMachinesObjects");
+                "a suspended sub-workflow should have its full WorkflowStateObject in Locals");
 
             subWorkflowEntry.Value.Should().BeOfType<WorkflowStateObject>(
                 "sub-workflow state must be a full WorkflowStateObject, not a flat StateMachineObject");
 
             var childState = (WorkflowStateObject)subWorkflowEntry.Value;
-            childState.StateMachinesObjects.Should().ContainKey("root",
+            childState.Locals.Should().ContainKey("root",
                 "the child WorkflowStateObject must have its own root SM entry");
         }
 
@@ -101,14 +101,29 @@ namespace Workflows.Runner.Tests
             await runner.StartWorkflow("ImmediateSubWorkflow");
 
             var response = builder.Client.SentResults.Last().Result;
-            var state = response.UpdatedState;
+
+            // Under the new design, the command wait is passive and suspends execution.
+            // We simulate the orchestrator by resuming the command wait.
+            var subWorkflowDto = response.UpdatedState.Waits.OfType<SubWorkflowWaitDto>().First();
+            var commandWaitDto = subWorkflowDto.ChildWaits.First();
+
+            var resumeRequest = new WorkflowExecutionRequest
+            {
+                TriggeringWaitId = commandWaitDto.Id,
+                CommandResult = new ReserveInventoryResult { ReservationId = "RES-IMM", Success = true },
+                WorkflowState = response.UpdatedState
+            };
+            await runner.RunWorkflowAsync(resumeRequest);
+
+            var finalResponse = builder.Client.SentResults.Last().Result;
+            var state = finalResponse.UpdatedState;
 
             // Assert — no WorkflowStateObject entries should remain (the sub-workflow completed, not suspended)
-            var orphanedSubWorkflow = state.StateObject.StateMachinesObjects
+            var orphanedSubWorkflow = state.StateObject.Locals
                 .Any(kv => kv.Value is WorkflowStateObject);
 
             orphanedSubWorkflow.Should().BeFalse(
-                "completed sub-workflow state must be cleaned up from StateMachinesObjects");
+                "completed sub-workflow state must be cleaned up from Locals");
         }
 
         [Fact]
@@ -143,8 +158,8 @@ namespace Workflows.Runner.Tests
             child1Dto.ChildWaits.Should().ContainSingle(w => w is SignalWaitDto && ((SignalWaitDto)w).SignalIdentifier == "Payment1");
             child2Dto.ChildWaits.Should().ContainSingle(w => w is SignalWaitDto && ((SignalWaitDto)w).SignalIdentifier == "Payment2");
 
-            state.StateObject.StateMachinesObjects.Should().ContainKey(child1Dto.StateMachineObjectId.ToString());
-            state.StateObject.StateMachinesObjects.Should().ContainKey(child2Dto.StateMachineObjectId.ToString());
+            state.StateObject.Locals.Should().ContainKey(child1Dto.StateMachineObjectId.ToString());
+            state.StateObject.Locals.Should().ContainKey(child2Dto.StateMachineObjectId.ToString());
 
             // Resume Child1 Payment (Payment1)
             var resumeRequest1 = new WorkflowExecutionRequest
@@ -166,8 +181,8 @@ namespace Workflows.Runner.Tests
             var child1DtoAfter = groupWait1.ChildWaits.FirstOrDefault(w => w.Id == child1Dto.Id) as SubWorkflowWaitDto;
             child1DtoAfter.Status.Should().Be(WaitStatus.Completed);
             
-            state1.StateObject.StateMachinesObjects.Should().NotContainKey(child1Dto.StateMachineObjectId.ToString());
-            state1.StateObject.StateMachinesObjects.Should().ContainKey(child2Dto.StateMachineObjectId.ToString());
+            state1.StateObject.Locals.Should().NotContainKey(child1Dto.StateMachineObjectId.ToString());
+            state1.StateObject.Locals.Should().ContainKey(child2Dto.StateMachineObjectId.ToString());
 
             // Resume Child2 Payment (Payment2)
             var resumeRequest2 = new WorkflowExecutionRequest
@@ -183,7 +198,7 @@ namespace Workflows.Runner.Tests
 
             // Assert - Both completed, parent group completes, parent workflow advances to FinalSignal
             state2.Waits.Should().ContainSingle(w => w is SignalWaitDto && ((SignalWaitDto)w).SignalIdentifier == "FinalSignal");
-            state2.StateObject.StateMachinesObjects.Should().NotContainKey(child2Dto.StateMachineObjectId.ToString());
+            state2.StateObject.Locals.Should().NotContainKey(child2Dto.StateMachineObjectId.ToString());
         }
 
         [Fact]
@@ -231,36 +246,39 @@ namespace Workflows.Runner.Tests
     /// A workflow whose sub-workflow has one immediate command wait only (active → runs and finishes without suspending),
     /// followed by a passive signal on the parent so the overall workflow does suspend.
     /// </summary>
+    [Workflow("ImmediateSubWorkflow", 1)]
     public sealed class ImmediateSubWorkflowTestWorkflow : WorkflowContainer
     {
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(ImmediateSubWorkflowState state = null!)
         {
-            yield return WaitSubWorkflow(ImmediateChild(), "ImmediateChild", "Runs to completion immediately");
+            yield return WaitSubWorkflow(ImmediateChild(new ImmediateChildState()), "ImmediateChild", "Runs to completion immediately");
 
             // After sub-workflow completes, suspend on a signal so we can inspect the persisted state
             yield return WaitSignal<OrderReceivedSignal>("OrderReceived", "Final signal");
         }
 
-        public async IAsyncEnumerable<Wait> ImmediateChild()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> ImmediateChild(ImmediateChildState state = null!)
         {
             // A single immediate (active) command wait — runs synchronously and completes.
-            yield return ExecuteCommand<ReserveInventoryCommand, ReserveInventoryResult>(
+            yield return ExecuteImmediate<ReserveInventoryCommand, ReserveInventoryResult>(
                 "ReserveInventory",
                 new ReserveInventoryCommand { ProductId = "IMM-1", Quantity = 1 });
             // No further passive waits → sub-workflow finishes
         }
     }
 
+    [Workflow("GroupOfSubWorkflows", 1)]
     public sealed class GroupOfSubWorkflowsTestWorkflow : WorkflowContainer
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(GroupOfSubWorkflowsState state = null!)
         {
             ExecutionLog.Add("Parent: Start");
 
-            var sub1 = WaitSubWorkflow(Child1(), "Child1", "First Child");
-            var sub2 = WaitSubWorkflow(Child2(), "Child2", "Second Child");
+            var sub1 = WaitSubWorkflow(Child1(new Child1State()), "Child1", "First Child");
+            var sub2 = WaitSubWorkflow(Child2(new Child2State()), "Child2", "Second Child");
 
             yield return WaitGroup([
                 sub1,
@@ -273,14 +291,16 @@ namespace Workflows.Runner.Tests
             ExecutionLog.Add("Parent: End");
         }
 
-        public async IAsyncEnumerable<Wait> Child1()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> Child1(Child1State state = null!)
         {
             ExecutionLog.Add("Child1: Start");
             yield return WaitSignal<PaymentConfirmedSignal>("Payment1", "Child1 Payment");
             ExecutionLog.Add("Child1: End");
         }
 
-        public async IAsyncEnumerable<Wait> Child2()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> Child2(Child2State state = null!)
         {
             ExecutionLog.Add("Child2: Start");
             yield return WaitSignal<PaymentConfirmedSignal>("Payment2", "Child2 Payment");
@@ -288,25 +308,36 @@ namespace Workflows.Runner.Tests
         }
     }
 
+    public class ImmediateSubWorkflowState {}
+    public class ImmediateChildState {}
+    public class GroupOfSubWorkflowsState {}
+    public class Child1State {}
+    public class Child2State {}
+
+    public class SubWorkflowWithLocalVariablesState
+    {
+        public int localCounter { get; set; } = 42;
+        public string localMessage { get; set; } = "hello";
+    }
+
+    [Workflow("SubWorkflowWithLocalVariables", 1)]
     public sealed class SubWorkflowWithLocalVariablesTestWorkflow : WorkflowContainer
     {
         public List<int> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(SubWorkflowWithLocalVariablesState state)
         {
-            yield return WaitSubWorkflow(ChildWithVariables(), "ChildWithVariables", "Child");
+            yield return WaitSubWorkflow(ChildWithVariables(state), "ChildWithVariables", "Child");
             yield return WaitSignal<OrderReceivedSignal>("FinalSignal", "Final");
         }
 
-        public async IAsyncEnumerable<Wait> ChildWithVariables()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> ChildWithVariables(SubWorkflowWithLocalVariablesState state)
         {
-            int localCounter = 42;
-            string localMessage = "hello";
-
             yield return WaitSignal<PaymentConfirmedSignal>("Payment", "Payment Wait");
 
-            ExecutionLog.Add(localCounter);
-            if (localMessage == "hello")
+            ExecutionLog.Add(state.localCounter);
+            if (state.localMessage == "hello")
             {
                 ExecutionLog.Add(100);
             }

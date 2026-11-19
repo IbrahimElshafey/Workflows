@@ -6,27 +6,29 @@ Sub-workflows (also known as "resumable functions" or "child workflows") allow w
 
 ## Implementation Status: ✅ COMPLETE
 
-The runner now fully supports sub-workflow context switching and state management.
+The runner now fully supports sub-workflow context switching, recursive nesting, and unified state serialization.
+
+---
 
 ## Architecture
 
 ### Key Components
 
 1. **SubWorkflowWait** (`Workflows.Definition/SubWorkflowWait.cs`)
-   - Represents a wait point that triggers child workflow execution
-   - Contains `Runner` property: the child's `IAsyncEnumerable<Wait>` enumerator
-   - Contains `FirstWait` property: the first wait yielded by the child
+   - Represents a wait point that triggers child workflow execution.
+   - Contains `Runner` property: the child's `IAsyncEnumerable<Wait>` enumerator.
+   - Contains `FirstWait` property: the first wait yielded by the child.
 
-2. **State Management** (`StateMachineObject.StateMachinesObjects`)
-   - Child workflow states are stored keyed by the parent's `SubWorkflowWait.Id`
-   - Each child has its own `StateMachineObject` with isolated state
-   - Parent and child share the same workflow instance for property access
+2. **Unified State Management** (`WorkflowStateObject.Locals`)
+   - Child workflow states (`WorkflowStateObject`) are stored inside the parent's `WorkflowStateObject.Locals` dictionary, keyed by a stable Guid (`subWorkflowWaitDto.StateMachineObjectId`).
+   - This eliminates dedicated StateMachinesObject tables/columns and unifies all states into the JSON document representing the main instance.
 
-3. **Runner Logic** (`WorkflowRunner.ExecuteSubWorkflowAsync`)
-   - When parent yields `SubWorkflowWait`, runner immediately executes child
-   - Child's first wait is returned and tracked with `ParentWaitId`
-   - When child wait completes, runner resumes child (not parent)
-   - When child completes (no more waits), runner resumes parent
+3. **Core Run Loop Interception** (`WorkflowRunLoop.ExecuteAsync` / `ResumeSubWorkflowAsync`)
+   - **No Duplicate Loops:** The previous `SubWorkflowProcessor` has been deleted. Instead, the core execution loop in `WorkflowRunLoop` directly intercepts any yielded `SubWorkflowWait` and executes/resumes the sub-workflow in-place using `ResumeSubWorkflowAsync`.
+   - **Nesting of DTOs:** When inside a child execution context, any yielded wait DTO is automatically nested under the parent `SubWorkflowWaitDto.ChildWaits` collection rather than appended to the root waits list.
+   - When the child completes, the runner automatically removes the child's local state, sets the sub-workflow wait status to `Completed`, and resumes the parent stream.
+
+---
 
 ## Execution Flow
 
@@ -34,35 +36,37 @@ The runner now fully supports sub-workflow context switching and state managemen
 
 ```
 1. Parent workflow yields: WaitSubWorkflow(ChildEnumerator(), "ChildName")
-2. Runner detects SubWorkflowWait
-3. Runner calls ExecuteSubWorkflowAsync:
-   - Creates new StateMachineObject for child (StateIndex = -1)
-   - Advances child enumerator
-   - Saves child state in parent.StateMachinesObjects[SubWorkflowWait.Id]
-4. Runner returns child's first wait with ParentWaitId set
-5. DTO hierarchy: SubWorkflowWaitDto.ChildWaits = [child's first wait]
+2. Runner detects SubWorkflowWait directly inside the execution loop
+3. Runner maps it to SubWorkflowWaitDto and sets parent/nesting relationships
+4. Runner calls ResumeSubWorkflowAsync:
+   - Registers a new child WorkflowStateObject inside parent.Locals[childKey]
+   - Evaluates child's parameters and invokes the child enumerator stream
+   - Advances child stream using the unified ExecuteAsync loop
+5. DTO hierarchy: SubWorkflowWaitDto.ChildWaits = [child's first yielded wait]
 ```
 
 ### Sub-Workflow Resumption
 
 ```
-1. Signal/Command triggers child wait
-2. Runner detects triggeringWait.ParentWaitId is not null
-3. Runner finds parent SubWorkflowWaitDto
-4. Runner retrieves child state from parent.StateMachinesObjects[SubWorkflowWait.Id]
-5. Runner advances child enumerator (not parent)
-6. If child yields another wait: save state, return wait
-7. If child completes: remove child state, resume parent
+1. An incoming Signal or Command result matches the child wait
+2. Runner matches the wait and notes its ParentWaitId is set
+3. Runner loads the parent SubWorkflowWaitDto
+4. Runner retrieves the child state from parent.Locals[childKey]
+5. Runner calls ResumeSubWorkflowAsync to advance the child enumerator (not parent)
+6. If child yields another wait: save child state in parent.Locals, suspend and return wait
+7. If child completes: remove child state, mark sub-workflow completed, resume parent
 ```
 
 ### Sub-Workflow Completion
 
 ```
-1. Child enumerator returns null (no more waits)
-2. Runner removes child state: parent.StateMachinesObjects.Remove(SubWorkflowWait.Id)
-3. Runner resumes parent workflow from where it yielded SubWorkflowWait
-4. Parent continues with next statement after WaitSubWorkflow(...)
+1. Child enumerator returns null (completed natively)
+2. Runner removes child state: parent.Locals.Remove(childKey)
+3. Runner updates subWorkflowWaitDto.Status = Completed
+4. Runner re-hydrates parent stream and continues parent execution
 ```
+
+---
 
 ## Code Example
 
@@ -113,205 +117,36 @@ private async IAsyncEnumerable<Wait> ProcessOrderSubWorkflow()
         .AfterMatch((signal) => ExecutionLog.Add($"SubWorkflow: Payment confirmed - {signal.TransactionId}"));
 
     ExecutionLog.Add("SubWorkflow: End");
-    // Sub-workflow completes here, parent resumes
 }
 ```
 
-## Execution Log Output
-
-When the runner executes the above workflow:
-
-```
-1. Parent: Start
-2. Parent: Order ORD-001
-3. SubWorkflow: Start
-4. SubWorkflow: Inventory reserved - RES-123
-5. SubWorkflow: Payment confirmed - TXN-456
-6. SubWorkflow: End
-7. Parent: Sub-workflow completed
-8. [ShipmentSubWorkflow execution...]
-9. Parent: End
-```
+---
 
 ## State Persistence
 
-### Parent State
+### Unified State JSON Serialization
+
+When serialized to the NoSQL document store, the parent state shows the child state machine object embedded inside `Locals`:
 
 ```json
 {
   "StateIndex": 5,
   "Instance": { /* ParentWorkflow instance */ },
-  "StateMachinesObjects": {
-    "3fa85f64-5717-4562-b3fc-2c963f66afa6": {  // SubWorkflowWait.Id for "ProcessOrder"
+  "Locals": {
+    "3fa85f64-5717-4562-b3fc-2c963f66afa6": {  // childKey (SubWorkflowWaitDto.StateMachineObjectId)
       "StateIndex": 2,
-      "Instance": { /* Same workflow instance */ },
-      "StateMachinesObjects": {},
-      "WaitStatesObjects": {}
+      "Instance": { /* Shared ParentWorkflow instance properties */ },
+      "Locals": {
+        "state": { /* Child local variables state if typed */ }
+      }
     }
-  },
-  "WaitStatesObjects": {
-    "7c9e6679-7425-40de-944b-e07fc1f90ae7": "ShipmentState"
   }
 }
 ```
 
-## Recursive Sub-Workflows
-
-Sub-workflows can themselves contain sub-workflows:
-
-```csharp
-private async IAsyncEnumerable<Wait> Level1SubWorkflow()
-{
-    yield return WaitSubWorkflow(Level2SubWorkflow(), "Level2", "Nested");
-    // Level2SubWorkflow can also have sub-workflows (Level3, etc.)
-}
-```
-
-The runner handles this recursively - each nesting level gets its own state entry.
-
-## Testing Sub-Workflows
-
-### ❌ DSL-Only Tests (Wrong Expectation)
-
-```csharp
-// This will NOT execute child workflows!
-var workflow = new ParentWorkflow();
-var enumerator = workflow.ExecuteWorkflowAsync().GetAsyncEnumerator();
-
-while (await enumerator.MoveNextAsync())
-{
-    var wait = enumerator.Current;
-    // Child enumerator is NOT advanced here
-}
-
-// ❌ This will FAIL - child logs not added
-workflow.ExecutionLog.Should().Contain("SubWorkflow: Start");
-```
-
-**Why it fails:** Directly enumerating the parent only advances the parent's enumerator. The child's `Runner` enumerator is created but never executed.
-
-### ✅ Runner Tests (Correct Approach)
-
-```csharp
-// Arrange
-var builder = new WorkflowTestBuilder();
-builder.RegisterWorkflow<ParentWorkflow>("Parent");
-builder.RegisterSignal<OrderSignal>("OrderReceived");
-
-var runner = builder.Build();
-
-var waitId = Guid.NewGuid();
-var signalWait = builder.CreateSignalWaitDto("OrderReceived", "Initial", waitId);
-
-var request = builder.CreateExecutionRequest<ParentWorkflow>(
-    waitId,
-    "Parent",
-    waits: new List<WaitInfrastructureDto> { signalWait });
-
-request.Signal = builder.CreateSignal("OrderReceived", new OrderSignal { OrderId = "ORD-001" });
-
-// Act
-var result = await runner.RunWorkflowAsync(request);
-
-// Assert - Child execution logs ARE present
-workflow.ExecutionLog.Should().Contain("SubWorkflow: Start");
-workflow.ExecutionLog.Should().Contain("SubWorkflow: End");
-```
-
-**Why it works:** The runner detects `SubWorkflowWait` and calls `ExecuteSubWorkflowAsync`, which advances the child's enumerator.
-
-## Implementation Details
-
-### ExecuteSubWorkflowAsync Method
-
-```csharp
-private async Task<Wait> ExecuteSubWorkflowAsync(
-    SubWorkflowWait subWorkflowWait,
-    StateMachineObject parentState,
-    WorkflowContainer parentWorkflowInstance)
-{
-    // Check if we have a suspended child state (resuming)
-    var subWorkflowStateKey = subWorkflowWait.Id;
-    StateMachineObject childState = null;
-
-    if (parentState.StateMachinesObjects?.TryGetValue(subWorkflowStateKey, out var storedChildState) == true)
-    {
-        childState = storedChildState as StateMachineObject;
-    }
-
-    // If no child state, this is the first execution
-    childState ??= new StateMachineObject
-    {
-        StateIndex = -1,
-        Instance = parentWorkflowInstance,  // Share workflow instance
-        StateMachinesObjects = new Dictionary<Guid, object>(),
-        WaitStatesObjects = new Dictionary<Guid, object>()
-    };
-
-    // Advance child workflow
-    var childAdvancerResult = await _stateMachineAdvancer.RunAsync(subWorkflowWait.Runner, childState);
-
-    if (childAdvancerResult?.Wait != null)
-    {
-        // Child yielded a wait - save child state and return the wait
-        parentState.StateMachinesObjects[subWorkflowStateKey] = childAdvancerResult.State;
-        return childAdvancerResult.Wait;
-    }
-    else
-    {
-        // Child completed - remove child state
-        parentState.StateMachinesObjects?.Remove(subWorkflowStateKey);
-        return null;  // Signal parent to continue
-    }
-}
-```
-
-### Parent Resumption After Child Completion
-
-When `ExecuteSubWorkflowAsync` returns `null`, the runner knows the child completed and advances the parent:
-
-```csharp
-if (advancerResult?.Wait == null && parentSubWorkflow != null)
-{
-    // Sub-workflow completed - resume parent
-    var parentWorkflowInvoker = _templateCache.GetOrAddWorkflowInvoker(...);
-    var parentWorkflowStream = (IAsyncEnumerable<Wait>)parentWorkflowInvoker(workflowInstance);
-
-    var parentAdvancerResult = await _stateMachineAdvancer.RunAsync(parentWorkflowStream, state.StateObject);
-    // ... handle parent's next wait or completion
-}
-```
-
-## Limitations
-
-1. **Orchestrator Coordination:** Multi-instance sub-workflows (parallel child execution) require orchestrator logic
-2. **Cross-Workflow State:** Child workflows share the parent's workflow instance properties but have isolated state machines
-3. **Error Handling:** Sub-workflow exceptions currently propagate to parent; compensation logic spans both parent and child
+---
 
 ## Performance Considerations
 
-- **State Size:** Each nesting level adds a `StateMachineObject` entry to `StateMachinesObjects`
-- **Recursion Depth:** Deep nesting (10+ levels) may impact serialization performance
-- **Memory:** Active child enumerators are held in memory during execution
-
-## Future Enhancements
-
-1. **Sub-Workflow Timeouts:** Add timeout support per sub-workflow
-2. **Parallel Sub-Workflows:** Allow parent to spawn multiple children concurrently (orchestrator feature)
-3. **Sub-Workflow Compensation:** Dedicated compensation scopes per sub-workflow
-4. **Sub-Workflow Metrics:** Track child execution duration, retry counts, etc.
-
----
-
-## Summary
-
-✅ **Sub-workflow execution is fully implemented in the runner.**
-
-- Parent workflows can yield `WaitSubWorkflow(...)` to invoke child workflows
-- Child workflows execute with their own state machines and wait points
-- When child completes, parent automatically resumes
-- State is preserved across parent-child boundaries
-- Recursive sub-workflows are supported
-- **Must use the runner** (not DSL-only enumeration) to see full execution behavior
-
-**Testing Guidance:** Always use `WorkflowRunner.RunWorkflowAsync(...)` to test sub-workflows. Direct DSL enumeration will not execute child enumerators.
+- **Unified JSON Storage:** Key-Value caching and document persistence remain O(1) regardless of sub-workflow nesting depth.
+- **Stateless Execution:** State transitions are fast because the parent/child workflow share the same container instance, avoiding double instantiation overhead.

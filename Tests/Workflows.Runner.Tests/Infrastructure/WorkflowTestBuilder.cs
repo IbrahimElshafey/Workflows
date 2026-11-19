@@ -32,7 +32,45 @@ namespace Workflows.Runner.Tests.Infrastructure
 
         public WorkflowTestBuilder RegisterWorkflow<TWorkflow>(string workflowType) where TWorkflow : WorkflowContainer
         {
-            _registry.Workflows[workflowType] = (typeof(TWorkflow), typeof(TWorkflow));
+            Type workflowTypeClass = typeof(TWorkflow);
+            var attribute = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<WorkflowAttribute>(workflowTypeClass);
+            var startMethodName = (attribute == null || string.IsNullOrEmpty(attribute.StartMethod)) ? "Run" : attribute.StartMethod;
+
+            var methodInfo = workflowTypeClass.GetMethod(
+                startMethodName,
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+
+            Type stateType = typeof(object);
+            if (attribute != null && attribute.StateType != null)
+            {
+                stateType = attribute.StateType;
+            }
+            else if (methodInfo != null && methodInfo.GetParameters().Length == 1)
+            {
+                stateType = methodInfo.GetParameters()[0].ParameterType;
+            }
+
+            // Extract the generated state machine type if available, otherwise fallback to workflow type itself for testing
+            Type stateMachineType = workflowTypeClass;
+            if (methodInfo != null)
+            {
+                var stateMachineAttribute = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Runtime.CompilerServices.AsyncStateMachineAttribute>(methodInfo);
+                if (stateMachineAttribute != null)
+                {
+                    stateMachineType = stateMachineAttribute.StateMachineType;
+                }
+                else
+                {
+                    var asyncIteratorAttribute = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Runtime.CompilerServices.AsyncIteratorStateMachineAttribute>(methodInfo);
+                    if (asyncIteratorAttribute != null)
+                    {
+                        stateMachineType = asyncIteratorAttribute.StateMachineType;
+                    }
+                }
+            }
+
+            var version = attribute?.Version ?? 1;
+            _registry.AddWorkflow(workflowType, version, (workflowTypeClass, stateMachineType, stateType, startMethodName));
             return this;
         }
 
@@ -65,13 +103,17 @@ namespace Workflows.Runner.Tests.Infrastructure
         }
 
         public WorkflowExecutionRequest CreateExecutionRequest<TWorkflow>(
-            Guid triggeringWaitId,
+            string triggeringWaitId,
             string workflowType,
             WorkflowStateObject? stateObject = null,
             SignalDto? signal = null,
             List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto>? waits = null)
             where TWorkflow : WorkflowContainer
         {
+            if (stateObject != null)
+            {
+                stateObject.WorkflowType ??= workflowType;
+            }
             return new WorkflowExecutionRequest
             {
                 TriggeringWaitId = triggeringWaitId,
@@ -81,10 +123,10 @@ namespace Workflows.Runner.Tests.Infrastructure
                     WorkflowType = workflowType,
                     StateObject = stateObject ?? new WorkflowStateObject
                     {
+                        WorkflowType = workflowType,
                         StateIndex = -1,
                         Instance = Activator.CreateInstance<TWorkflow>(),
-                        StateMachinesObjects = new Dictionary<string, object>(),
-                        WaitStatesObjects = new Dictionary<Guid, object>()
+                        Locals = new Dictionary<string, object>()
                     },
                     Waits = waits ?? new List<Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto>(),
                     Status = WorkflowInstanceStatus.Running
@@ -95,11 +137,11 @@ namespace Workflows.Runner.Tests.Infrastructure
         public Workflows.Abstraction.DTOs.Waits.SignalWaitDto CreateSignalWaitDto(
             string signalIdentifier,
             string waitName,
-            Guid? waitId = null)
+            string? waitId = null)
         {
             return new Workflows.Abstraction.DTOs.Waits.SignalWaitDto
             {
-                Id = waitId ?? Guid.NewGuid(),
+                Id = waitId ?? Guid.NewGuid().ToString(),
                 SignalIdentifier = signalIdentifier,
                 WaitName = waitName,
                 Status = WaitStatus.Waiting,

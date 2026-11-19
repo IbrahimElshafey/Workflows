@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Runner;
+using Workflows.Definition;
 
 namespace Workflows.Runner.Pipeline
 {
@@ -41,34 +43,49 @@ namespace Workflows.Runner.Pipeline
 
             // Find the triggering wait
             Abstraction.DTOs.Waits.WaitInfrastructureDto? triggeringWaitDto = null;
-            if (incomingRequest.TriggeringWaitId != Guid.Empty)
+            if (!string.IsNullOrEmpty(incomingRequest.TriggeringWaitId))
             {
                 triggeringWaitDto = FindWaitById(state.Waits, incomingRequest.TriggeringWaitId);
+
                 if (triggeringWaitDto == null)
                 {
                     throw new InvalidOperationException($"Triggering wait with ID {incomingRequest.TriggeringWaitId} not found.");
                 }
 
-                if (triggeringWaitDto.Status != Abstraction.Enums.WaitStatus.Waiting)
+                if (triggeringWaitDto.Status != Abstraction.Enums.WaitStatus.Waiting && triggeringWaitDto.Status != Abstraction.Enums.WaitStatus.Matched)
                 {
-                    throw new InvalidOperationException("Triggering wait is not in Waiting status.");
+                    throw new InvalidOperationException("Triggering wait is not in Waiting or Matched status.");
                 }
             }
 
-            // Get workflow types
-            if (!_workflowRegistry.Workflows.TryGetValue(state.WorkflowType, out var workflowTypes))
+            // Get workflow types — resolve by instance version first, fall back to latest
+            if (!_workflowRegistry.TryGetWorkflow(state.WorkflowType, state.WorkflowVersion, out var workflowTypes))
             {
-                throw new InvalidOperationException($"Workflow {state.WorkflowType} not registered.");
+                if (!_workflowRegistry.TryGetLatestWorkflow(state.WorkflowType, out workflowTypes))
+                {
+                    throw new InvalidOperationException($"Workflow {state.WorkflowType} (V{state.WorkflowVersion}) not registered.");
+                }
             }
 
             // Create or reuse workflow instance
             if (state.StateObject == null)
             {
-                state.StateObject = new WorkflowStateObject();
+                state.StateObject = new WorkflowStateObject { WorkflowType = state.WorkflowType };
+            }
+            else
+            {
+                state.StateObject.WorkflowType = state.WorkflowType;
             }
             var workflowInstance = (state.StateObject.Instance as Definition.WorkflowContainer)
                 ?? _hydrator.CreateInstance(workflowTypes.WorkflowContainer);
             state.StateObject.Instance = workflowInstance;
+
+            var stateType = workflowTypes.StateType;
+            if (!state.StateObject.Locals.TryGetValue("state", out var stateObj) || stateObj == null)
+            {
+                stateObj = Activator.CreateInstance(stateType);
+                state.StateObject.Locals["state"] = stateObj;
+            }
 
             // Restore cancelled tokens from history
             if (state.CancellationHistory != null && state.CancellationHistory.Count > 0)
@@ -77,30 +94,53 @@ namespace Workflows.Runner.Pipeline
             }
 
             // Check if this wait belongs to a sub-workflow
-            var parentSubWorkflowDto = (triggeringWaitDto != null && triggeringWaitDto.ParentWaitId.HasValue)
-                ? FindWaitById(state.Waits, triggeringWaitDto.ParentWaitId.Value) as SubWorkflowWaitDto
+            var parentSubWorkflowDto = (triggeringWaitDto != null && !string.IsNullOrEmpty(triggeringWaitDto.ParentWaitId))
+                ? FindWaitById(state.Waits, triggeringWaitDto.ParentWaitId) as SubWorkflowWaitDto
                 : null;
 
-            IAsyncEnumerable<Definition.Wait> workflowStream;
+            // Ensure the Wait -> DTO converter is configured for this workflow invocation
+            WaitDtoConversion.Converter = wait => _mapper.MapToDto(wait);
+
+            IAsyncEnumerable<WaitInfrastructureDto> workflowStream;
 
             if (parentSubWorkflowDto != null)
             {
                 // This wait belongs to a sub-workflow - use the parent's CallerName to invoke the workflow method
                 // Retrieve child state
-                if (!state.StateObject.StateMachinesObjects?.TryGetValue(parentSubWorkflowDto.Id.ToString(), out var storedChildState) == true)
+                if (!state.StateObject.Locals.TryGetValue(parentSubWorkflowDto.StateMachineObjectId.ToString(), out var storedChildStateObj)
+                    || storedChildStateObj is not WorkflowStateObject childState)
                 {
                     throw new InvalidOperationException($"Sub-workflow state not found for SubWorkflowWait '{parentSubWorkflowDto.WaitName}'.");
                 }
 
                 var callerName = string.IsNullOrEmpty(parentSubWorkflowDto.CallerName) ? "Run" : parentSubWorkflowDto.CallerName;
-                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName);
-                workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
+
+                var methodInfo = workflowTypes.WorkflowContainer.GetMethod(
+                    callerName,
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+
+                if (methodInfo == null)
+                {
+                    throw new InvalidOperationException($"Sub-workflow method '{callerName}' not found on '{workflowTypes.WorkflowContainer.FullName}'.");
+                }
+
+                var subStateType = methodInfo.GetParameters()[0].ParameterType;
+
+                if (!childState.Locals.TryGetValue("state", out var childStateObj) || childStateObj == null)
+                {
+                    childStateObj = Activator.CreateInstance(subStateType);
+                    childState.Locals["state"] = childStateObj;
+                }
+
+                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName, subStateType);
+                workflowStream = CastOrConvertStream(invoker(workflowInstance, childStateObj));
             }
             else
             {
-                var callerName = (triggeringWaitDto != null && !string.IsNullOrEmpty(triggeringWaitDto.CallerName)) ? triggeringWaitDto.CallerName : "Run";
-                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName);
-                workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
+                var callerName = (triggeringWaitDto != null && !string.IsNullOrEmpty(triggeringWaitDto.CallerName)) ? triggeringWaitDto.CallerName : workflowTypes.StartMethod;
+                var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, callerName, stateType);
+                state.StateObject.Locals.TryGetValue("state", out var st);
+                workflowStream = CastOrConvertStream(invoker(workflowInstance, st));
             }
 
             context.Signal = incomingRequest.Signal;
@@ -143,8 +183,14 @@ namespace Workflows.Runner.Pipeline
                 }
             }
 
+            // Assign wait paths recursively
+            foreach (var wait in state.Waits)
+            {
+                AssignIdsRecursive(wait, null, state);
+            }
+
             // Collect completed/canceled/in-error wait IDs recursively
-            var completedIds = new HashSet<Guid>();
+            var completedIds = new HashSet<string>();
             foreach (var wait in state.Waits)
             {
                 CollectCompletedWaitsRecursive(wait, completedIds);
@@ -156,17 +202,17 @@ namespace Workflows.Runner.Pipeline
                 context.ConsumedWaitsIds.Add(id);
             }
 
-            // Prune completed/canceled/in-error root-level waits from state.Waits
-            state.Waits.RemoveAll(w => w.Status == Abstraction.Enums.WaitStatus.Completed ||
-                                      w.Status == Abstraction.Enums.WaitStatus.Canceled ||
-                                      w.Status == Abstraction.Enums.WaitStatus.InError ||
-                                      context.ConsumedWaitsIds.Contains(w.Id));
+            // Do not prune completed/canceled/in-error waits from state.Waits tree
+            // state.Waits.RemoveAll(w => w.Status == Abstraction.Enums.WaitStatus.Completed ||
+            //                           w.Status == Abstraction.Enums.WaitStatus.Canceled ||
+            //                           w.Status == Abstraction.Enums.WaitStatus.InError ||
+            //                           context.ConsumedWaitsIds.Contains(w.Id));
 
             return new AsyncResult(
                 state.Id,
                 new
                 {
-                    NewWaitsIds = state.Waits.Select(w => w.Id).ToList(),
+                    NewWaitsIds = state.Waits.Where(w => w.Status == Abstraction.Enums.WaitStatus.Waiting).Select(w => w.Id).ToList(),
                     context.ConsumedWaitsIds
                 },
                 "Accepted",
@@ -174,13 +220,41 @@ namespace Workflows.Runner.Pipeline
                 DateTime.UtcNow);
         }
 
-        private void CollectCompletedWaitsRecursive(WaitInfrastructureDto wait, HashSet<Guid> completedIds)
+        private void AssignIdsRecursive(WaitInfrastructureDto dto, string? parentId, WorkflowStateDto state)
+        {
+            if (string.IsNullOrEmpty(dto.Id) || !dto.Id.Contains('/'))
+            {
+                state.WaitCounter++;
+                var localId = state.WaitCounter.ToString();
+                dto.Id = parentId != null ? $"{localId}/{parentId}" : $"{localId}/{state.Id}";
+            }
+            dto.ParentWaitId = parentId;
+
+            if (dto.ChildWaits != null)
+            {
+                foreach (var child in dto.ChildWaits)
+                {
+                    AssignIdsRecursive(child, dto.Id, state);
+                }
+            }
+
+            if (dto is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+            {
+                foreach (var child in externalGroup.ExternalChildWaits)
+                {
+                    AssignIdsRecursive(child, dto.Id, state);
+                }
+            }
+        }
+
+        private void CollectCompletedWaitsRecursive(WaitInfrastructureDto wait, HashSet<string> completedIds)
         {
             if (wait == null) return;
 
             if (wait.Status == Abstraction.Enums.WaitStatus.Completed ||
                 wait.Status == Abstraction.Enums.WaitStatus.Canceled ||
-                wait.Status == Abstraction.Enums.WaitStatus.InError)
+                wait.Status == Abstraction.Enums.WaitStatus.InError ||
+                wait.Status == Abstraction.Enums.WaitStatus.Matched)
             {
                 CollectAllIdsRecursive(wait, completedIds);
                 return;
@@ -193,9 +267,17 @@ namespace Workflows.Runner.Pipeline
                     CollectCompletedWaitsRecursive(child, completedIds);
                 }
             }
+
+            if (wait is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+            {
+                foreach (var child in externalGroup.ExternalChildWaits)
+                {
+                    CollectCompletedWaitsRecursive(child, completedIds);
+                }
+            }
         }
 
-        private void CollectAllIdsRecursive(WaitInfrastructureDto wait, HashSet<Guid> ids)
+        private void CollectAllIdsRecursive(WaitInfrastructureDto wait, HashSet<string> ids)
         {
             if (wait == null) return;
             ids.Add(wait.Id);
@@ -206,9 +288,17 @@ namespace Workflows.Runner.Pipeline
                     CollectAllIdsRecursive(child, ids);
                 }
             }
+
+            if (wait is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+            {
+                foreach (var child in externalGroup.ExternalChildWaits)
+                {
+                    CollectAllIdsRecursive(child, ids);
+                }
+            }
         }
 
-        public WaitInfrastructureDto FindWaitById(IEnumerable<WaitInfrastructureDto> waits, Guid id)
+        public WaitInfrastructureDto FindWaitById(IEnumerable<WaitInfrastructureDto> waits, string id)
         {
             if (waits == null) return null;
 
@@ -225,15 +315,20 @@ namespace Workflows.Runner.Pipeline
                         if (child != null) stack.Push(child);
                     }
                 }
+
+                if (current is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+                {
+                    foreach (var child in externalGroup.ExternalChildWaits)
+                    {
+                        if (child != null) stack.Push(child);
+                    }
+                }
             }
 
             return null;
         }
 
-        /// <summary>
-        /// Gets parent workflow stream for resumption after sub-workflow completion.
-        /// </summary>
-        public IAsyncEnumerable<Definition.Wait> GetParentWorkflowStream(
+        public IAsyncEnumerable<WaitInfrastructureDto> GetParentWorkflowStream(
             string workflowType,
             Definition.WorkflowContainer workflowInstance,
             string callerName)
@@ -241,59 +336,145 @@ namespace Workflows.Runner.Pipeline
             if (!_workflowRegistry.Workflows.TryGetValue(workflowType, out var workflowTypes))
                 throw new InvalidOperationException($"Workflow '{workflowType}' not registered.");
 
-            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, string.IsNullOrEmpty(callerName) ? "Run" : callerName);
-            return (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
+            var actualCallerName = string.IsNullOrEmpty(callerName) ? workflowTypes.StartMethod : callerName;
+
+            Type stateType;
+            if (actualCallerName == workflowTypes.StartMethod)
+            {
+                stateType = workflowTypes.StateType;
+            }
+            else
+            {
+                var methodInfo = workflowTypes.WorkflowContainer.GetMethod(
+                    actualCallerName,
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (methodInfo == null)
+                {
+                    throw new InvalidOperationException($"Method '{actualCallerName}' not found on '{workflowTypes.WorkflowContainer.FullName}'.");
+                }
+                stateType = methodInfo.GetParameters()[0].ParameterType;
+            }
+
+            object stateObj = Activator.CreateInstance(stateType);
+
+            WaitDtoConversion.Converter = wait => _mapper.MapToDto(wait);
+
+            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, actualCallerName, stateType);
+            return CastOrConvertStream(invoker(workflowInstance, stateObj));
         }
 
         /// <summary>
         /// Populates a fresh execution context for a brand-new workflow instance.
         /// </summary>
-        public void PopulateNewWorkflowContext(WorkflowExecutionContext context, string workflowName, object input = null)
+        public void PopulateNewWorkflowContext(WorkflowExecutionContext context, string workflowName, int version, object input = null)
         {
             if (context == null) throw new ArgumentNullException(nameof(context));
-            if (!_workflowRegistry.Workflows.TryGetValue(workflowName, out var workflowTypes))
-                throw new InvalidOperationException($"Workflow '{workflowName}' not registered.");
+
+            // Resolve by requested version, fall back to latest
+            if (!_workflowRegistry.TryGetWorkflow(workflowName, version, out var workflowTypes))
+            {
+                if (!_workflowRegistry.TryGetLatestWorkflow(workflowName, out workflowTypes))
+                {
+                    throw new InvalidOperationException($"Workflow '{workflowName}' not registered.");
+                }
+            }
 
             // Instantiate the workflow container
             var workflowInstance = _hydrator.CreateInstance(workflowTypes.WorkflowContainer);
 
-            // Copy public properties of the input object to the instantiated workflow container
+            var stateType = workflowTypes.StateType;
+            object stateObj = Activator.CreateInstance(stateType);
+
+            // Copy public properties of the input object to the instantiated workflow container and/or state POCO
             if (input != null)
             {
-                var inputType = input.GetType();
-                var containerType = workflowInstance.GetType();
-                foreach (var inputProp in inputType.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                if (input is Newtonsoft.Json.Linq.JObject jObj)
                 {
-                    if (!inputProp.CanRead) continue;
-                    var containerProp = containerType.GetProperty(inputProp.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    if (containerProp != null && containerProp.CanWrite)
+                    foreach (var property in jObj.Properties())
                     {
+                        var containerProp = workflowInstance.GetType().GetProperty(property.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+                        if (containerProp != null && containerProp.CanWrite)
+                        {
+                            var val = property.Value.ToObject(containerProp.PropertyType);
+                            containerProp.SetValue(workflowInstance, val);
+                        }
+
+                        if (stateObj != null)
+                        {
+                            var stateProp = stateObj.GetType().GetProperty(property.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);
+                            if (stateProp != null && stateProp.CanWrite)
+                            {
+                                var val = property.Value.ToObject(stateProp.PropertyType);
+                                stateProp.SetValue(stateObj, val);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    var inputType = input.GetType();
+                    var containerType = workflowInstance.GetType();
+                    foreach (var inputProp in inputType.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                    {
+                        if (!inputProp.CanRead) continue;
+                        var containerProp = containerType.GetProperty(inputProp.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                         var value = inputProp.GetValue(input);
-                        containerProp.SetValue(workflowInstance, value);
+                        Console.WriteLine($"[PopulateNewWorkflowContext] Input Property = {inputProp.Name}, containerProp found = {containerProp != null}, Value = {value}");
+                        if (containerProp != null && containerProp.CanWrite)
+                        {
+                            containerProp.SetValue(workflowInstance, value);
+                        }
+                    }
+
+                    if (stateObj != null)
+                    {
+                        var statePocoType = stateObj.GetType();
+                        foreach (var inputProp in inputType.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                        {
+                            if (!inputProp.CanRead) continue;
+                            var stateProp = statePocoType.GetProperty(inputProp.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                            if (stateProp != null && stateProp.CanWrite)
+                            {
+                                var value = inputProp.GetValue(input);
+                                stateProp.SetValue(stateObj, value);
+                            }
+                        }
                     }
                 }
             }
 
-            // Get the top-level Run stream
-            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, nameof(Definition.WorkflowContainer.Run));
-            var workflowStream = (IAsyncEnumerable<Definition.Wait>)invoker(workflowInstance);
+            // Ensure the Wait -> DTO converter is configured for this workflow invocation
+            WaitDtoConversion.Converter = wait => _mapper.MapToDto(wait);
+
+            // Get the top-level start point stream
+            var startMethod = workflowTypes.StartMethod;
+            var invoker = _hydrator.GetInvoker(workflowTypes.WorkflowContainer, startMethod, stateType);
+            var workflowStream = CastOrConvertStream(invoker(workflowInstance, stateObj));
+
+            var resolvedVersion = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<Definition.WorkflowAttribute>(workflowTypes.WorkflowContainer)?.Version ?? 1;
 
             var freshState = new WorkflowStateDto
             {
                 Id = Guid.NewGuid(),
                 Created = DateTime.UtcNow,
                 WorkflowType = workflowName,
+                WorkflowVersion = resolvedVersion,
                 Status = Abstraction.Enums.WorkflowInstanceStatus.New,
                 StateObject = new WorkflowStateObject
                 {
+                    WorkflowType = workflowName,
                     Instance = workflowInstance,
                     StateIndex = -1,
-                    StateMachinesObjects = new Dictionary<string, object>(),
-                    WaitStatesObjects = new Dictionary<Guid, object>()
+                    Locals = new Dictionary<string, object>()
                 },
                 Waits = new List<WaitInfrastructureDto>(),
                 CancellationHistory = new List<CancellationHistoryEntry>()
             };
+
+            if (stateObj != null)
+            {
+                freshState.StateObject.Locals["state"] = stateObj;
+            }
 
             context.WorkflowState = freshState;
             context.WorkflowInstance = workflowInstance;
@@ -301,5 +482,44 @@ namespace Workflows.Runner.Pipeline
             context.ContinueExecutionLoop = false;
             context.ConsumedWaitsIds.Clear();
         }
+
+        private static IAsyncEnumerable<WaitInfrastructureDto> CastOrConvertStream(object rawStream)
+        {
+            if (rawStream is IAsyncEnumerable<WaitInfrastructureDto> dtoStream)
+            {
+                return dtoStream;
+            }
+            else if (rawStream is IAsyncEnumerable<Wait> waitStream)
+            {
+                return new WaitInfrastructureDtoStreamWrapper(waitStream);
+            }
+            else
+            {
+                throw new InvalidOperationException($"Invalid workflow stream type: {rawStream?.GetType().FullName}");
+            }
+        }
+    }
+
+    internal class WaitInfrastructureDtoStreamWrapper : IAsyncEnumerable<WaitInfrastructureDto>, IAsyncEnumerator<WaitInfrastructureDto>
+    {
+        private readonly IAsyncEnumerator<Wait> _inner;
+
+        public WaitInfrastructureDtoStreamWrapper(IAsyncEnumerable<Wait> innerStream)
+        {
+            _inner = innerStream.GetAsyncEnumerator();
+        }
+
+        public IAsyncEnumerator<WaitInfrastructureDto> GetAsyncEnumerator(System.Threading.CancellationToken cancellationToken = default)
+        {
+            return this;
+        }
+
+        public WaitInfrastructureDto Current => WaitDtoConversion.Converter(_inner.Current);
+
+        public ValueTask<bool> MoveNextAsync() => _inner.MoveNextAsync();
+
+        public ValueTask DisposeAsync() => _inner.DisposeAsync();
+
+        public object InnerEnumerator => _inner;
     }
 }

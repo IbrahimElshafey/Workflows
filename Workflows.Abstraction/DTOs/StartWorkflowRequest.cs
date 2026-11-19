@@ -13,6 +13,11 @@ namespace Workflows.Abstraction.DTOs
         public string WorkflowName { get; set; }
 
         /// <summary>
+        /// Optional specific version to start. 0 means use the latest version.
+        /// </summary>
+        public int Version { get; set; }
+
+        /// <summary>
         /// Optional input payload to pass to the workflow container properties.
         /// </summary>
         public object Input { get; set; }

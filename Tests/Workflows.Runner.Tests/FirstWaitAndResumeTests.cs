@@ -166,7 +166,7 @@ namespace Workflows.Runner.Tests
 
             // Assert
             result.Should().NotBeNull();
-            result.Status.Should().Be("Rejected");
+            result.Status.Should().Be("Unmatched");
             result.Message.Should().Contain("Matching failed or partial match.");
         }
     }

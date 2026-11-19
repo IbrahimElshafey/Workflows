@@ -51,5 +51,21 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// Determines whether the command is processed as a direct (runner-handled) or indirect (orchestrator-signalled) operation.
         /// </summary>
         public CommandExecutionMode ExecutionMode { get; set; } = CommandExecutionMode.Immediate;
+
+        /// <summary>
+        /// Tokens associated with this command wait for compensation scoping.
+        /// </summary>
+        public string[] CompensationTokens { get; set; } = Array.Empty<string>();
+
+        /// <summary>
+        /// Hash key for the deferred match expression template.
+        /// Null for immediate commands.
+        /// </summary>
+        public string? MatchTemplateHashKey { get; set; }
+
+        /// <summary>
+        /// Instance-specific exact match values evaluated at registration time.
+        /// </summary>
+        public string? MatchExactMatchPart { get; set; }
     }
 }

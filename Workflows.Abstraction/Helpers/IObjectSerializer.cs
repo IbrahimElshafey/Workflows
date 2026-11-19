@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Workflows.Abstraction.Enums;
 
 namespace Workflows.Abstraction.Helpers
@@ -16,13 +16,28 @@ namespace Workflows.Abstraction.Helpers
         object Serialize(object obj, SerializationScope scope = SerializationScope.Standard);
 
         /// <summary>
+        /// Serializes an object directly into a stream.
+        /// </summary>
+        void Serialize(object obj, System.IO.Stream stream, SerializationScope scope = SerializationScope.Standard);
+
+        /// <summary>
         /// Deserializes a string back into an object of a specific type.
         /// </summary>
         T Deserialize<T>(object serializedObj, SerializationScope scope = SerializationScope.Standard);
 
         /// <summary>
+        /// Deserializes a stream back into an object of a specific type.
+        /// </summary>
+        T Deserialize<T>(System.IO.Stream stream, SerializationScope scope = SerializationScope.Standard);
+
+        /// <summary>
         /// Deserializes a string into a specific type determined at runtime.
         /// </summary>
         object Deserialize(object serializedObj, Type type, SerializationScope scope = SerializationScope.Standard);
+
+        /// <summary>
+        /// Deserializes a stream into a specific type determined at runtime.
+        /// </summary>
+        object Deserialize(System.IO.Stream stream, Type type, SerializationScope scope = SerializationScope.Standard);
     }
 }

@@ -5,6 +5,7 @@ using System.Linq.Expressions;
 using FluentAssertions;
 using Xunit;
 using Workflows.Definition;
+using Workflows.Primitives;
 using Workflows.Runner.ExpressionTransformers;
 using Workflows.Runner.Tests.TestData;
 
@@ -33,7 +34,7 @@ namespace Workflows.Runner.Tests
                 return s => s.CreatedAt.Date == this.ExpectedDate.Date;
             }
 
-            public override async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run()
             {
                 yield break;
             }
@@ -81,14 +82,14 @@ namespace Workflows.Runner.Tests
             result.IsExactMatchFullMatch.Should().BeTrue();
             result.SignalExactMatchPaths.Should().ContainSingle().Which.Should().Be("OrderId");
 
-            // Evaluate the InstanceExactMatchExpression. Because the original codebase builds
-            // InstanceExactMatchExpression on the unnormalized lambda, it captures the 'workflow'
-            // instance as a constant. Thus, evaluating it with a different workflow instance
-            // still yields the value from the captured workflow instance.
+            // Evaluate the InstanceExactMatchExpression. Because the normalizer builds
+            // InstanceExactMatchExpression on the normalized lambda, it uses the passed workflow
+            // instance parameter. Thus, evaluating it with a different workflow instance
+            // yields the value from the new workflow instance.
             var newWorkflow = new TestWorkflow { ExpectedOrderId = "ORD-999" };
             var compiledInstanceExpr = result.InstanceExactMatchExpression.Compile();
             var values = compiledInstanceExpr(newWorkflow, null);
-            values.Should().ContainSingle().Which.Should().Be("ORD-123");
+            values.Should().ContainSingle().Which.Should().Be("ORD-999");
         }
 
         [Fact]
@@ -419,7 +420,8 @@ namespace Workflows.Runner.Tests
             // Verify compiled JSON pre-filter works
             var compiled = result.GenericMatchExpression.Compile();
             using var docMatch = System.Text.Json.JsonDocument.Parse("{\"CreatedAt\": \"2026-05-24T03:30:00Z\", \"Duration\": \"00:15:00\"}");
-            bool isMatch = compiled(docMatch.RootElement, default, default);
+            var instanceElement = System.Text.Json.JsonSerializer.SerializeToElement(workflow);
+            bool isMatch = compiled(docMatch.RootElement, default, instanceElement);
             isMatch.Should().BeTrue();
         }
 
@@ -479,5 +481,143 @@ namespace Workflows.Runner.Tests
             result.IsGenericMatchFullMatch.Should().BeFalse(); // Unsupported due to .Date access on DateTime
             result.GenericMatchExpression.Should().BeNull();
         }
+
+        private class TestCommand
+        {
+            public string CorrelationId { get; set; } = "";
+        }
+
+        private class TestCommandResult
+        {
+            public string CorrelationId { get; set; } = "";
+            public string TargetId { get; set; } = "";
+        }
+
+        private class TestWorkflowState
+        {
+            public string TargetId { get; set; } = "";
+        }
+
+        [Fact]
+        public void TransformCommandMatch_StandardDeferredCommandMatch_ShouldSucceed()
+        {
+            // Arrange
+            var transformer = new MatchExpressionTransformer();
+            var workflow = new TestWorkflow();
+            Expression<Func<TestCommand, TestCommandResult, bool>> matchExpression =
+                (input, result) => result.CorrelationId == input.CorrelationId;
+
+            // Act
+            var result = transformer.TransformCommandMatch(matchExpression, workflow);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.IsExactMatchFullMatch.Should().BeTrue();
+            result.SignalExactMatchPaths.Should().ContainSingle().Which.Should().Be("CorrelationId");
+            result.IsGenericMatchFullMatch.Should().BeTrue();
+
+            // Verify compiled exact match evaluates correctly
+            var compiledInstanceExpr = result.InstanceExactMatchExpression.Compile();
+            var commandData = new TestCommand { CorrelationId = "CORR-777" };
+            // For command match: param 0 is state, param 1 is input command data
+            var values = compiledInstanceExpr(null, commandData);
+            values.Should().ContainSingle().Which.Should().Be("CORR-777");
+        }
+
+        [Fact]
+        public void TransformCommandMatch_StatefulDeferredCommandMatch_ShouldSucceed()
+        {
+            // Arrange
+            var transformer = new MatchExpressionTransformer();
+            var workflow = new TestWorkflow();
+            Expression<Func<TestCommand, TestCommandResult, TestWorkflowState, bool>> matchExpression =
+                (input, result, state) => result.CorrelationId == input.CorrelationId && result.TargetId == state.TargetId;
+
+            // Act
+            var result = transformer.TransformCommandMatch(matchExpression, workflow);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.IsExactMatchFullMatch.Should().BeTrue();
+            result.SignalExactMatchPaths.Should().HaveCount(2);
+            result.SignalExactMatchPaths.Should().Contain("CorrelationId");
+            result.SignalExactMatchPaths.Should().Contain("TargetId");
+
+            // Verify compiled exact match evaluates correctly
+            var compiledInstanceExpr = result.InstanceExactMatchExpression.Compile();
+            var commandData = new TestCommand { CorrelationId = "CORR-777" };
+            var state = new TestWorkflowState { TargetId = "TGT-999" };
+            // For command match: param 0 is state, param 1 is input command data
+            var values = compiledInstanceExpr(state, commandData);
+            values.Should().HaveCount(2);
+            values.Should().Contain("CORR-777");
+            values.Should().Contain("TGT-999");
+        }
+
+        private class ImmediateTestCommand : Workflows.Abstraction.Runner.IImmediateCommand<ImmediateTestCommand, TestCommandResult>
+        {
+            public string CorrelationId { get; set; } = "";
+        }
+
+        private class DeferredTestCommand : Workflows.Abstraction.Runner.IDeferredCommand<DeferredTestCommand, TestCommandResult>
+        {
+            public string CorrelationId { get; set; } = "";
+            Expression<Func<DeferredTestCommand, TestCommandResult, bool>> Workflows.Abstraction.Runner.IDeferredCommand<DeferredTestCommand, TestCommandResult>.MatchingFunction =>
+                (input, result) => result.CorrelationId == input.CorrelationId;
+        }
+
+        [Workflow("TypedCommandWorkflow", 1)]
+        private class TypedCommandWorkflow : WorkflowContainer
+        {
+            public async IAsyncEnumerable<Wait> Run()
+            {
+                yield break;
+            }
+
+            public Wait GetImmediateWait()
+            {
+                return ExecuteImmediate<ImmediateTestCommand, TestCommandResult>(
+                    "ImmediateCmd",
+                    new ImmediateTestCommand { CorrelationId = "IMMED-123" });
+            }
+
+            public Wait GetDeferredWait()
+            {
+                return ExecuteDeferred<DeferredTestCommand, TestCommandResult>(
+                    "DeferredCmd",
+                    new DeferredTestCommand { CorrelationId = "DEFER-456" });
+            }
+        }
+
+        [Fact]
+        public void ExecuteImmediate_ShouldAutoDetectExecutionMode()
+        {
+            // Arrange
+            var workflow = new TypedCommandWorkflow();
+
+            // Act
+            var wait = workflow.GetImmediateWait() as ImmediateCommandWait<ImmediateTestCommand, TestCommandResult>;
+
+            // Assert
+            wait.Should().NotBeNull();
+            wait!.ExecutionMode.Should().Be(CommandExecutionMode.Immediate);
+        }
+
+        [Fact]
+        public void ExecuteDeferred_ShouldAutoDetectExecutionModeAndMatchFunction()
+        {
+            // Arrange
+            var workflow = new TypedCommandWorkflow();
+
+            // Act
+            var wait = workflow.GetDeferredWait() as DeferredCommandWait<DeferredTestCommand, TestCommandResult>;
+
+            // Assert
+            wait.Should().NotBeNull();
+            wait!.ExecutionMode.Should().Be(CommandExecutionMode.Deferred);
+            wait.MatchExpression.Should().NotBeNull();
+            wait.MatchTemplateHashKey.Should().NotBeNullOrEmpty();
+        }
     }
 }
+

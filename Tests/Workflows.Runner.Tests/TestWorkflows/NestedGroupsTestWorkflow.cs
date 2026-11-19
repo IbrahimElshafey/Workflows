@@ -3,11 +3,12 @@ using Workflows.Runner.Tests.TestData;
 
 namespace Workflows.Runner.Tests.TestWorkflows
 {
+    [Workflow("NestedGroupsTest", 1)]
     public sealed class NestedGroupsTestWorkflow : WorkflowContainer
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(NestedGroupsTestWorkflowState state = null!)
         {
             ExecutionLog.Add("Start");
 
@@ -71,4 +72,9 @@ namespace Workflows.Runner.Tests.TestWorkflows
             ExecutionLog.Add("End");
         }
     }
+
+    public class NestedGroupsTestWorkflowState
+    {
+    }
 }
+

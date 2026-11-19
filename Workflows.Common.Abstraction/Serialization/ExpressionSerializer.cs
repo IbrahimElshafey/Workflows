@@ -10,6 +10,16 @@ namespace Workflows.Shared.Serialization
     {
         protected override Func<object, Json.Expression> GetConstantSerializer(Type type)
         {
+            if (typeof(Type).IsAssignableFrom(type))
+            {
+                return o => Json.Expression.String(((Type)o).AssemblyQualifiedName);
+            }
+
+            if (typeof(Expression).IsAssignableFrom(type))
+            {
+                return o => Json.Expression.String(new ExpressionSerializer().Serialize((LambdaExpression)o).ToString());
+            }
+
             // REVIEW: Nuqleon.Json has an odd asymmetry in Serialize and Deserialize signatures,
             //         due to the inability to overload by return type. However, it seems odd we
             //         have to go serialize string and subsequently parse into Expression.
@@ -26,6 +36,16 @@ namespace Workflows.Shared.Serialization
 
         protected override Func<Json.Expression, object> GetConstantDeserializer(Type type)
         {
+            if (typeof(Type).IsAssignableFrom(type))
+            {
+                return json => Type.GetType(((Json.ConstantExpression)json).Value.ToString());
+            }
+
+            if (typeof(Expression).IsAssignableFrom(type))
+            {
+                return json => new ExpressionSerializer().Deserialize(((Json.ConstantExpression)json).Value.ToString());
+            }
+
             return json => new JsonSerializer(type).Deserialize(json);
         }
 

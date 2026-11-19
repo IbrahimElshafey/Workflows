@@ -28,8 +28,31 @@ namespace Workflows.Hosting.InProcess
             services.AddSingleton<IExternalScheduler>(sp => sp.GetRequiredService<Scheduler>());
             services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<Scheduler>());
 
-            services.AddScoped<IWorkflowRunnerClient, WorkflowRunnerClient>();
-            services.AddScoped<IOrchestrator, Workflows.Orchestrator.Orchestrator>();
+            services.AddSingleton<IWorkflowInstanceCache, WorkflowInstanceCache>();
+            services.AddSingleton<BackgroundWorkerChannel>();
+            services.AddSingleton<IOutboxNotificationDispatcher, OutboxNotificationDispatcher>();
+
+            services.AddSingleton<WorkflowExecutionChannel>();
+            services.AddSingleton<InboxOptions>();
+            services.AddScoped<WorkflowExecutionSession>();
+            services.AddScoped<WorkflowRunnerClient>(); // Direct DB writer used by Commit Worker
+            services.AddScoped<IWorkflowRunnerClient, ChannelWorkflowRunnerClient>(); // Proxied client for the Runner
+
+            services.AddHostedService<RunnerWorker>();
+            services.AddHostedService<CoordinatorCommitWorker>();
+            services.AddHostedService<CommandExecutorWorker>();
+            services.AddHostedService<CompensationWorker>();
+            services.AddHostedService<CancelerWorker>();
+            services.AddHostedService<InboxPollerWorker>();
+            services.AddHostedService<LockExpiryWorker>();
+
+            services.AddScoped<CommandResultInboxWriter>();
+
+            services.AddScoped<Workflows.Orchestrator.IWorkflowCloner, Workflows.Orchestrator.WorkflowCloner>();
+            services.AddScoped<Workflows.Orchestrator.ISignalPreFilter, Workflows.Orchestrator.SignalPreFilter>();
+            services.AddScoped<Workflows.Orchestrator.Orchestrator>();
+            services.AddScoped<IOrchestrator, InboxOrchestrator>();
+            services.AddScoped<WorkflowVersionRouter>();
 
             // 4. In-Process Message Transport & Routing Setup
             services.AddSingleton<InProcessMessageTransport>();

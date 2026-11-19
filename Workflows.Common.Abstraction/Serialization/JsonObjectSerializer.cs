@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
 
@@ -7,25 +9,42 @@ namespace Workflows.Shared.Serialization
 {
     public class JsonObjectSerializer : IObjectSerializer
     {
+        private readonly IServiceProvider? _serviceProvider;
+
+        public JsonObjectSerializer() : this(null)
+        {
+        }
+
+        public JsonObjectSerializer(IServiceProvider? serviceProvider)
+        {
+            _serviceProvider = serviceProvider;
+        }
+
         private static readonly JsonSerializerSettings StandardSettings = new JsonSerializerSettings
         {
             TypeNameHandling = TypeNameHandling.None,
             NullValueHandling = NullValueHandling.Ignore,
             Formatting = Formatting.None,
             ContractResolver = new PrivateSetterContractResolver(),
-            Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
+            Converters = { new Newtonsoft.Json.Converters.StringEnumConverter(), new ObjectIntConverter() }
         };
 
         private static readonly JsonSerializerSettings StateSettings = new JsonSerializerSettings
         {
-            TypeNameHandling = TypeNameHandling.All,
+            TypeNameHandling = TypeNameHandling.None,
             NullValueHandling = NullValueHandling.Ignore,
             Formatting = Formatting.None,
             ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor,
             ObjectCreationHandling = ObjectCreationHandling.Replace,
             ContractResolver = new PrivateSetterContractResolver(),
             PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-            Converters = { new Newtonsoft.Json.Converters.StringEnumConverter() }
+            Converters = { 
+                new Newtonsoft.Json.Converters.StringEnumConverter(), 
+                new ObjectIntConverter(),
+                new WaitDtoJsonConverter(),
+                new WorkflowStateObjectJsonConverter(),
+                new DefinitionWaitJsonConverter()
+            }
         };
 
         public class PrivateSetterContractResolver : Newtonsoft.Json.Serialization.DefaultContractResolver
@@ -44,6 +63,48 @@ namespace Workflows.Shared.Serialization
                         prop.Writable = hasPrivateSetter;
                     }
                 }
+
+                prop.DefaultValueHandling = DefaultValueHandling.Ignore;
+
+                if (prop.PropertyType != typeof(string) && typeof(System.Collections.IEnumerable).IsAssignableFrom(prop.PropertyType))
+                {
+                    var originalShouldSerialize = prop.ShouldSerialize;
+                    prop.ShouldSerialize = instance =>
+                    {
+                        if (originalShouldSerialize != null && !originalShouldSerialize(instance))
+                        {
+                            return false;
+                        }
+
+                        var value = prop.ValueProvider?.GetValue(instance);
+                        if (value == null)
+                        {
+                            return false;
+                        }
+
+                        if (value is System.Collections.IEnumerable enumerable)
+                        {
+                            var enumerator = enumerable.GetEnumerator();
+                            try
+                            {
+                                if (!enumerator.MoveNext())
+                                {
+                                    return false;
+                                }
+                            }
+                            finally
+                            {
+                                if (enumerator is IDisposable disposable)
+                                {
+                                    disposable.Dispose();
+                                }
+                            }
+                        }
+
+                        return true;
+                    };
+                }
+
                 return prop;
             }
         }
@@ -76,5 +137,148 @@ namespace Workflows.Shared.Serialization
             if (obj == null) return null;
             return JsonConvert.SerializeObject(obj, GetSettings(scope));
         }
+
+        private class ArrayPoolWrapper : Newtonsoft.Json.IArrayPool<char>
+        {
+            public static readonly ArrayPoolWrapper Instance = new ArrayPoolWrapper();
+
+            public char[] Rent(int minLength)
+            {
+                return System.Buffers.ArrayPool<char>.Shared.Rent(minLength);
+            }
+
+            public void Return(char[] array)
+            {
+                if (array != null)
+                {
+                    System.Buffers.ArrayPool<char>.Shared.Return(array);
+                }
+            }
+        }
+
+        public void Serialize(object obj, System.IO.Stream stream, SerializationScope scope = SerializationScope.Standard)
+        {
+            if (obj == null) return;
+            var settings = GetSettings(scope);
+            var serializer = JsonSerializer.Create(settings);
+            using (var writer = new System.IO.StreamWriter(stream, System.Text.Encoding.UTF8, 1024, leaveOpen: true))
+            using (var jsonWriter = new JsonTextWriter(writer))
+            {
+                jsonWriter.ArrayPool = ArrayPoolWrapper.Instance;
+                serializer.Serialize(jsonWriter, obj);
+                jsonWriter.Flush();
+            }
+        }
+
+        public T Deserialize<T>(System.IO.Stream stream, SerializationScope scope = SerializationScope.Standard)
+        {
+            if (stream == null) return default;
+            var settings = GetSettings(scope);
+            var serializer = JsonSerializer.Create(settings);
+            using (var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8, true, 1024, leaveOpen: true))
+            using (var jsonReader = new JsonTextReader(reader))
+            {
+                jsonReader.ArrayPool = ArrayPoolWrapper.Instance;
+                return serializer.Deserialize<T>(jsonReader);
+            }
+        }
+
+        public object Deserialize(System.IO.Stream stream, Type type, SerializationScope scope = SerializationScope.Standard)
+        {
+            if (stream == null) return null;
+            var settings = GetSettings(scope);
+            var serializer = JsonSerializer.Create(settings);
+            using (var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8, true, 1024, leaveOpen: true))
+            using (var jsonReader = new JsonTextReader(reader))
+            {
+                jsonReader.ArrayPool = ArrayPoolWrapper.Instance;
+                return serializer.Deserialize(jsonReader, type);
+            }
+        }
+    }
+
+    public class ObjectIntConverter : JsonConverter
+    {
+        public override bool CanConvert(Type objectType)
+        {
+            return objectType == typeof(object);
+        }
+
+        public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+        {
+            if (reader.TokenType == JsonToken.Integer)
+            {
+                var value = reader.Value;
+                if (value is long l && l >= int.MinValue && l <= int.MaxValue)
+                {
+                    return (int)l;
+                }
+                return value;
+            }
+
+            var token = JToken.Load(reader);
+            return ConvertToken(token, serializer);
+        }
+
+        private object ConvertToken(JToken token, JsonSerializer serializer)
+        {
+            if (token == null) return null;
+
+            switch (token.Type)
+            {
+                case JTokenType.Integer:
+                    var val = ((JValue)token).Value;
+                    if (val is long l && l >= int.MinValue && l <= int.MaxValue)
+                    {
+                        return (int)l;
+                    }
+                    return val;
+
+                case JTokenType.Float:
+                case JTokenType.String:
+                case JTokenType.Boolean:
+                case JTokenType.Null:
+                case JTokenType.Date:
+                case JTokenType.Bytes:
+                case JTokenType.Guid:
+                case JTokenType.Uri:
+                case JTokenType.TimeSpan:
+                    return ((JValue)token).Value;
+
+                case JTokenType.Array:
+                    var list = new List<object>();
+                    foreach (var child in token.Children())
+                    {
+                        list.Add(ConvertToken(child, serializer));
+                    }
+                    return list;
+
+                case Newtonsoft.Json.Linq.JTokenType.Object:
+                    var jobj = (JObject)token;
+                    if (jobj.Property("$type") != null)
+                    {
+                        using (var subReader = jobj.CreateReader())
+                        {
+                            return serializer.Deserialize(subReader);
+                        }
+                    }
+                    var dict = new Dictionary<string, object>();
+                    foreach (var prop in jobj.Properties())
+                    {
+                        dict[prop.Name] = ConvertToken(prop.Value, serializer);
+                    }
+                    return dict;
+
+                default:
+                    return token.ToObject<object>(serializer);
+            }
+        }
+
+        public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+        {
+            throw new NotImplementedException();
+        }
+
+        public override bool CanWrite => false;
     }
 }

@@ -34,22 +34,22 @@ namespace Workflows.Orchestrator
             CancellationToken cancellationToken = default)
         {
             if (result == null) throw new ArgumentNullException(nameof(result));
-
             // 1. Get existing waits to identify which ones are new
             var existingState = await _workflowStore.GetInstanceStateAsync(result.UpdatedState.Id);
             var existingWaitIds = existingState != null
                 ? existingState.Waits.Select(w => w.Id).ToHashSet()
-                : new HashSet<Guid>();
+                : new HashSet<string>();
 
             // 2. Commit the state updates, new/active waits, and completed wait IDs atomically
             await _workflowStore.SaveContextSyncAsync(
                 result.UpdatedState,
-                result.UpdatedState.Waits,
-                result.ConsumedWaitsIds);
+                result.ConsumedWaitsIds,
+                result.TriggeringSignalId);
+
 
             // 3. Scan the active waits recursively for any waiting TimeWaitDto and schedule them
             var activeWaits = result.UpdatedState.Waits ?? new List<WaitInfrastructureDto>();
-            
+
             var timeWaits = new List<TimeWaitDto>();
             foreach (var wait in activeWaits)
             {
@@ -58,44 +58,57 @@ namespace Workflows.Orchestrator
 
             foreach (var timeWait in timeWaits)
             {
-                if (timeWait.Status == Abstraction.Enums.WaitStatus.Waiting && !existingWaitIds.Contains(timeWait.Id))
+                // Skip already-existing waits (not newly added this run)
+                if (existingWaitIds.Contains(timeWait.Id))
+                    continue;
+
+                if (timeWait.Status == Abstraction.Enums.WaitStatus.Waiting)
                 {
-                    var executeAt = DateTime.UtcNow.Add(timeWait.TimeToWait);
-                    await _scheduler.ScheduleSignalAsync(timeWait.UniqueMatchId, null, executeAt);
-                }
-            }
-
-            // 4. Scan the active waits recursively for any waiting deferred CommandWaitDto and dispatch them
-            var commandWaits = new List<CommandWaitDto>();
-            foreach (var wait in activeWaits)
-            {
-                CollectCommandWaits(wait, commandWaits);
-            }
-
-            foreach (var commandWait in commandWaits)
-            {
-                if (commandWait.Status == Abstraction.Enums.WaitStatus.Waiting && 
-                    commandWait.ExecutionMode == Primitives.CommandExecutionMode.Deferred &&
-                    !existingWaitIds.Contains(commandWait.Id))
-                {
-                    var notification = new CommandDispatchNotification
+                    // The wait Id uses a hierarchical format (e.g. "2/1/<instanceId>") which is not a GUID.
+                    // UniqueMatchId is always a proper GUID used as the timer correlation key.
+                    if (Guid.TryParse(timeWait.UniqueMatchId, out var timerGuid))
                     {
-                        CommandWaitId = commandWait.Id,
-                        HandlerKey = commandWait.HandlerKey,
-                        CommandData = commandWait.CommandData?.ToString() ?? string.Empty
-                    };
-
-                    try
-                    {
-                        await _dispatcher.DispatchAsync(notification);
-                    }
-                    catch (InvalidOperationException ex) when (ex.Message.Contains("No routing rule found for message type"))
-                    {
-                        // In some purely in-process tests (like OrchestrationIntegrationTests),
-                        // there is no out-of-process subscriber/runner configured, so we ignore this.
+                        await _scheduler.ScheduleSignalAsync(timerGuid, timeWait.UniqueMatchId, null, timeWait.ExecutionTime);
                     }
                 }
             }
+
+            // Cancel any scheduled timers for waits that were consumed in this run
+            if (result.ConsumedWaitsIds != null && result.ConsumedWaitsIds.Any())
+            {
+                // Collect ALL TimeWaits from the result state (includes already-completed ones) and the consumed ids
+                // We need to cancel by UniqueMatchId for consumed TimeWaits
+                var allTimeWaits = new List<TimeWaitDto>();
+                foreach (var wait in activeWaits)
+                    CollectTimeWaits(wait, allTimeWaits);
+
+                // Also look in the existing state for consumed time waits
+                if (existingState != null)
+                {
+                    foreach (var wait in existingState.Waits ?? new List<WaitInfrastructureDto>())
+                        CollectTimeWaits(wait, allTimeWaits);
+                }
+
+                var timeWaitById = allTimeWaits
+                    .Where(t => t.UniqueMatchId != null)
+                    .GroupBy(t => t.Id)
+                    .ToDictionary(g => g.Key, g => g.First().UniqueMatchId);
+
+                foreach (var id in result.ConsumedWaitsIds)
+                {
+                    if (timeWaitById.TryGetValue(id, out var uniqueMatchId) &&
+                        Guid.TryParse(uniqueMatchId, out var timerGuid))
+                    {
+                        await _scheduler.CancelScheduledSignalAsync(timerGuid);
+                    }
+                }
+            }
+
+
+
+
+            // 4. Deferred commands are now written to OutboxMessages table atomically in WorkflowStore.SaveContextSyncAsync.
+            // The OutboxSweeperWorker is responsible for sweeping and dispatching them.
 
             return runResult;
         }

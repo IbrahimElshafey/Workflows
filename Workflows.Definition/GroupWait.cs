@@ -26,6 +26,7 @@ namespace Workflows.Definition
 
         internal Func<bool> GroupMatchFilter { get; set; }
         internal Delegate GroupMatchFilterOriginal { get; set; }
+        internal string? HandlerKey { get; set; }
 
 
         /// <summary>
@@ -37,28 +38,32 @@ namespace Workflows.Definition
         /// <param name="callerName"></param>
         /// <returns></returns>
         public Wait MatchIf(
-        Func<bool> groupMatchFilter,
-        [CallerLineNumber] int inCodeLine = 0,
-        [CallerMemberName] string callerName = "")
+            Func<bool> groupMatchFilter,
+            [CallerLineNumber] int inCodeLine = 0,
+            [CallerMemberName] string callerName = "",
+            [CallerArgumentExpression(nameof(groupMatchFilter))] string? expression = default)
         {
             WaitType = WaitType.GroupWaitWithExpression;
             InCodeLine = inCodeLine;
             CallerName = callerName;
             GroupMatchFilter = groupMatchFilter;
             GroupMatchFilterOriginal = groupMatchFilter;
+            HandlerKey = Helpers.WorkflowHashCalculator.CalculateHash(expression, callerName, "GroupMatch_" + WaitName);
             return this;
         }
 
         public Wait MatchIf<TState>(
-        Func<TState, bool> groupMatchFilter,
-        [CallerLineNumber] int inCodeLine = 0,
-        [CallerMemberName] string callerName = "")
+            Func<TState, bool> groupMatchFilter,
+            [CallerLineNumber] int inCodeLine = 0,
+            [CallerMemberName] string callerName = "",
+            [CallerArgumentExpression(nameof(groupMatchFilter))] string? expression = default)
         {
             WaitType = WaitType.GroupWaitWithExpression;
             InCodeLine = inCodeLine;
             CallerName = callerName;
             GroupMatchFilter = new StatefulGroupMatchInvoker<TState>(this, groupMatchFilter).Invoke;
             GroupMatchFilterOriginal = groupMatchFilter;
+            HandlerKey = Helpers.WorkflowHashCalculator.CalculateHash(expression, callerName, "GroupMatch_" + WaitName);
             return this;
         }
 

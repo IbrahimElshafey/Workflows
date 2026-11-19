@@ -1,18 +1,17 @@
-﻿using WorkflowSample.DataObject;
+using WorkflowSample.DataObject;
 using Workflows.Definition;
 
 namespace WorkflowSample
 {
     // --- The Workflow Definition ---
-    public sealed class OrderProcessingWorkflow : WorkflowContainer
+    [Workflow("OrderProcessingWorkflow", 1)]
+    public sealed partial class OrderProcessingWorkflow : WorkflowContainer
     {
-        // 1. DOMAIN STATE: These are stable '<>4__this' properties.
-        // They will be safely captured as the MachineState.Instance.
         public int CurrentOrderId { get; set; }
-        public string CurrentCustomer { get; set; }
+        public string CurrentCustomer { get; set; } = string.Empty;
         public int ProcessCount { get; set; }
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(OrderProcessingWorkflowState state = null!)
         {
             // Initialize domain state
             ProcessCount = 10;
@@ -50,11 +49,11 @@ namespace WorkflowSample
             // Explicitly passing CurrentOrderId into the child waits
             yield return WaitGroup(
                [
-                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated")
+                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("InventoryAllocated", "WaitInventoryAllocated")
                         .WithState(CurrentOrderId)
                         .MatchIf((shipping, targetId) => shipping.OrderId == targetId),
 
-                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted")
+                    (SignalWait<ShippingEvent>)WaitSignal<ShippingEvent>("LabelPrinted", "WaitLabelPrinted")
                         .WithState(CurrentOrderId)
                         .MatchIf((shipping, targetId) => shipping.OrderId == targetId)
                 ],
@@ -62,7 +61,7 @@ namespace WorkflowSample
             ).MatchIf(() => ProcessCount >= 10); // Domain state evaluation
 
             // 5. Yield execution to a sub-workflow
-            yield return WaitSubWorkflow(ShippingSubWorkflow(), "Run Shipping Sub-Workflow");
+            yield return WaitSubWorkflow(ShippingSubWorkflow(new ShippingSubWorkflowState()), "Run Shipping Sub-Workflow");
 
             Console.WriteLine($"[Workflow] Order {CurrentOrderId} processing complete!");
         }
@@ -70,7 +69,8 @@ namespace WorkflowSample
         /// <summary>
         /// Sub-workflows also strictly follow the Explicit State Hand-off rule.
         /// </summary>
-        public async IAsyncEnumerable<Wait> ShippingSubWorkflow()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> ShippingSubWorkflow(ShippingSubWorkflowState state = null!)
         {
             var marker = "test";
 
@@ -92,5 +92,13 @@ namespace WorkflowSample
             await Task.Delay(100);
             Console.WriteLine("After waiting for shipping event, doing some async work in the sub-workflow...");
         }
+    }
+
+    public class OrderProcessingWorkflowState
+    {
+    }
+
+    public class ShippingSubWorkflowState
+    {
     }
 }

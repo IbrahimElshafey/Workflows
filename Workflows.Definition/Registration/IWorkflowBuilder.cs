@@ -9,7 +9,17 @@ namespace Workflows.Definition.Registration
         // Generic registration relies on the Type name or attributes for metadata
         IWorkflowBuilder RegisterWorkflow<WorkflowClass>(
             string name,
-            string version) where WorkflowClass : WorkflowContainer;
+            int version) where WorkflowClass : WorkflowContainer;
+
+        IWorkflowBuilder RegisterWorkflow<WorkflowClass>() where WorkflowClass : WorkflowContainer;
+
+        IWorkflowBuilder RegisterWorkflow<WorkflowClass>(
+            string name,
+            int version,
+            string startMethod) where WorkflowClass : WorkflowContainer;
+
+        IWorkflowBuilder RegisterWorkflow<WorkflowClass>(
+            string startMethod) where WorkflowClass : WorkflowContainer;
 
         IWorkflowBuilder RegisterSignal<TSignal>(string signalIdentifier);
 

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Primitives;
 
 namespace Workflows.Definition
@@ -12,7 +14,7 @@ namespace Workflows.Definition
     {
         internal Wait(WaitType waitType, string waitName, int inCodeLine, string callerName, string callerFilePath)
         {
-            Id = Guid.NewGuid();
+            Id = Guid.NewGuid().ToString();
             WaitType = waitType;
             WaitName = waitName;
             InCodeLine = inCodeLine;
@@ -23,14 +25,15 @@ namespace Workflows.Definition
 
         internal Wait()
         {
+            Id = Guid.NewGuid().ToString();
         }
 
-        internal Guid Id { get; set; }
+        internal string Id { get; set; }
 
         internal HashSet<string> CancelTokens { get; set; } = new HashSet<string>();
         internal string WaitName { get; set; }
 
-        internal WaitType WaitType { get; set; }
+        public WaitType WaitType { get; set; }
 
         internal string CallerFilePath { get; private set; }
 
@@ -50,8 +53,18 @@ namespace Workflows.Definition
                 ? val 
                 : null;
         internal Delegate CancelAction { get; set; }
+        internal string? CancelActionKey { get; set; }
 
         public WorkflowContainer WorkflowContainer { get; set; }
+
+        public bool ShouldSerializeWorkflowContainer() => false;
+
+        /// <summary>
+        /// Implicit conversion from runtime <see cref="Wait"/> to serializable DTO.
+        /// Allows workflow methods to return <see cref="IAsyncEnumerable{WaitInfrastructureDto}"/>
+        /// while still yielding <see cref="Wait"/> objects from the DSL builders.
+        /// </summary>
+        public static implicit operator WaitInfrastructureDto(Wait wait) => WaitDtoConversion.Convert(wait);
 
         public Wait WithState<TState>(TState state)
         {
@@ -59,16 +72,24 @@ namespace Workflows.Definition
             return this;
         }
 
-        public Wait OnCanceled(Func<ValueTask> cancelAction)
+        public Wait OnCanceled(
+            Func<ValueTask> cancelAction,
+            [CallerMemberName] string callerName = "",
+            [CallerArgumentExpression(nameof(cancelAction))] string? expression = default)
         {
             CancelAction = cancelAction;
+            CancelActionKey = Helpers.WorkflowHashCalculator.CalculateHash(expression, callerName, "Cancel_" + (WaitName ?? string.Empty));
             return this;
         }
 
-        public Wait OnCanceled<TState>(Func<TState, ValueTask> cancelAction)
+        public Wait OnCanceled<TState>(
+            Func<TState, ValueTask> cancelAction,
+            [CallerMemberName] string callerName = "",
+            [CallerArgumentExpression(nameof(cancelAction))] string? expression = default)
         {
             var invoker = new StatefulCancelActionInvoker<TState>(this, cancelAction);
             CancelAction = (Func<ValueTask>)invoker.Invoke;
+            CancelActionKey = Helpers.WorkflowHashCalculator.CalculateHash(expression, callerName, "Cancel_" + (WaitName ?? string.Empty));
             return this;
         }
 

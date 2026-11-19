@@ -1,0 +1,42 @@
+@model WaitTreeNodeViewModel
+
+@{
+    string statusClass = Model.Status switch
+    {
+        "Waiting" => "text-warning",
+        "Completed" => "text-success",
+        "Cancelled" => "text-muted",
+        "Matched" => "text-info",
+        _ => "text-dark"
+    };
+}
+
+<li class="list-group-item">
+    <div class="d-flex justify-content-between">
+        <span>
+            <strong>@Model.WaitName</strong> <span class="badge bg-light text-dark">@Model.WaitType</span>
+            @if (!string.IsNullOrEmpty(Model.SignalIdentifier))
+            {
+                <span class="small text-muted">Signal: @Model.SignalIdentifier</span>
+            }
+            @if (!string.IsNullOrEmpty(Model.HandlerKey))
+            {
+                <span class="small text-muted">Command: @Model.HandlerKey</span>
+            }
+            @if (Model.ExecutionTime.HasValue)
+            {
+                <span class="small text-muted">Time: @Model.ExecutionTime.Value.ToString("g")</span>
+            }
+        </span>
+        <span class="small @statusClass">@Model.Status</span>
+    </div>
+    @if (Model.ChildWaits.Any())
+    {
+        <ul class="list-group mt-2 ms-4">
+            @foreach (var child in Model.ChildWaits)
+            {
+                <partial name="_WaitTreeNode" model="child" />
+            }
+        </ul>
+    }
+</li>

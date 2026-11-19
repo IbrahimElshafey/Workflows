@@ -11,13 +11,22 @@ namespace Workflows.Abstraction.DTOs
             set => this["$state"] = value;
         }
 
+        private object _instance;
+
         public object Instance
         {
-            get => TryGetValue("$this", out var val) ? val : null;
-            set => this["$this"] = value;
+            get => _instance;
+            set => _instance = value;
         }
 
         public StateMachineObject() : base() { }
-        public StateMachineObject(IDictionary<string, object> dictionary) : base(dictionary) { }
+        public StateMachineObject(IDictionary<string, object> dictionary) : base(dictionary)
+        {
+            if (dictionary != null && dictionary.TryGetValue("$this", out var inst))
+            {
+                _instance = inst;
+                Remove("$this");
+            }
+        }
     }
 }

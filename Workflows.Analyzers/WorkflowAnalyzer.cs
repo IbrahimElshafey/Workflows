@@ -23,11 +23,17 @@ namespace Workflows.Analyzers
         public const string DiagnosticIdWF201 = "WF201";
         public const string DiagnosticIdWF202 = "WF202";
         public const string DiagnosticIdWF203 = "WF203";
+        public const string DiagnosticIdWF204 = "WF204";
+        public const string DiagnosticIdWF205 = "WF205";
+        public const string DiagnosticIdWF206 = "WF206";
+        public const string DiagnosticIdWF207 = "WF207";
+        public const string DiagnosticIdWF208 = "WF208";
+        public const string DiagnosticIdWF209 = "WF209";
 
         private static readonly DiagnosticDescriptor WF000 = new DiagnosticDescriptor(
             DiagnosticIdWF000,
             "Strict No-Closure Enforcement",
-            "Lambda expression captures variable '{0}' from the outer scope, which violates the strict no-closure constraint. Pass state explicitly using '.WithState(state)' or map it to a class-level property.",
+            "Lambda expression captures local variable/parameter '{0}' from the outer scope, violating the strict no-closure constraint. Pass state explicitly using '.WithState(state)' or move it to the state POCO parameter.",
             "Workflow.Safety",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true,
@@ -44,7 +50,7 @@ namespace Workflows.Analyzers
         private static readonly DiagnosticDescriptor WF003 = new DiagnosticDescriptor(
             DiagnosticIdWF003,
             "No Anonymous Types",
-            "Passing anonymous type to '.WithState()' is disallowed. Use ValueTuple or record for state to ensure serialization stability.",
+            "Passing anonymous type to '.WithState()' is disallowed. Use a state class/record POCO to ensure serialization stability.",
             "Workflow.Serialization",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -59,8 +65,8 @@ namespace Workflows.Analyzers
 
         private static readonly DiagnosticDescriptor WF005 = new DiagnosticDescriptor(
             DiagnosticIdWF005,
-            "State Machine Blindspot (Synchronous Locals)",
-            "Passing local variable '{0}' from synchronous helper method '{1}' to '.WithState()' is unsafe as the state will vanish on workflow rehydration",
+            "Unserializable State Object",
+            "Passing object '{0}' of type '{1}' to '.WithState()' is disallowed because it is unserializable (delegates, IDisposable, or streams cannot be serialized).",
             "Workflow.Safety",
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
@@ -113,8 +119,107 @@ namespace Workflows.Analyzers
             DiagnosticSeverity.Warning,
             isEnabledByDefault: true);
 
+        private static readonly DiagnosticDescriptor WF204 = new DiagnosticDescriptor(
+            DiagnosticIdWF204,
+            "Missing Wait Name",
+            "Wait name is mandatory. Wait definition '{0}' must specify a non-empty name.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor WF205 = new DiagnosticDescriptor(
+            DiagnosticIdWF205,
+            "Duplicate Wait Name",
+            "Wait name '{0}' is already defined in workflow '{1}'. Wait names must be unique within a workflow.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor WF206 = new DiagnosticDescriptor(
+            DiagnosticIdWF206,
+            "Sub-Workflow Must Be Private",
+            "Sub-workflow method '{0}' must be private to prevent usage outside of its parent workflow container.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor WF207 = new DiagnosticDescriptor(
+            DiagnosticIdWF207,
+            "Sub-Workflow Attribute in Invalid Class",
+            "Sub-workflow method '{0}' is decorated with [SubWorkflow] but the containing class does not inherit from WorkflowContainer.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor WF208 = new DiagnosticDescriptor(
+            DiagnosticIdWF208,
+            "Sub-Workflow Missing Attribute",
+            "Sub-workflow method '{0}' must be decorated with [SubWorkflow] attribute.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        private static readonly DiagnosticDescriptor WF209 = new DiagnosticDescriptor(
+            DiagnosticIdWF209,
+            "Missing Workflow Attribute",
+            "Workflow container class '{0}' is missing [WorkflowAttribute]. Concrete workflow classes must have the attribute.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        public const string DiagnosticIdWFUnsafeState = "WF_ERR_UNSAFE_STATE";
+
+        private static readonly DiagnosticDescriptor WF_ERR_UNSAFE_STATE = new DiagnosticDescriptor(
+            DiagnosticIdWFUnsafeState,
+            "Local variable across wait boundary",
+            "Local variable '{0}' is accessed across a yield return boundary. Move this variable to the state POCO to ensure serialization safety.",
+            "Workflow.Safety",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        public const string DiagnosticIdWF210 = "WF210";
+
+        private static readonly DiagnosticDescriptor WF210 = new DiagnosticDescriptor(
+            DiagnosticIdWF210,
+            "Missing Run Method",
+            "Workflow container class '{0}' must implement a public/protected 'Run' method returning IAsyncEnumerable<WaitInfrastructureDto>.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        // WF211: Workflow method must accept state parameter
+        public const string DiagnosticIdWF211 = "WF211";
+
+        private static readonly DiagnosticDescriptor WF211 = new DiagnosticDescriptor(
+            DiagnosticIdWF211,
+            "Workflow Must Accept State Parameter",
+            "Workflow method '{0}' must accept a state DTO parameter. Add a parameter (e.g., 'Run(MyState state)').",
+            "Workflow.Structure",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
+        // WF300: Version bumped — archive required
+        public const string DiagnosticIdWF300 = "WF300";
+        private static readonly DiagnosticDescriptor WF300 = new DiagnosticDescriptor(
+            DiagnosticIdWF300,
+            "Workflow version incremented",
+            "Workflow '{0}' version bumped from {1} to {2}. Apply 'Archive V{1} and generate schema' code fix.",
+            "Workflow.Versioning",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
+        // WF301: Schema drift in archived file
+        public const string DiagnosticIdWF301 = "WF301";
+        private static readonly DiagnosticDescriptor WF301 = new DiagnosticDescriptor(
+            DiagnosticIdWF301,
+            "Archived workflow schema drift",
+            "Property '{0}' in archived '{1}' changed or was {2}. This breaks the serialization contract in '{3}'.",
+            "Workflow.Versioning",
+            DiagnosticSeverity.Error,
+            isEnabledByDefault: true);
+
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(
-            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203);
+            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209, WF_ERR_UNSAFE_STATE, WF210, WF211, WF300, WF301);
 
         public override void Initialize(AnalysisContext context)
         {
@@ -129,11 +234,14 @@ namespace Workflows.Analyzers
             context.RegisterSyntaxNodeAction(AnalyzeMemberAccessExpression, SyntaxKind.SimpleMemberAccessExpression);
             context.RegisterSyntaxNodeAction(AnalyzeAssignmentExpression, SyntaxKind.SimpleAssignmentExpression);
             context.RegisterSyntaxNodeAction(AnalyzeIdentifierName, SyntaxKind.IdentifierName);
+            context.RegisterSyntaxNodeAction(AnalyzeMethodDeclaration, SyntaxKind.MethodDeclaration);
         }
 
         private static void AnalyzeNamedType(SymbolAnalysisContext context)
         {
-            Rules.StructureRules.AnalyzeNamedType(context, WF201, WF202);
+            Rules.StructureRules.AnalyzeNamedType(context, WF201, WF202, WF209, WF210, WF211);
+            Rules.WaitRules.AnalyzeNamedType(context, WF204, WF205, WF206, WF207, WF208);
+            Rules.VersioningRules.AnalyzeNamedType(context, WF300, WF301);
         }
 
         private static void AnalyzeAwaitForeach(SyntaxNodeAnalysisContext context)
@@ -193,6 +301,45 @@ namespace Workflows.Analyzers
             return false;
         }
 
+        internal static ITypeSymbol? GetWorkflowStateType(INamedTypeSymbol? typeSymbol)
+        {
+            if (typeSymbol == null) return null;
+            
+            // Check [Workflow] attribute first if present
+            var workflowAttr = typeSymbol.GetAttributes().FirstOrDefault(a => 
+                a.AttributeClass?.ToDisplayString() == "Workflows.Definition.WorkflowAttribute" ||
+                a.AttributeClass?.Name == "WorkflowAttribute");
+
+            string startMethodName = "Run";
+            if (workflowAttr != null)
+            {
+                // Check if StateType was specified explicitly in the attribute
+                var stateTypeArg = workflowAttr.NamedArguments.FirstOrDefault(kv => kv.Key == "StateType").Value;
+                if (stateTypeArg.Value is ITypeSymbol explicitStateType)
+                {
+                    return explicitStateType;
+                }
+
+                // Check if StartMethod was specified explicitly in the attribute
+                var startMethodArg = workflowAttr.NamedArguments.FirstOrDefault(kv => kv.Key == "StartMethod").Value;
+                if (startMethodArg.Value is string customStartMethodName && !string.IsNullOrEmpty(customStartMethodName))
+                {
+                    startMethodName = customStartMethodName;
+                }
+            }
+
+            // Find the start point method
+            var method = typeSymbol.GetMembers().OfType<IMethodSymbol>()
+                .FirstOrDefault(m => m.Name == startMethodName && IsWorkflowMethod(m));
+
+            if (method != null && method.Parameters.Length == 1)
+            {
+                return method.Parameters[0].Type;
+            }
+
+            return null;
+        }
+
         internal static bool InheritsFromWait(ITypeSymbol? typeSymbol)
         {
             while (typeSymbol != null)
@@ -212,13 +359,47 @@ namespace Workflows.Analyzers
             if (methodSymbol == null) return false;
             if (!InheritsFromWorkflowContainer(methodSymbol.ContainingType)) return false;
 
-            var returnType = methodSymbol.ReturnType as INamedTypeSymbol;
-            if (returnType == null) return false;
+            return IsAsyncEnumerableOfWaitInfrastructureDto(methodSymbol.ReturnType)
+                || IsAsyncEnumerableOfWait(methodSymbol.ReturnType);
+        }
 
-            if (returnType.ConstructedFrom?.ToDisplayString() == "System.Collections.Generic.IAsyncEnumerable<T>" ||
-                returnType.Name == "IAsyncEnumerable")
+        internal static bool IsRawWorkflowMethod(IMethodSymbol? methodSymbol)
+        {
+            if (methodSymbol == null) return false;
+
+            return IsAsyncEnumerableOfWaitInfrastructureDto(methodSymbol.ReturnType)
+                || IsAsyncEnumerableOfWait(methodSymbol.ReturnType);
+        }
+
+        private static bool IsAsyncEnumerableOfWaitInfrastructureDto(ITypeSymbol? returnType)
+        {
+            if (returnType is not INamedTypeSymbol namedType) return false;
+
+            if (namedType.ConstructedFrom?.ToDisplayString() == "System.Collections.Generic.IAsyncEnumerable<T>" ||
+                namedType.Name == "IAsyncEnumerable")
             {
-                var typeArg = returnType.TypeArguments.FirstOrDefault();
+                var typeArg = namedType.TypeArguments.FirstOrDefault();
+                if (typeArg != null)
+                {
+                    var typeArgName = typeArg.ToDisplayString();
+                    if (typeArgName == "Workflows.Abstraction.DTOs.Waits.WaitInfrastructureDto" ||
+                        typeArgName == "WaitInfrastructureDto")
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static bool IsAsyncEnumerableOfWait(ITypeSymbol? returnType)
+        {
+            if (returnType is not INamedTypeSymbol namedType) return false;
+
+            if (namedType.ConstructedFrom?.ToDisplayString() == "System.Collections.Generic.IAsyncEnumerable<T>" ||
+                namedType.Name == "IAsyncEnumerable")
+            {
+                var typeArg = namedType.TypeArguments.FirstOrDefault();
                 if (typeArg != null && (InheritsFromWait(typeArg) || typeArg.Name == "Wait"))
                 {
                     return true;
@@ -243,6 +424,92 @@ namespace Workflows.Analyzers
                 return true;
             }
             return false;
+        }
+
+        private static void AnalyzeMethodDeclaration(SyntaxNodeAnalysisContext context)
+        {
+            var methodDecl = (MethodDeclarationSyntax)context.Node;
+            var methodSymbol = context.SemanticModel.GetDeclaredSymbol(methodDecl);
+            if (methodSymbol == null) return;
+
+            // WF211: Workflow method must accept state parameter checks are run in StructureRules.cs
+
+            if (IsWorkflowMethod(methodSymbol))
+            {
+                var localVariables = new List<VariableDeclaratorSyntax>();
+                var yieldReturns = new List<YieldStatementSyntax>();
+                var identifierUsages = new Dictionary<string, List<IdentifierNameSyntax>>();
+
+                var walker = new WorkflowMethodWalker(localVariables, yieldReturns, identifierUsages);
+                walker.Visit(methodDecl.Body);
+
+                foreach (var localVar in localVariables)
+                {
+                    var symbol = context.SemanticModel.GetDeclaredSymbol(localVar) as ILocalSymbol;
+                    if (symbol == null) continue;
+
+                    var name = symbol.Name;
+                    if (!identifierUsages.TryGetValue(name, out var usages)) continue;
+
+                    foreach (var yieldReturn in yieldReturns)
+                    {
+                        if (yieldReturn.SpanStart > localVar.SpanStart)
+                        {
+                            var unsafeUsage = usages.FirstOrDefault(u => u.SpanStart > yieldReturn.SpanStart && 
+                                !yieldReturn.Span.Contains(u.Span) &&
+                                SymbolEqualityComparer.Default.Equals(context.SemanticModel.GetSymbolInfo(u).Symbol, symbol));
+
+                            if (unsafeUsage != null)
+                            {
+                                var diagnostic = Diagnostic.Create(WF_ERR_UNSAFE_STATE, localVar.Identifier.GetLocation(), name);
+                                context.ReportDiagnostic(diagnostic);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        private class WorkflowMethodWalker : CSharpSyntaxWalker
+        {
+            private readonly List<VariableDeclaratorSyntax> _localVariables;
+            private readonly List<YieldStatementSyntax> _yieldReturns;
+            private readonly Dictionary<string, List<IdentifierNameSyntax>> _identifierUsages;
+
+            public WorkflowMethodWalker(List<VariableDeclaratorSyntax> localVariables, List<YieldStatementSyntax> yieldReturns, Dictionary<string, List<IdentifierNameSyntax>> identifierUsages)
+            {
+                _localVariables = localVariables;
+                _yieldReturns = yieldReturns;
+                _identifierUsages = identifierUsages;
+            }
+
+            public override void VisitVariableDeclarator(VariableDeclaratorSyntax node)
+            {
+                _localVariables.Add(node);
+                base.VisitVariableDeclarator(node);
+            }
+
+            public override void VisitYieldStatement(YieldStatementSyntax node)
+            {
+                if (node.IsKind(SyntaxKind.YieldReturnStatement))
+                {
+                    _yieldReturns.Add(node);
+                }
+                base.VisitYieldStatement(node);
+            }
+
+            public override void VisitIdentifierName(IdentifierNameSyntax node)
+            {
+                var name = node.Identifier.ValueText;
+                if (!_identifierUsages.TryGetValue(name, out var list))
+                {
+                    list = new List<IdentifierNameSyntax>();
+                    _identifierUsages[name] = list;
+                }
+                list.Add(node);
+                base.VisitIdentifierName(node);
+            }
         }
     }
 }

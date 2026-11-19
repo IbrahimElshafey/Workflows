@@ -9,6 +9,8 @@ namespace Workflows.Storage.EntityFrameworkCore
         {
             services.AddScoped<IWorkflowStore, WorkflowStore>();
             services.AddScoped<IDefinitionRepository, DefinitionRepository>();
+            services.AddScoped<ITemplateRepository, TemplateRepository>();
+            services.AddScoped<IInstanceLockManager, InstanceLockManager>();
             services.AddSingleton<WorkflowAuditingInterceptor>();
             return services;
         }

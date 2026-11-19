@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Workflows.Primitives;
@@ -13,6 +14,10 @@ namespace Workflows.Definition
             [CallerLineNumber] int inCodeLine = 0,
             [CallerMemberName] string callerName = "")
         {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new InvalidOperationException("Wait name is mandatory.");
+            }
             var result = new SubWorkflowWait(name, inCodeLine, callerName, callerFilePath)
             {
                 WorkflowContainer = this,

@@ -3,11 +3,12 @@ using Workflows.Runner.Tests.TestData;
 
 namespace Workflows.Runner.Tests.TestWorkflows
 {
-    public class CancellationTestWorkflow : WorkflowContainer
+    [Workflow("CancellationTestWorkflow", 1)]
+    public sealed class CancellationTestWorkflow : WorkflowContainer
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(CancellationTestWorkflowState state = null!)
         {
             ExecutionLog.Add("Start");
 
@@ -54,4 +55,9 @@ namespace Workflows.Runner.Tests.TestWorkflows
 
         public bool ShouldCancel { get; set; }
     }
+
+    public class CancellationTestWorkflowState
+    {
+    }
 }
+

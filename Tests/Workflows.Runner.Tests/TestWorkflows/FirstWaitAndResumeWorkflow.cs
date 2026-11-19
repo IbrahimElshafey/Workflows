@@ -8,12 +8,13 @@ namespace Workflows.Runner.Tests.TestWorkflows
     /// <summary>
     /// Test workflow for first wait and resume scenarios
     /// </summary>
+    [Workflow("FirstWaitTest", 1)]
     public sealed class FirstWaitAndResumeWorkflow : WorkflowContainer
     {
         public List<string> ExecutionLog { get; set; } = new();
         public int ResumeCount { get; set; }
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(FirstWaitAndResumeWorkflowState state = null!)
         {
             ExecutionLog.Add("Execution1: Start");
 
@@ -30,10 +31,9 @@ namespace Workflows.Runner.Tests.TestWorkflows
             ResumeCount++;
 
             // Second wait - test resumption after state restoration
-            yield return ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
+            yield return ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPayment",
                 new ProcessPaymentCommand { OrderId = "ORD-001", Amount = 100 })
-                .WithExecutionMode(CommandExecutionMode.Deferred)
                 .WithState("PaymentState")
                 .OnResult((result, state) =>
                 {
@@ -78,4 +78,9 @@ namespace Workflows.Runner.Tests.TestWorkflows
             ExecutionLog.Add($"Execution6: Completed - Total resumes: {ResumeCount}");
         }
     }
+
+    public class FirstWaitAndResumeWorkflowState
+    {
+    }
 }
+

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Workflows.Abstraction.DTOs;
-using Workflows.Definition;
+using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Runner.DataObjects;
 using Workflows.Runner.Helpers;
 
@@ -12,7 +12,7 @@ namespace Workflows.Runner
     internal class StateMachineAdvancer
     {
         internal async Task<AdvancerResult> RunAsync(
-            IAsyncEnumerable<Wait> workflow,
+            IAsyncEnumerable<WaitInfrastructureDto> workflow,
             WorkflowStateObject previousState,
             CancellationToken cancellationToken = default)
         {
@@ -24,11 +24,11 @@ namespace Workflows.Runner
             var enumerator = workflow.GetAsyncEnumerator(cancellationToken);
 
             // 1. Extract root state machine object
-            previousState.StateMachinesObjects ??= new Dictionary<string, object>();
-            if (!previousState.StateMachinesObjects.TryGetValue("root", out var rootRaw))
+            previousState.Locals ??= new Dictionary<string, object>();
+            if (!previousState.Locals.TryGetValue("root", out var rootRaw))
             {
                 rootRaw = new StateMachineObject();
-                previousState.StateMachinesObjects["root"] = rootRaw;
+                previousState.Locals["root"] = rootRaw;
             }
             var rootState = rootRaw as StateMachineObject ?? new StateMachineObject();
             rootState.StateIndex = previousState.StateIndex;
@@ -48,12 +48,13 @@ namespace Workflows.Runner
                 // 5. Build full WorkflowStateObject — copy all existing entries (sub-workflows etc.), update root
                 var newState = new WorkflowStateObject
                 {
+                    WorkflowType = previousState.WorkflowType,
+                    SubWorkflowMethod = previousState.SubWorkflowMethod,
                     StateIndex = newStateObj.StateIndex,
                     Instance = newStateObj.Instance,
-                    StateMachinesObjects = new Dictionary<string, object>(previousState.StateMachinesObjects),
-                    WaitStatesObjects = new Dictionary<Guid, object>(previousState.WaitStatesObjects)
+                    Locals = new Dictionary<string, object>(previousState.Locals)
                 };
-                newState.StateMachinesObjects["root"] = newStateObj;
+                newState.Locals["root"] = newStateObj;
 
                 // 6. Return the clean package
                 return new AdvancerResult

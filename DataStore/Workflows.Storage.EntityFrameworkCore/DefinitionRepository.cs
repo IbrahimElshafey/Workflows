@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Workflows.Abstraction.DTOs.Waits;
+using Workflows.Abstraction.Runner;
 using Workflows.Abstraction.DTOs.Registration;
 using Workflows.Abstraction.Persistence;
 using Workflows.Primitives;
@@ -11,10 +15,12 @@ namespace Workflows.Storage.EntityFrameworkCore
     public class DefinitionRepository : IDefinitionRepository
     {
         private readonly WorkflowsDbContext _dbContext;
+        private readonly IServiceProvider _serviceProvider;
 
-        public DefinitionRepository(WorkflowsDbContext dbContext)
+        public DefinitionRepository(WorkflowsDbContext dbContext, IServiceProvider serviceProvider)
         {
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         }
 
         public async Task<RegistrationSyncResult> SyncDefinitionsAsync(BulkRegistrationPackage package)
@@ -101,15 +107,6 @@ namespace Workflows.Storage.EntityFrameworkCore
 
                     await _dbContext.SaveChangesAsync();
                     await transaction.CommitAsync();
-
-                    return new RegistrationSyncResult
-                    {
-                        Success = true,
-                        WorkflowsRegistered = package.Workflows.Count,
-                        SignalsRegistered = package.Signals.Count,
-                        CommandsRegistered = package.Commands.Count,
-                        SyncTimestamp = DateTime.UtcNow
-                    };
                 }
                 catch (Exception ex)
                 {
@@ -130,9 +127,220 @@ namespace Workflows.Storage.EntityFrameworkCore
                     };
                 }
             }
+
+            // Now perform the initial registration run per workflow OUTSIDE the sync transaction
+            try
+            {
+                var runner = _serviceProvider.GetService<IWorkflowRunner>();
+                if (runner != null)
+                {
+                    foreach (var w in package.Workflows)
+                    {
+                        // A. Clean up previous first-wait instances for this workflow name to remain idempotent
+                        var oldFirstWaitInstanceIds = await _dbContext.SignalWaits
+                            .Where(sw => sw.IsFirstWait && _dbContext.WorkflowInstances.Any(wi => wi.Id == sw.WorkflowInstanceId && wi.WorkflowType == w.WorkflowName))
+                            .Select(sw => sw.WorkflowInstanceId)
+                            .Distinct()
+                            .ToListAsync();
+
+                        foreach (var oldInstId in oldFirstWaitInstanceIds)
+                        {
+                            var oldInst = await _dbContext.WorkflowInstances.FindAsync(oldInstId);
+                            if (oldInst != null)
+                            {
+                                _dbContext.WorkflowInstances.Remove(oldInst);
+                            }
+                        }
+                        await _dbContext.SaveChangesAsync();
+
+                        // B. Run once to create the first-wait instance
+                        var result = await runner.StartWorkflow(w.WorkflowName, null);
+                        if (result != null)
+                        {
+                            var instanceId = result.Id;
+                            WorkflowInstance? instance = null;
+                            int retries = 0;
+                            while (instance == null && retries < 50)
+                            {
+                                instance = await _dbContext.WorkflowInstances.FindAsync(instanceId);
+                                if (instance == null)
+                                {
+                                    retries++;
+                                    await Task.Delay(100);
+                                }
+                            }
+
+                            if (instance != null)
+                            {
+                                // Hydrate external child waits if any
+                                await WorkflowStore.HydrateExternalChildWaitsAsync(_dbContext, instanceId, instance.Waits);
+
+                                // C. Validate that the first wait contains at least one SignalWait
+                                ValidateFirstWait(instance.Waits);
+
+                                // D. Set IsFirstWait = true on its DB index records
+                                var dbSignalWaits = await _dbContext.SignalWaits
+                                    .Where(sw => sw.WorkflowInstanceId == instanceId)
+                                    .ToListAsync();
+
+                                foreach (var dbSw in dbSignalWaits)
+                                {
+                                    dbSw.IsFirstWait = true;
+                                }
+
+                                // Also set IsFirstWait on ExternalChildWaits rows (WaitMany / WaitAny first waits)
+                                var dbExternalChildren = await _dbContext.ExternalChildWaits
+                                    .Where(ec => ec.WorkflowInstanceId == instanceId)
+                                    .ToListAsync();
+
+                                foreach (var dbEc in dbExternalChildren)
+                                {
+                                    dbEc.IsFirstWait = true;
+                                }
+
+                                // E. Set IsFirstWait = true inside the JSON column representation
+                                UpdateIsFirstWaitRecursive(instance.Waits);
+
+                                bool saved = false;
+                                int saveRetries = 0;
+                                while (!saved && saveRetries < 10)
+                                {
+                                    try
+                                    {
+                                        // Force EF Core to detect change by reassigning and setting state
+                                        instance.Waits = instance.Waits.ToList();
+                                        _dbContext.Entry(instance).State = EntityState.Modified;
+
+                                        await _dbContext.SaveChangesAsync();
+                                        saved = true;
+                                    }
+                                    catch (DbUpdateConcurrencyException)
+                                    {
+                                        saveRetries++;
+                                        _dbContext.Entry(instance).State = EntityState.Detached;
+                                        await Task.Delay(100);
+                                        instance = await _dbContext.WorkflowInstances.FindAsync(instanceId);
+                                        if (instance != null)
+                                        {
+                                            UpdateIsFirstWaitRecursive(instance.Waits);
+                                        }
+                                    }
+                                }
+
+                                var cache = _serviceProvider.GetService<IWorkflowInstanceCache>();
+                                if (cache != null)
+                                {
+                                    cache.Remove(instanceId);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return new RegistrationSyncResult
+                {
+                    Success = true,
+                    WorkflowsRegistered = package.Workflows.Count,
+                    SignalsRegistered = package.Signals.Count,
+                    CommandsRegistered = package.Commands.Count,
+                    SyncTimestamp = DateTime.UtcNow
+                };
+            }
+            catch (Exception ex)
+            {
+                return new RegistrationSyncResult
+                {
+                    Success = false,
+                    Errors = new List<RegistrationError>
+                    {
+                        new RegistrationError
+                        {
+                            EntityName = "BulkRegistration",
+                            ErrorType = "DbSyncException",
+                            Message = ex.Message
+                        }
+                    },
+                    SyncTimestamp = DateTime.UtcNow
+                };
+            }
         }
 
-        public async Task<WorkflowDefinition> GetDefinitionAsync(string workflowName, string version)
+        private void ValidateFirstWait(List<WaitInfrastructureDto> waits)
+        {
+            if (waits == null || waits.Count == 0)
+            {
+                throw new InvalidOperationException("Workflow first wait cannot be empty. It must be a SignalWait or a GroupWait containing at least one SignalWait.");
+            }
+
+            bool hasSignalWait = false;
+            foreach (var wait in waits)
+            {
+                if (ContainsSignalWait(wait))
+                {
+                    hasSignalWait = true;
+                    break;
+                }
+            }
+
+            if (!hasSignalWait)
+            {
+                throw new InvalidOperationException("Workflow first wait must be a SignalWait or a GroupWait containing at least one SignalWait.");
+            }
+        }
+
+        private bool ContainsSignalWait(WaitInfrastructureDto wait)
+        {
+            if (wait is SignalWaitDto)
+            {
+                return true;
+            }
+            // Check inline children (GroupWaitDto)
+            if (wait.ChildWaits != null)
+            {
+                foreach (var child in wait.ChildWaits)
+                {
+                    if (ContainsSignalWait(child))
+                    {
+                        return true;
+                    }
+                }
+            }
+            // Check external children (ExternalGroupWaitDto — WaitMany / WaitAny)
+            if (wait is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+            {
+                foreach (var child in externalGroup.ExternalChildWaits)
+                {
+                    if (ContainsSignalWait(child))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private void UpdateIsFirstWaitRecursive(IEnumerable<WaitInfrastructureDto> waits)
+        {
+            if (waits == null) return;
+            foreach (var wait in waits)
+            {
+                if (wait is SignalWaitDto sw)
+                {
+                    sw.IsFirstWait = true;
+                }
+                if (wait.ChildWaits != null)
+                {
+                    UpdateIsFirstWaitRecursive(wait.ChildWaits);
+                }
+                // Also mark external children (WaitMany / WaitAny)
+                if (wait is ExternalGroupWaitDto externalGroup && externalGroup.ExternalChildWaits != null)
+                {
+                    UpdateIsFirstWaitRecursive(externalGroup.ExternalChildWaits);
+                }
+            }
+        }
+
+        public async Task<WorkflowDefinition> GetDefinitionAsync(string workflowName, int version)
         {
             var db = await _dbContext.WorkflowDefinitions.FindAsync(workflowName, version);
             if (db == null) return null;
@@ -172,6 +380,27 @@ namespace Workflows.Storage.EntityFrameworkCore
                 DefaultTimeout = db.DefaultTimeout,
                 ExecutionMode = (CommandExecutionMode)db.ExecutionMode
             };
+        }
+
+        /// <inheritdoc/>
+        public async Task<List<int>> GetAllRegisteredVersionsAsync(string workflowName)
+        {
+            return await _dbContext.WorkflowDefinitions
+                .Where(w => w.WorkflowName == workflowName)
+                .Select(w => w.Version)
+                .OrderBy(v => v)
+                .ToListAsync();
+        }
+
+        /// <inheritdoc/>
+        public async Task<int> GetLatestRegisteredVersionAsync(string workflowName)
+        {
+            var versions = await _dbContext.WorkflowDefinitions
+                .Where(w => w.WorkflowName == workflowName)
+                .Select(w => w.Version)
+                .ToListAsync();
+
+            return versions.Count > 0 ? versions.Max() : 0;
         }
     }
 }

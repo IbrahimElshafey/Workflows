@@ -80,7 +80,7 @@ namespace Workflows.Client.WebApi
                 var startReq = serializer.Deserialize<StartWorkflowRequest>(body);
                 var workflowId = await orchestrator.StartWorkflowAsync(
                     startReq.WorkflowName, 
-                    "1.0", // Default version
+                    1, // Default version
                     startReq.Input
                 ).ConfigureAwait(false);
 

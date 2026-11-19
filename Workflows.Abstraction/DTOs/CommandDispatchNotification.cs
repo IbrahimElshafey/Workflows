@@ -14,7 +14,7 @@ namespace Workflows.Abstraction.DTOs
         /// Correlates the result back to the persisted wait record.
         /// Must be forwarded unchanged in the <see cref="CommandResultDto"/>.
         /// </summary>
-        public Guid CommandWaitId { get; set; }
+        public string CommandWaitId { get; set; } = string.Empty;
 
         /// <summary>
         /// Key used to route the notification to the correct

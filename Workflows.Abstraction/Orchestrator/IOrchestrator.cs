@@ -20,6 +20,11 @@ namespace Workflows.Abstraction.Orchestrator
         /// <summary>
         /// Starts a brand new instance of a workflow.
         /// </summary>
-        Task<Guid> StartWorkflowAsync(string workflowName, string version, object input);
+        Task<Guid> StartWorkflowAsync(string workflowName, int version, object input);
+
+        /// <summary>
+        /// Cancels a workflow instance by triggering a cancellation token.
+        /// </summary>
+        Task CancelWorkflowAsync(Guid instanceId, string token, string reason = "");
     }
 }

@@ -3,16 +3,17 @@ using Workflows.Runner.Tests.TestData;
 
 namespace Workflows.Runner.Tests.TestWorkflows
 {
-    public class CompensationTestWorkflow : WorkflowContainer
+    [Workflow("CompensationTestWorkflow", 1)]
+    public sealed class CompensationTestWorkflow : WorkflowContainer
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(CompensationTestWorkflowState state = null!)
         {
             ExecutionLog.Add("Start");
 
             // Step 1: Execute first command with compensation
-            yield return ExecuteCommand<ReserveInventoryCommand, ReserveInventoryResult>(
+            yield return ExecuteImmediate<ReserveInventoryCommand, ReserveInventoryResult>(
                 "ReserveInventory",
                 new ReserveInventoryCommand { ProductId = "PROD-001", Quantity = 5 })
                 .WithState("InventoryReservation")
@@ -28,7 +29,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
                 });
 
             // Step 2: Execute payment command with compensation
-            yield return ExecuteCommand<ProcessPaymentCommand, ProcessPaymentResult>(
+            yield return ExecuteDeferred<ProcessPaymentCommand, ProcessPaymentResult>(
                 "ProcessPayment",
                 new ProcessPaymentCommand { OrderId = "ORD-123", Amount = 100 })
                 .WithState("PaymentProcessing")
@@ -55,4 +56,9 @@ namespace Workflows.Runner.Tests.TestWorkflows
 
         public bool ShouldFail { get; set; }
     }
+
+    public class CompensationTestWorkflowState
+    {
+    }
 }
+

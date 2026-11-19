@@ -2,6 +2,8 @@ using System;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Workflows.Abstraction.DTOs.Waits;
+using Workflows.Definition.Helpers;
 using Workflows.Primitives;
 
 namespace Workflows.Definition
@@ -18,9 +20,12 @@ namespace Workflows.Definition
             return this;
         }
 
-        public SignalBuilder<TSignal> OnCanceled(Func<ValueTask> cancelAction)
+        public SignalBuilder<TSignal> OnCanceled(
+            Func<ValueTask> cancelAction,
+            [CallerMemberName] string callerName = "",
+            [CallerArgumentExpression(nameof(cancelAction))] string? expression = default)
         {
-            _wait.OnCanceled(cancelAction);
+            _wait.OnCanceled(cancelAction, callerName, expression);
             return this;
         }
 
@@ -38,10 +43,11 @@ namespace Workflows.Definition
 
         public SignalBuilder<TSignal> MatchIf(
             Expression<Func<TSignal, bool>> matchExpression,
+            [CallerMemberName] string callerName = "",
             [CallerLineNumber] int callerLineNumber = 0,
             [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
-            _wait.MatchIf(matchExpression, callerLineNumber, expression);
+            _wait.MatchIf(matchExpression, callerName, callerLineNumber, expression);
             return this;
         }
 
@@ -53,6 +59,7 @@ namespace Workflows.Definition
 
         public static implicit operator SignalWait<TSignal>(SignalBuilder<TSignal> builder) => builder._wait;
         public static implicit operator Wait(SignalBuilder<TSignal> builder) => builder._wait;
+        public static implicit operator WaitInfrastructureDto(SignalBuilder<TSignal> builder) => WaitDtoConversion.Convert(builder._wait);
     }
 
     public readonly struct StatefulSignalBuilder<TSignal, TState>
@@ -67,15 +74,21 @@ namespace Workflows.Definition
             return this;
         }
 
-        public StatefulSignalBuilder<TSignal, TState> OnCanceled(Func<TState, ValueTask> cancelAction)
+        public StatefulSignalBuilder<TSignal, TState> OnCanceled(
+            Func<TState, ValueTask> cancelAction,
+            [CallerMemberName] string callerName = "",
+            [CallerArgumentExpression(nameof(cancelAction))] string? expression = default)
         {
-            _wait.OnCanceled(cancelAction);
+            _wait.OnCanceled(cancelAction, callerName, expression);
             return this;
         }
 
-        public StatefulSignalBuilder<TSignal, TState> OnCanceled(Func<ValueTask> cancelAction)
+        public StatefulSignalBuilder<TSignal, TState> OnCanceled(
+            Func<ValueTask> cancelAction,
+            [CallerMemberName] string callerName = "",
+            [CallerArgumentExpression(nameof(cancelAction))] string? expression = default)
         {
-            _wait.OnCanceled(cancelAction);
+            _wait.OnCanceled(cancelAction, callerName, expression);
             return this;
         }
 
@@ -99,24 +112,27 @@ namespace Workflows.Definition
 
         public StatefulSignalBuilder<TSignal, TState> MatchIf(
             Expression<Func<TSignal, TState, bool>> matchExpression,
+            [CallerMemberName] string callerName = "",
             [CallerLineNumber] int callerLineNumber = 0,
             [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
-            _wait.MatchIf(matchExpression, callerLineNumber, expression);
+            _wait.MatchIf(matchExpression, callerName, callerLineNumber, expression);
             return this;
         }
 
         public StatefulSignalBuilder<TSignal, TState> MatchIf(
             Expression<Func<TSignal, bool>> matchExpression,
+            [CallerMemberName] string callerName = "",
             [CallerLineNumber] int callerLineNumber = 0,
             [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
-            _wait.MatchIf(matchExpression, callerLineNumber, expression);
+            _wait.MatchIf(matchExpression, callerName, callerLineNumber, expression);
             return this;
         }
 
         public static implicit operator SignalWait<TSignal>(StatefulSignalBuilder<TSignal, TState> builder) => builder._wait;
         public static implicit operator Wait(StatefulSignalBuilder<TSignal, TState> builder) => builder._wait;
+        public static implicit operator WaitInfrastructureDto(StatefulSignalBuilder<TSignal, TState> builder) => WaitDtoConversion.Convert(builder._wait);
     }
 
     /// <summary>
@@ -126,6 +142,13 @@ namespace Workflows.Definition
     public partial class SignalWait<SignalData> : Wait, ISignalWait
     {
         internal Delegate AfterMatchAction { get; set; }
+
+        /// <summary>
+        /// Stable hash key computed from the expression text, caller method name, and signal
+        /// identifier. Stored in the DTO so the runner can look up the live delegate in
+        /// <see cref="ICallbackRegistry"/> without reflection.
+        /// </summary>
+        internal string? HandlerKey { get; set; }
 
         internal SignalWait(
             string signalIdentifier,
@@ -179,23 +202,27 @@ namespace Workflows.Definition
 
         internal SignalWait<SignalData> MatchIf<TState>(
             Expression<Func<SignalData, TState, bool>> matchExpression,
+            string callerName = "",
             [CallerLineNumber] int callerLineNumber = 0,
             [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             MatchExpression = matchExpression;
             InCodeLine = callerLineNumber;
             MatchExpressionAsText = expression;
+            HandlerKey = WorkflowHashCalculator.CalculateHash(expression, callerName, "Match_" + SignalIdentifier);
             return this;
         }
 
         internal SignalWait<SignalData> MatchIf(
             Expression<Func<SignalData, bool>> matchExpression,
+            string callerName = "",
             [CallerLineNumber] int callerLineNumber = 0,
             [CallerArgumentExpression(nameof(matchExpression))] string? expression = default)
         {
             MatchExpression = matchExpression;
             InCodeLine = callerLineNumber;
             MatchExpressionAsText = expression;
+            HandlerKey = WorkflowHashCalculator.CalculateHash(expression, callerName, "Match_" + SignalIdentifier);
             return this;
         }
 

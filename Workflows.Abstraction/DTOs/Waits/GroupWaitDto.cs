@@ -1,4 +1,6 @@
 
+using System.Linq;
+
 namespace Workflows.Abstraction.DTOs.Waits
 {
     /// <summary>
@@ -11,5 +13,12 @@ namespace Workflows.Abstraction.DTOs.Waits
         /// Name of the match function for custom group matching.
         /// </summary>
         public string MatchFuncName { get; internal set; }
+
+        /// <summary>
+        /// Finds a child wait by name. Returns null if not found.
+        /// Useful in MigrateActiveWait to inspect partial completion status.
+        /// </summary>
+        public WaitInfrastructureDto? Child(string waitName)
+            => ChildWaits?.FirstOrDefault(w => w.WaitName == waitName);
     }
 }

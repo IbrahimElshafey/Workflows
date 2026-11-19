@@ -12,8 +12,8 @@ using Workflows.Abstraction.Runner;
 using Workflows.Definition;
 using Workflows.Definition.Registration;
 using Workflows.Runner.Pipeline;
+using Workflows.Runner.Pipeline.CompletionChecker;
 using Workflows.Runner;
-using Workflows.Runner.Pipeline.Matchers;
 using Workflows.Shared;
 
 namespace Workflows.TestShell
@@ -25,13 +25,13 @@ namespace Workflows.TestShell
         private readonly List<ExecutionLogEntry> _executionLog = new();
         private string? _currentStateJson;
         private WorkflowStateDto? _currentState;
-        private Guid _lastTriggeringWaitId;
+        private string _lastTriggeringWaitId = string.Empty;
 
         public IServiceProvider ServiceProvider => _serviceProvider;
 
         public WorkflowStateDto? CurrentState => _currentState;
 
-        public IReadOnlyList<WaitInfrastructureDto> ActiveWaits => _currentState?.Waits ?? new List<WaitInfrastructureDto>();
+        public IReadOnlyList<WaitInfrastructureDto> ActiveWaits => _currentState?.Waits?.Where(w => w.Status == WaitStatus.Waiting).ToList() ?? new List<WaitInfrastructureDto>();
 
         public WorkflowInstanceStatus CurrentStatus => _currentState?.Status ?? WorkflowInstanceStatus.New;
 
@@ -76,15 +76,22 @@ namespace Workflows.TestShell
             _executionLog.Add(new ExecutionLogEntry
             {
                 TriggeringWaitId = _lastTriggeringWaitId,
-                ConsumedWaitIds = response.ConsumedWaitsIds?.Distinct().ToList() ?? new List<Guid>(),
-                NewWaitIds = response.UpdatedState.Waits?.Select(w => w.Id).ToList() ?? new List<Guid>(),
+                ConsumedWaitIds = response.ConsumedWaitsIds?.Distinct().ToList() ?? new List<string>(),
+                NewWaitIds = response.UpdatedState.Waits?.Where(w => w.Status == WaitStatus.Waiting).Select(w => w.Id).ToList() ?? new List<string>(),
                 Status = response.UpdatedState.Status,
                 SerializedStateSnapshot = _currentStateJson,
                 Timestamp = DateTime.UtcNow
             });
         }
 
-        public WorkflowTestShell RegisterWorkflow<TWorkflow>(string name, string version) where TWorkflow : WorkflowContainer
+        public WorkflowTestShell RegisterWorkflow<TWorkflow>() where TWorkflow : WorkflowContainer
+        {
+            var builder = _serviceProvider.GetRequiredService<IWorkflowBuilder>();
+            builder.RegisterWorkflow<TWorkflow>();
+            return this;
+        }
+
+        public WorkflowTestShell RegisterWorkflow<TWorkflow>(string name, int version) where TWorkflow : WorkflowContainer
         {
             var builder = _serviceProvider.GetRequiredService<IWorkflowBuilder>();
             builder.RegisterWorkflow<TWorkflow>(name, version);
@@ -113,7 +120,7 @@ namespace Workflows.TestShell
 
         public async Task<WorkflowStateDto?> StartWorkflowAsync(string workflowName, object? input = null)
         {
-            _lastTriggeringWaitId = Guid.Empty;
+            _lastTriggeringWaitId = string.Empty;
             var runner = _serviceProvider.GetRequiredService<IWorkflowRunner>();
             await runner.StartWorkflow(workflowName, input);
             return _currentState;
@@ -153,7 +160,7 @@ namespace Workflows.TestShell
             return _currentState;
         }
 
-        public async Task<WorkflowStateDto?> SimulateCommandResultAsync(Guid waitId, object commandResult)
+        public async Task<WorkflowStateDto?> SimulateCommandResultByWaitIdAsync(string waitId, object commandResult)
         {
             if (_currentState == null || _currentStateJson == null)
             {
@@ -196,7 +203,7 @@ namespace Workflows.TestShell
                 throw new InvalidOperationException($"No active CommandWait found matching command identifier '{commandIdentifier}'.");
             }
 
-            return await SimulateCommandResultAsync(activeWait.Id, commandResult);
+            return await SimulateCommandResultByWaitIdAsync(activeWait.Id, commandResult);
         }
 
         /// <summary>
@@ -210,13 +217,14 @@ namespace Workflows.TestShell
             context.TriggeringWaitId = waitDto.Id;
             context.WorkflowState = _currentState ?? new WorkflowStateDto 
             { 
-                StateObject = new WorkflowStateObject() 
+                WorkflowType = _currentState?.WorkflowType,
+                StateObject = new WorkflowStateObject { WorkflowType = _currentState?.WorkflowType } 
             };
             context.WorkflowInstance = _currentState?.StateObject?.Instance as WorkflowContainer;
 
-            var matcherFactory = scope.ServiceProvider.GetRequiredService<MatcherFactory>();
-            var matcher = matcherFactory.GetMatcher(waitDto);
-            return await matcher.MatchAsync(waitDto);
+            var matcherFactory = scope.ServiceProvider.GetRequiredService<CompletionCheckerFactory>();
+            var matcher = matcherFactory.GetChecker(waitDto);
+            return await matcher.IsCompleted(waitDto);
         }
 
         /// <summary>
@@ -230,13 +238,14 @@ namespace Workflows.TestShell
             context.TriggeringWaitId = waitDto.Id;
             context.WorkflowState = _currentState ?? new WorkflowStateDto 
             { 
-                StateObject = new WorkflowStateObject() 
+                WorkflowType = _currentState?.WorkflowType,
+                StateObject = new WorkflowStateObject { WorkflowType = _currentState?.WorkflowType } 
             };
             context.WorkflowInstance = _currentState?.StateObject?.Instance as WorkflowContainer;
 
-            var matcherFactory = scope.ServiceProvider.GetRequiredService<MatcherFactory>();
-            var matcher = matcherFactory.GetMatcher(waitDto);
-            return await matcher.MatchAsync(waitDto);
+            var matcherFactory = scope.ServiceProvider.GetRequiredService<CompletionCheckerFactory>();
+            var matcher = matcherFactory.GetChecker(waitDto);
+            return await matcher.IsCompleted(waitDto);
         }
 
         private WaitInfrastructureDto? FindActiveWait(IEnumerable<WaitInfrastructureDto> waits, Func<WaitInfrastructureDto, bool> predicate)

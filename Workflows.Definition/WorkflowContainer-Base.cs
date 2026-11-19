@@ -6,8 +6,6 @@ namespace Workflows.Definition
 {
     public abstract partial class WorkflowContainer
     {
-        public abstract IAsyncEnumerable<Wait> Run();
-
         internal Dictionary<Guid, object> WaitsStates { get; set; } = new Dictionary<Guid, object>();
         internal HashSet<string> TokensToCancel { get; set; } = new HashSet<string>();
 

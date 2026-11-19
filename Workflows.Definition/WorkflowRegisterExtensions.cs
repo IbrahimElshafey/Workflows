@@ -1,4 +1,6 @@
-﻿using System.Linq;
+using System;
+using System.Linq;
+using System.Reflection;
 using Workflows.Definition.Registration;
 
 namespace Workflows.Definition
@@ -6,43 +8,73 @@ namespace Workflows.Definition
     public static class WorkflowRegisterExtensions
     {
         public static IWorkflowBuilder RegisterFromAssemblyContaining<T>(
-            this IWorkflowBuilder register,
-            string version)
+            this IWorkflowBuilder register)
         {
             var assembly = typeof(T).Assembly;
 
             // 1. Find all workflows
             var workflowTypes = assembly.GetTypes()
-                .Where(t => t.IsSubclassOf(typeof(WorkflowContainer)) && !t.IsAbstract);
+                .Where(t => t.IsSubclassOf(typeof(WorkflowContainer)) && !t.IsAbstract && t.DeclaringType == null);
 
             foreach (var type in workflowTypes)
             {
-                // Use reflection to call the generic RegisterWorkflow<T> method
-                var method = typeof(IWorkflowBuilder).GetMethod(nameof(IWorkflowBuilder.RegisterWorkflow))
-                                                      .MakeGenericMethod(type);
-                method.Invoke(register, [version]);
-            }
+                if (!type.IsSealed)
+                {
+                    throw new InvalidOperationException($"Registration failed for '{type.Name}'. The workflow class must be marked as sealed.");
+                }
 
-            // 2. Do the same for Signals and Commands based on their marker interfaces...
+                var attribute = type.GetCustomAttribute<WorkflowAttribute>();
+                if (attribute == null)
+                {
+                    throw new InvalidOperationException($"Workflow '{type.Name}' in assembly '{assembly.FullName}' is missing [WorkflowAttribute]. Automatically registering workflows without a version requires all workflows to have the attribute.");
+                }
+
+                var method = typeof(IWorkflowBuilder)
+                    .GetMethods()
+                    .First(m => m.Name == nameof(IWorkflowBuilder.RegisterWorkflow) && m.GetGenericArguments().Length == 1 && m.GetParameters().Length == 0)
+                    .MakeGenericMethod(type);
+
+                method.Invoke(register, null);
+            }
 
             return register;
         }
-        /*
-         *
-            // In the user's Program.cs or Startup.cs
-            builder.Services.AddWorkflows(setup => 
-            {
-                // Smart: Automatically find and register everything in this assembly as v1.2.0
-                setup.RegisterFromAssemblyContaining<OrderProcessingWorkflow>(version: "1.2.0");
 
-                // Easy: Or explicitly register specific ones fluently
-                setup.RegisterWorkflow<PaymentWorkflow>("2.0.0")
-                     .RegisterSignal<PaymentCompletedSignal>()
-                     .RegisterCommand<CancelOrderCommand, CancelResult>();
-         
-                // Bind this specific runner instance
-                setup.RegisterRunner(runnerId: "Runner-Node-01", listeningQueues: new[] { "workflows.v1", "workflows.v2" });
-            });
-         * */
+        public static IWorkflowBuilder RegisterFromAssemblyContaining<T>(
+            this IWorkflowBuilder register,
+            int version)
+        {
+            var assembly = typeof(T).Assembly;
+
+            // 1. Find all workflows
+            var workflowTypes = assembly.GetTypes()
+                .Where(t => t.IsSubclassOf(typeof(WorkflowContainer)) && !t.IsAbstract && t.DeclaringType == null);
+
+            foreach (var type in workflowTypes)
+            {
+                if (!type.IsSealed)
+                {
+                    throw new InvalidOperationException($"Registration failed for '{type.Name}'. The workflow class must be marked as sealed.");
+                }
+
+                var attribute = type.GetCustomAttribute<WorkflowAttribute>();
+                if (attribute == null)
+                {
+                    throw new InvalidOperationException($"Workflow '{type.Name}' in assembly '{assembly.FullName}' is missing [WorkflowAttribute]. All workflows must be decorated with [WorkflowAttribute].");
+                }
+                string name = attribute.Name;
+                int v = version;
+
+                // Use reflection to call the generic RegisterWorkflow<T>(string name, int version) method
+                var method = typeof(IWorkflowBuilder)
+                    .GetMethods()
+                    .First(m => m.Name == nameof(IWorkflowBuilder.RegisterWorkflow) && m.GetGenericArguments().Length == 1 && m.GetParameters().Length == 2)
+                    .MakeGenericMethod(type);
+
+                method.Invoke(register, new object[] { name, v });
+            }
+
+            return register;
+        }
     }
 }

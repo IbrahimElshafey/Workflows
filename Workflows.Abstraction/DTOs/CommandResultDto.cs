@@ -7,7 +7,7 @@ namespace Workflows.Abstraction.DTOs
     /// </summary>
     public class CommandResultDto
     {
-        public Guid CommandWaitId { get; set; }
+        public string CommandWaitId { get; set; } = string.Empty;
         public object Result { get; set; }
         public DateTime ClientSentTime { get; set; }
         public DateTime OrchestratorReceiveTime { get; set; }

@@ -3,11 +3,12 @@ using Workflows.Runner.Tests.TestData;
 
 namespace Workflows.Runner.Tests.TestWorkflows
 {
+    [Workflow("SubWorkflowTest", 1)]
     public sealed class SubWorkflowTestWorkflow : WorkflowContainer
     {
         public List<string> ExecutionLog { get; set; } = new();
 
-        public override async IAsyncEnumerable<Wait> Run()
+        public async IAsyncEnumerable<Wait> Run(SubWorkflowTestWorkflowState state = null!)
         {
             ExecutionLog.Add("Parent: Start");
 
@@ -21,7 +22,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
 
             // Execute sub-workflow (resumable function)
             yield return WaitSubWorkflow(
-                ProcessOrderSubWorkflow(),
+                ProcessOrderSubWorkflow(new ProcessOrderState()),
                 "ProcessOrder",
                 "Process order items");
 
@@ -29,7 +30,7 @@ namespace Workflows.Runner.Tests.TestWorkflows
 
             // Another sub-workflow with state
             yield return WaitSubWorkflow(
-                ShipmentSubWorkflow(),
+                ShipmentSubWorkflow(new ShipmentState()),
                 "Shipment",
                 "Handle shipment")
                 .WithState("ShipmentState");
@@ -37,12 +38,13 @@ namespace Workflows.Runner.Tests.TestWorkflows
             ExecutionLog.Add("Parent: End");
         }
 
-        private async IAsyncEnumerable<Wait> ProcessOrderSubWorkflow()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> ProcessOrderSubWorkflow(ProcessOrderState state = null!)
         {
             ExecutionLog.Add("SubWorkflow1: Start");
 
             // Sub-workflow can have its own waits
-            yield return ExecuteCommand<ReserveInventoryCommand, ReserveInventoryResult>(
+            yield return ExecuteImmediate<ReserveInventoryCommand, ReserveInventoryResult>(
                 "ReserveInventory",
                 new ReserveInventoryCommand { ProductId = "SUB-PROD1", Quantity = 1 })
                 .OnResult((result) =>
@@ -59,7 +61,8 @@ namespace Workflows.Runner.Tests.TestWorkflows
             ExecutionLog.Add("SubWorkflow1: End");
         }
 
-        private async IAsyncEnumerable<Wait> ShipmentSubWorkflow()
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> ShipmentSubWorkflow(ShipmentState state = null!)
         {
             ExecutionLog.Add("SubWorkflow2: Start");
 
@@ -89,4 +92,17 @@ namespace Workflows.Runner.Tests.TestWorkflows
             ExecutionLog.Add("SubWorkflow2: End");
         }
     }
+
+    public class SubWorkflowTestWorkflowState
+    {
+    }
+
+    public class ProcessOrderState
+    {
+    }
+
+    public class ShipmentState
+    {
+    }
 }
+

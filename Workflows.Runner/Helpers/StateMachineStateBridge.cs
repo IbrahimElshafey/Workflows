@@ -17,11 +17,50 @@ namespace Workflows.Runner.Helpers
         private static readonly ConcurrentDictionary<Type, Func<object, StateMachineObject>> _dehydratorCache
             = new ConcurrentDictionary<Type, Func<object, StateMachineObject>>();
 
+        private static object UnwrapEnumerator(object enumerator)
+        {
+            if (enumerator == null) return null;
+            var type = enumerator.GetType();
+
+            var prop = type.GetProperty("InnerEnumerator", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (prop != null)
+            {
+                var inner = prop.GetValue(enumerator);
+                if (inner != null)
+                {
+                    return UnwrapEnumerator(inner);
+                }
+            }
+
+            if (type.FullName != null && type.FullName.Contains("CastOrConvertStream"))
+            {
+                var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var field in fields)
+                {
+                    var fieldType = field.FieldType;
+                    var isEnumerator = (fieldType.IsGenericType && fieldType.GetGenericTypeDefinition() == typeof(System.Collections.Generic.IAsyncEnumerator<>)) ||
+                                       fieldType.GetInterfaces().Any(i => 
+                                           i.IsGenericType && 
+                                           i.GetGenericTypeDefinition() == typeof(System.Collections.Generic.IAsyncEnumerator<>));
+                    if (isEnumerator)
+                    {
+                        var inner = field.GetValue(enumerator);
+                        if (inner != null)
+                        {
+                            return UnwrapEnumerator(inner);
+                        }
+                    }
+                }
+            }
+            return enumerator;
+        }
+
         public static void Hydrate(object enumerator, StateMachineObject stateObj)
         {
             if (enumerator == null) return;
             if (stateObj == null) return;
 
+            enumerator = UnwrapEnumerator(enumerator);
             var type = enumerator.GetType();
             var hydrator = _hydratorCache.GetOrAdd(type, BuildHydratorDelegate);
             hydrator(enumerator, stateObj);
@@ -31,6 +70,7 @@ namespace Workflows.Runner.Helpers
         {
             if (enumerator == null) return null;
 
+            enumerator = UnwrapEnumerator(enumerator);
             var type = enumerator.GetType();
             var dehydrator = _dehydratorCache.GetOrAdd(type, BuildDehydratorDelegate);
             return dehydrator(enumerator);
@@ -96,26 +136,6 @@ namespace Workflows.Runner.Helpers
                 ));
             }
 
-            // 3. Hydrate state machine variables
-            var stateFieldsToHydrate = fields.Where(IsLocalField).ToList();
-            if (stateFieldsToHydrate.Any())
-            {
-                var variableAssignments = new List<Expression>();
-
-                foreach (var f in stateFieldsToHydrate)
-                {
-                    var cleanName = GetCleanFieldName(f.Name);
-                    var outVar = Expression.Variable(typeof(object), cleanName + "_out");
-                    localVariables.Add(outVar);
-
-                    var tryGetCall = Expression.Call(stateParam, dictTryGetValueMethod, Expression.Constant(cleanName), outVar);
-                    var assignField = Expression.Assign(Expression.Field(typedEnumerator, f), Expression.Convert(outVar, f.FieldType));
-
-                    variableAssignments.Add(Expression.IfThen(tryGetCall, assignField));
-                }
-                assignments.Add(Expression.Block(variableAssignments));
-            }
-
             var block = Expression.Block(localVariables, assignments);
             var lambda = Expression.Lambda<Action<object, StateMachineObject>>(block, enumeratorParam, stateParam);
 
@@ -151,21 +171,6 @@ namespace Workflows.Runner.Helpers
                     Expression.Property(stateVar, nameof(StateMachineObject.Instance)),
                     Expression.Convert(Expression.Field(typedEnumerator, thisField), typeof(object))
                 ));
-            }
-
-            // 3. Extract variables
-            var dictAddMethod = typeof(Dictionary<string, object>).GetMethod("Add", new[] { typeof(string), typeof(object) });
-
-            var stateFieldsToDehydrate = fields.Where(IsLocalField).ToList();
-            foreach (var f in stateFieldsToDehydrate)
-            {
-                var cleanName = GetCleanFieldName(f.Name);
-                var fieldAccess = Expression.Field(typedEnumerator, f);
-                var castedField = Expression.Convert(fieldAccess, typeof(object));
-                var isNotNull = Expression.NotEqual(castedField, Expression.Constant(null, typeof(object)));
-
-                var addCall = Expression.Call(stateVar, dictAddMethod, Expression.Constant(cleanName), castedField);
-                assignments.Add(Expression.IfThen(isNotNull, addCall));
             }
 
             assignments.Add(stateVar); // Return value

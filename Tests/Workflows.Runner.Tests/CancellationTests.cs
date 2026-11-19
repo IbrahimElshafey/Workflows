@@ -1,4 +1,7 @@
 using FluentAssertions;
+using System.Threading.Tasks;
+using Workflows.Definition;
+using Workflows.Runner.Pipeline;
 using Workflows.Runner.Tests.TestWorkflows;
 using Xunit;
 
@@ -53,17 +56,38 @@ namespace Workflows.Runner.Tests
                 yieldedWaits.Add(wait);
             }
 
-            var cancelProcessor = new Workflows.Runner.Pipeline.Processors.CancelProcessor();
+            var cancelHandler = new CancelTokensHandler();
             foreach (var wait in yieldedWaits)
             {
                 if (wait.CancelTokens != null && wait.CancelTokens.Intersect(workflow.TokensToCancel).Any())
                 {
-                    await cancelProcessor.InvokeCancelActionAsync(wait);
+                    await InvokeCancelActionAsync(wait);
                 }
             }
 
             // Assert
             workflow.ExecutionLog.Should().Contain(log => log.Contains("cancelled"));
+        }
+
+        private static async Task InvokeCancelActionAsync(Wait wait)
+        {
+            if (wait.CancelAction == null) return;
+
+            switch (wait.CancelAction)
+            {
+                case Func<ValueTask> asyncAction:
+                    await asyncAction();
+                    break;
+                case Func<object, ValueTask> asyncActionWithState:
+                    await asyncActionWithState(wait);
+                    break;
+                case Action action:
+                    action();
+                    break;
+                case Action<object> actionWithState:
+                    actionWithState(wait);
+                    break;
+            }
         }
 
         [Fact]

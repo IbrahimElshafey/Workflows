@@ -51,7 +51,7 @@ namespace Workflows.Client.gRPC
             {
                 var resultDto = new CommandResultDto
                 {
-                    CommandWaitId = Guid.Parse(request.CommandWaitId),
+                    CommandWaitId = request.CommandWaitId,
                     Result = string.IsNullOrEmpty(request.JsonResult) ? null! : request.JsonResult, // Pass raw JSON string; Orchestrator will deserialize
                     ClientSentTime = DateTime.Parse(request.ClientSentTime, null, System.Globalization.DateTimeStyles.RoundtripKind),
                     OrchestratorReceiveTime = DateTime.UtcNow
@@ -100,7 +100,7 @@ namespace Workflows.Client.gRPC
             {
                 var notification = new CommandDispatchNotification
                 {
-                    CommandWaitId = Guid.Parse(request.CommandWaitId),
+                    CommandWaitId = request.CommandWaitId,
                     HandlerKey = request.HandlerKey,
                     CommandData = string.IsNullOrEmpty(request.JsonData) ? null! : request.JsonData, // Pass JSON string directly to defer typed deserialization
                     DispatchedAt = DateTime.Parse(request.DispatchedAt, null, System.Globalization.DateTimeStyles.RoundtripKind)

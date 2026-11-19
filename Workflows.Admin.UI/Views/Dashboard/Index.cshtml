@@ -1,0 +1,203 @@
+@model DashboardViewModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+    <h1 class="h2">Dashboard</h1>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-2">
+        <div class="card text-white bg-primary h-100">
+            <div class="card-body">
+                <h5 class="card-title">Total</h5>
+                <p class="card-text display-6">@Model.TotalInstances</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-white bg-success h-100">
+            <div class="card-body">
+                <h5 class="card-title">Running</h5>
+                <p class="card-text display-6">@Model.RunningInstances</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-dark bg-warning h-100">
+            <div class="card-body">
+                <h5 class="card-title">Suspended</h5>
+                <p class="card-text display-6">@Model.SuspendedInstances</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-white bg-info h-100">
+            <div class="card-body">
+                <h5 class="card-title">Completed</h5>
+                <p class="card-text display-6">@Model.CompletedInstances</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-white bg-danger h-100">
+            <div class="card-body">
+                <h5 class="card-title">Faulted</h5>
+                <p class="card-text display-6">@Model.FaultedInstances</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-white bg-secondary h-100">
+            <div class="card-body">
+                <h5 class="card-title">Canceled</h5>
+                <p class="card-text display-6">@Model.CanceledInstances</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Active Signal Waits</h6>
+                <p class="card-text display-6">@Model.ActiveSignalWaits</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Active Command Waits</h6>
+                <p class="card-text display-6">@Model.ActiveCommandWaits</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Active Time Waits</h6>
+                <p class="card-text display-6">@Model.ActiveTimeWaits</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h6 class="card-subtitle mb-2 text-muted">Active Compensation Waits</h6>
+                <p class="card-text display-6">@Model.ActiveCompensationWaits</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">Daily Activity (Last 30 Days)</div>
+            <div class="card-body">
+                <canvas id="dailyActivityChart" height="120"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Instances by Workflow Type</div>
+            <div class="card-body">
+                <canvas id="workflowTypeChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Key Metrics</div>
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Failure Rate
+                    <span class="badge bg-danger rounded-pill">@Model.FailureRate%</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Avg. Execution Latency
+                    <span class="badge bg-primary rounded-pill">@Model.AverageExecutionLatencyMs ms</span>
+                </li>
+            </ul>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Alerts</div>
+            <div class="list-group list-group-flush">
+                @if (Model.Alerts.Any())
+                {
+                    foreach (var alert in Model.Alerts)
+                    {
+                        string alertClass = alert.Severity == AlertSeverity.Critical
+                            ? "list-group-item-danger"
+                            : alert.Severity == AlertSeverity.Warning
+                                ? "list-group-item-warning"
+                                : "list-group-item-info";
+                        <div class="list-group-item @alertClass">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">@alert.Title</h6>
+                                <small>@alert.DetectedAt.ToString("g")</small>
+                            </div>
+                            <p class="mb-1">@alert.Message</p>
+                            @if (!string.IsNullOrEmpty(alert.InstanceId))
+                            {
+                                <a href="/admin/Instances/Detail/@alert.InstanceId" class="small">View instance</a>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="list-group-item text-muted">No active alerts.</div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        const dailyData = @Html.Raw(Json.Serialize(Model.DailyInstanceCounts));
+        const typeData = @Html.Raw(Json.Serialize(Model.InstancesByWorkflowType));
+
+        new Chart(document.getElementById('dailyActivityChart'), {
+            type: 'line',
+            data: {
+                labels: dailyData.map(d => new Date(d.date).toLocaleDateString()),
+                datasets: [
+                    { label: 'Started', data: dailyData.map(d => d.started), borderColor: 'rgb(54, 162, 235)', tension: 0.3 },
+                    { label: 'Completed', data: dailyData.map(d => d.completed), borderColor: 'rgb(75, 192, 192)', tension: 0.3 },
+                    { label: 'Faulted', data: dailyData.map(d => d.faulted), borderColor: 'rgb(255, 99, 132)', tension: 0.3 }
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+
+        new Chart(document.getElementById('workflowTypeChart'), {
+            type: 'doughnut',
+            data: {
+                labels: typeData.map(t => t.workflowType),
+                datasets: [{
+                    data: typeData.map(t => t.count),
+                    backgroundColor: [
+                        'rgb(54, 162, 235)', 'rgb(75, 192, 192)', 'rgb(255, 99, 132)',
+                        'rgb(255, 205, 86)', 'rgb(153, 102, 255)', 'rgb(255, 159, 64)'
+                    ]
+                }]
+            },
+            options: { responsive: true }
+        });
+    </script>
+}

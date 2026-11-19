@@ -8,7 +8,6 @@ using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
 using Workflows.Abstraction.Helpers;
 using Workflows.Runner.Pipeline;
-using Workflows.Runner.Pipeline.Matchers;
 using Workflows.TestShell;
 using Workflows.Runner.Tests.TestData;
 using Workflows.Runner.Tests.TestWorkflows;
@@ -23,7 +22,7 @@ namespace Workflows.Runner.Tests
         {
             // Arrange
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", "1.0")
+            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", 1)
                  .RegisterSignal<OrderReceivedSignal>("OrderReceived")
                  .RegisterSignal<PaymentConfirmedSignal>("Payment1")
                  .RegisterSignal<PaymentConfirmedSignal>("Payment2")
@@ -69,7 +68,7 @@ namespace Workflows.Runner.Tests
 
             // Act: Resume fourth wait (TimeWait by ID)
             var delayWait = shell.ActiveWaits.First();
-            state = await shell.SimulateCommandResultAsync(delayWait.Id, null);
+            state = await shell.SimulateCommandResultByWaitIdAsync(delayWait.Id, null);
 
             // Assert fifth wait (Final Shipment Wait)
             shell.ActiveWaits.Should().ContainSingle(w => w.WaitName == "Final wait");
@@ -104,7 +103,7 @@ namespace Workflows.Runner.Tests
         {
             // Arrange
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<NestedGroupsTestWorkflow>("NestedGroupsTest", "1.0")
+            shell.RegisterWorkflow<NestedGroupsTestWorkflow>("NestedGroupsTest", 1)
                  .RegisterSignal<PaymentConfirmedSignal>("PaymentConfirmed")
                  .RegisterSignal<PaymentConfirmedSignal>("PaymentBackup")
                  .RegisterSignal<ShipmentSignal>("ShipmentReady")
@@ -150,7 +149,7 @@ namespace Workflows.Runner.Tests
         {
             // Arrange
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<SubWorkflowTestWorkflow>("SubWorkflowTest", "1.0")
+            shell.RegisterWorkflow<SubWorkflowTestWorkflow>("SubWorkflowTest", 1)
                  .RegisterSignal<OrderReceivedSignal>("OrderReceived")
                  .RegisterCommand<ReserveInventoryCommand, ReserveInventoryResult>("ReserveInventory")
                  .SetupCommandHandler<ReserveInventoryCommand, ReserveInventoryResult>("ReserveInventory",
@@ -180,7 +179,7 @@ namespace Workflows.Runner.Tests
         {
             // Arrange
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", "1.0")
+            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", 1)
                  .RegisterSignal<OrderReceivedSignal>("OrderReceived");
 
             // Act: Start workflow to generate a first wait DTO
@@ -212,7 +211,7 @@ namespace Workflows.Runner.Tests
         {
             // Arrange
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", "1.0")
+            shell.RegisterWorkflow<FirstWaitAndResumeWorkflow>("FirstWaitTest", 1)
                  .RegisterSignal<OrderReceivedSignal>("OrderReceived");
 
             // Act: Resolve internal services via ServiceProvider
@@ -231,13 +230,13 @@ namespace Workflows.Runner.Tests
             shell.ExecutionLog.Should().HaveCount(2);
 
             var startLog = shell.ExecutionLog[0];
-            startLog.TriggeringWaitId.Should().Be(Guid.Empty);
+            startLog.TriggeringWaitId.Should().BeEmpty();
             startLog.ConsumedWaitIds.Should().BeEmpty();
             startLog.NewWaitIds.Should().HaveCount(1);
             startLog.SerializedStateSnapshot.Should().NotBeNullOrEmpty();
 
             var resumeLog = shell.ExecutionLog[1];
-            resumeLog.TriggeringWaitId.Should().NotBe(Guid.Empty);
+            resumeLog.TriggeringWaitId.Should().NotBeEmpty();
             resumeLog.ConsumedWaitIds.Should().ContainSingle();
             resumeLog.NewWaitIds.Should().HaveCount(1); // The next wait is ProcessPayment
         }

@@ -17,18 +17,23 @@ namespace Workflows.Runner.Tests
             public int Amount { get; set; }
         }
 
+        public class GroupFilterTestWorkflowState
+        {
+        }
+
+        [Workflow("GroupFilterTest", 1)]
         public sealed class GroupFilterTestWorkflow : WorkflowContainer
         {
             public List<string> ExecutionLog { get; set; } = new();
             public int StateValue { get; set; } = 100;
 
-            public override async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run(GroupFilterTestWorkflowState state = null!)
             {
                 ExecutionLog.Add("Start");
 
-                var sig1 = WaitSignal<OrderReceivedSignal>("Sig1")
+                var sig1 = WaitSignal<OrderReceivedSignal>("Sig1", "WaitSig1")
                     .AfterMatch(s => ExecutionLog.Add($"Sig1 received: {s.OrderId}"));
-                var sig2 = WaitSignal<OrderReceivedSignal>("Sig2")
+                var sig2 = WaitSignal<OrderReceivedSignal>("Sig2", "WaitSig2")
                     .AfterMatch(s => ExecutionLog.Add($"Sig2 received: {s.OrderId}"));
 
                 var group = WaitGroup(new[] { (Wait)sig1, (Wait)sig2 }, "MyGroup");
@@ -42,18 +47,23 @@ namespace Workflows.Runner.Tests
             }
         }
 
+        public class GroupFilterFailTestWorkflowState
+        {
+        }
+
+        [Workflow("GroupFilterFailTest", 1)]
         public sealed class GroupFilterFailTestWorkflow : WorkflowContainer
         {
             public List<string> ExecutionLog { get; set; } = new();
             public int StateValue { get; set; } = 30;
 
-            public override async IAsyncEnumerable<Wait> Run()
+            public async IAsyncEnumerable<Wait> Run(GroupFilterFailTestWorkflowState state = null!)
             {
                 ExecutionLog.Add("Start");
 
-                var sig1 = WaitSignal<OrderReceivedSignal>("Sig1")
+                var sig1 = WaitSignal<OrderReceivedSignal>("Sig1", "WaitSig1")
                     .AfterMatch(s => ExecutionLog.Add($"Sig1 received: {s.OrderId}"));
-                var sig2 = WaitSignal<OrderReceivedSignal>("Sig2")
+                var sig2 = WaitSignal<OrderReceivedSignal>("Sig2", "WaitSig2")
                     .AfterMatch(s => ExecutionLog.Add($"Sig2 received: {s.OrderId}"));
 
                 var group = WaitGroup(new[] { (Wait)sig1, (Wait)sig2 }, "MyGroup");
@@ -71,7 +81,7 @@ namespace Workflows.Runner.Tests
         public async Task GroupFilter_ShouldEvaluateMatchIfFilter_AndSucceed_WhenConditionMet()
         {
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<GroupFilterTestWorkflow>("GroupFilterTest", "1.0")
+            shell.RegisterWorkflow<GroupFilterTestWorkflow>("GroupFilterTest", 1)
                  .RegisterSignal<OrderReceivedSignal>("Sig1")
                  .RegisterSignal<OrderReceivedSignal>("Sig2");
 
@@ -94,7 +104,7 @@ namespace Workflows.Runner.Tests
         public async Task GroupFilter_ShouldEvaluateMatchIfFilter_AndNotComplete_WhenConditionNotMet()
         {
             using var shell = new WorkflowTestShell();
-            shell.RegisterWorkflow<GroupFilterFailTestWorkflow>("GroupFilterFailTest", "1.0")
+            shell.RegisterWorkflow<GroupFilterFailTestWorkflow>("GroupFilterFailTest", 1)
                  .RegisterSignal<OrderReceivedSignal>("Sig1")
                  .RegisterSignal<OrderReceivedSignal>("Sig2");
 
@@ -115,3 +125,4 @@ namespace Workflows.Runner.Tests
         }
     }
 }
+

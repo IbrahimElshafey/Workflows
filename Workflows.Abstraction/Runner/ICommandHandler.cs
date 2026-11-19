@@ -13,27 +13,41 @@ namespace Workflows.Abstraction.Runner
         ValueTask<TResult> HandleAsync(TCommand command, CancellationToken cancellationToken);
     }
 
+    public interface ICommandHandler<in TInput, TOutput>
+    {
+        ValueTask<TOutput> HandleAsync(TInput input, CancellationToken cancellationToken = default);
+    }
+
+    public interface IDispatcher<in TInput>
+    {
+        ValueTask DispatchAsync(TInput input, string commandId, Guid workflowInstanceId, CancellationToken cancellationToken = default);
+    }
+
+    public interface IReceiver<TOutput>
+    {
+    }
+
     /// <summary>
     /// Dispatches a command to an external system. 
     /// Does NOT return a result, as the workflow will suspend and wait for an asynchronous callback.
     /// </summary>
     public interface IDeferredCommandDispatcher<in TCommand>
     {
-        ValueTask DispatchAsync(TCommand command, Guid commandId, Guid workflowInstanceId, CancellationToken cancellationToken);
+        ValueTask DispatchAsync(TCommand command, string commandId, Guid workflowInstanceId, CancellationToken cancellationToken);
     }
 
     public interface IWorkflowCommandContext
     {
         Guid WorkflowInstanceId { get; }
-        Guid CommandId { get; }
+        string CommandId { get; }
 
         // Used by the Runner to set the context before execution
-        void SetContext(Guid workflowInstanceId, Guid commandId);
+        void SetContext(Guid workflowInstanceId, string commandId);
     }
 
     // 2. INTERNAL WRITER (Used ONLY by the Runner/Factory)
     internal interface IWorkflowCommandContextSetter
     {
-        void SetContext(Guid workflowInstanceId, Guid commandId);
+        void SetContext(Guid workflowInstanceId, string commandId);
     }
 }

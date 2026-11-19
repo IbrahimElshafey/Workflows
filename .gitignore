@@ -352,3 +352,5 @@ MigrationBackup/
 /ResumableFunctions.Publisher/Properties/launchSettings.json
 /Examples/TestSomething/Properties/launchSettings.json
 /Examples/RefernceLibrary/Properties/launchSettings.json
+/sample_workflows.db-shm
+/sample_workflows.db-wal

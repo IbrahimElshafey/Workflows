@@ -108,7 +108,7 @@ namespace Workflows.Client.gRPC
                 var request = new Workflows.Client.Grpc.StartWorkflowRequest
                 {
                     WorkflowName = startReq.WorkflowName,
-                    Version = "1.0", // Default version
+                    Version = 1, // Default version
                     JsonInput = inputPayload as string ?? inputPayload?.ToString() ?? string.Empty
                 };
 
