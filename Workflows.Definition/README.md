@@ -40,13 +40,18 @@ public sealed partial class OrderProcessingWorkflow : WorkflowContainer
             "ChargeCard",
             new ChargeCardCommand { Amount = 100 });
 
-        // State-dependent wait
+        // State-dependent wait - the container property is rebound to the live instance,
+        // so no WithState (closure hand-off) is required here
         yield return WaitSignal<StockConfirmed>("StockConfirmed", "WaitStock")
-            .WithState(state)
-            .MatchIf((sig, st) => sig.OrderId == OrderId);
+            .MatchIf((sig) => sig.OrderId == OrderId);
     }
 }
 ```
+
+> [!IMPORTANT]
+> `.WithState(...)` is only for values held in **stack locals or parameters** - the only things matcher lambdas cannot capture (`WF000`). Container properties such as `OrderId` are read directly inside the matcher, which is rebound to the live deserialized container instance.
+>
+> Anonymous objects (`new { ... }`) are **rejected**: their compiler-generated type has no constructor a deserializer can use, so `WithState` throws `ArgumentException` and the analyzer reports `WF003`. Use a named class or record for the hand-off value.
 
 ### Registering Workflows
 

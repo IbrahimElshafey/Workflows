@@ -96,6 +96,7 @@ namespace Workflows.Definition
         internal void SetState(object state)
         {
             if (state == null) return;
+            Helpers.StateGuard.EnsurePersistable(state);
             foreach (var kvp in WorkflowContainer.WaitsStates)
             {
                 if (Equals(kvp.Value, state))
