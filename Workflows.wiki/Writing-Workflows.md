@@ -105,21 +105,64 @@ public async IAsyncEnumerable<Wait> Run(OrderState state)
 ```
 
 ### The Solution: Explicit State Hand-off (`WithState`)
-To use local variables inside your lambda expressions, pass them explicitly using `.WithState(...)`. This maps the local state into a serializable payload context that is safely passed to the delegate:
+Only genuine stack values — locals and method parameters — need to be handed off. `.WithState(...)` serializes the value into the wait payload so it survives the process boundary and is injected as an extra lambda argument:
 
 ```csharp
 public async IAsyncEnumerable<Wait> Run(OrderState state)
 {
-    int targetId = 42;
+    int targetId = state.TargetId; // parameter -> local: the parameter itself cannot be captured
     
     yield return WaitSignal<OrderEvent>("OrderEvent", "WaitOrder")
-        .WithState(targetId) // Explicitly hand off the variable
+        .WithState(targetId) // Explicitly hand off the local
         .MatchIf((evt, id) => evt.OrderId == id); // Pass it to the lambda arguments
 }
 ```
 
+### What NOT to pass to `WithState`
+Container properties (`this.UserId`, `this.CurrentOrderId`) and the workflow input POCO (`state`) must **not** be wrapped in `WithState`:
+
+```csharp
+// ✗ WRONG - both calls are pointless and change the semantics
+yield return WaitSignal<OrderEvent>("OrderEvent", "WaitOrder")
+    .WithState(this.UserId)   // freezes a snapshot of a live property
+    .WithState(state)         // copies the whole input POCO into the wait payload
+    .MatchIf((evt, s) => evt.OrderId == s.OrderId)   // compares against the frozen copy
+    .AfterMatch((evt, s) => UserId = s.UserId);      // stateful overload, also the frozen copy
+
+// ✓ CORRECT - instance members are rebound to the live deserialized container
+yield return WaitSignal<OrderEvent>("OrderEvent", "WaitOrder")
+    .MatchIf((evt) => evt.OrderId == UserId)
+    .AfterMatch((evt) => UserId = evt.UserId);
+```
+
+Why the "wrong" version is harmful:
+
+1. **No closure is avoided.** A property access inside a matcher compiles to a `this` reference, and the engine rewrites that reference to the live `WorkflowContainer` instance when the matcher is materialized. The analyzer (`WF000`) only rejects captures of *locals and parameters*.
+2. **The value is frozen.** `WithState` snapshots the value when the `Wait` is created, so a property assigned in an earlier step is not reflected in later comparisons.
+3. **The snapshot is persisted twice.** Each explicit state payload is written into machine-state `Locals` (keyed by the wait id *and* by the state key) on every suspend, bloating the serialized workflow instance.
+4. **It drags the whole chain into the stateful overloads** (`MatchIf((sig, st) => ...)`, `AfterMatch((sig, st) => ...)`, `OnCanceled(st => ...)`), coupling your callbacks to a snapshot instead of the live container.
+
 > [!NOTE]
-> Referencing `this` pointer properties (e.g., `this.UserId`) inside lambdas is perfectly safe and allowed because `this` refers to the `WorkflowContainer` instance itself, which is already a stable reference fully serialized by the engine.
+> Referencing `this` pointer properties (e.g., `this.UserId`) inside lambdas is perfectly safe and allowed because `this` refers to the `WorkflowContainer` instance itself, which is already a stable reference fully serialized by the engine. For the input POCO, copy what you need into container properties (or locals) once, then read those from the matchers.
+
+> [!TIP]
+> The analyzer catches both mistakes at compile time: **WF008** warns when a workflow container member (property/field, or `this` itself) is passed to `.WithState(...)`, and **WF009** warns when the input state parameter of a `Run`/sub-workflow method is passed instead of a copy. Parameters of ordinary helper methods are *not* flagged — those values are not stored in the machine state, so the hand-off is genuinely required there.
+
+### Anonymous Types Are Not Accepted
+
+`WithState` rejects anonymous objects. `new { OrderId = 1 }` is a compiler-generated type with no constructor a deserializer can bind to, so the value could never be restored after a resume. The analyzer reports it as an error (`WF003`) and `WithState` additionally throws `ArgumentException` at wait-creation time, so the mistake cannot slip past into production:
+
+```csharp
+// ✗ REJECTED - WF003 compile error, ArgumentException at runtime
+yield return WaitSignal<OrderEvent>("OrderEvent", "WaitOrder")
+    .WithState(new { OrderId = 1 });
+
+// ✓ Use a named class or record instead - it survives the round-trip
+yield return WaitSignal<OrderEvent>("OrderEvent", "WaitOrder")
+    .WithState(new OrderWaitState { OrderId = 1 });
+
+public sealed class OrderWaitState { public int OrderId { get; set; } }
+```
 
 ---
 

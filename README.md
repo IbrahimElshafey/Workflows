@@ -114,9 +114,12 @@ public sealed partial class OrderProcessingWorkflow : WorkflowContainer
 
     public async IAsyncEnumerable<Wait> Run(OrderProcessingState state)
     {
+        // Stack locals cannot be captured by matcher lambdas - hand them off explicitly
+        int minOrderId = state.MinOrderId;
+
         // 1. Wait for an external Order Submitted event
         yield return WaitSignal<OrderSubmittedEvent>("OrderSubmittedSignal", "Wait for Order Submission")
-            .WithState(state.MinOrderId) // Explicit state passing avoids closure allocations
+            .WithState(minOrderId) // Only local/parameter values need WithState
             .MatchIf((order, minId) => order.OrderId > minId)
             .AfterMatch((order) =>
             {
@@ -128,18 +131,19 @@ public sealed partial class OrderProcessingWorkflow : WorkflowContainer
         yield return WaitDelay(TimeSpan.FromMinutes(5), "Grace period before payment charging");
 
         // 3. Wait for payment signal matching this specific Order ID
+        // Container properties are rebound to the live deserialized instance at match time,
+        // so reading them directly needs no closure and no WithState.
         yield return WaitSignal<PaymentProcessedEvent>("PaymentProcessedSignal", "Wait for Payment")
-            .WithState(CurrentOrderId)
-            .MatchIf((payment, orderId) => payment.OrderId == orderId)
-            .AfterMatch((payment, orderId) =>
+            .MatchIf((payment) => payment.OrderId == CurrentOrderId)
+            .AfterMatch((payment) =>
             {
                 Console.WriteLine($"Payment processed: {payment.IsSuccessful}");
             });
 
         // 4. Parallel execution wait group
         yield return WaitGroup([
-            WaitSignal<ShippingEvent>("InventoryAllocated", "Wait for Inventory").WithState(CurrentOrderId).MatchIf((e, id) => e.OrderId == id),
-            WaitSignal<ShippingEvent>("LabelPrinted", "Wait for Label").WithState(CurrentOrderId).MatchIf((e, id) => e.OrderId == id)
+            WaitSignal<ShippingEvent>("InventoryAllocated", "Wait for Inventory").MatchIf((e) => e.OrderId == CurrentOrderId),
+            WaitSignal<ShippingEvent>("LabelPrinted", "Wait for Label").MatchIf((e) => e.OrderId == CurrentOrderId)
         ], "Parallel Fulfillment Preparation");
 
         // 5. Invoke a Sub-Workflow
@@ -149,6 +153,9 @@ public sealed partial class OrderProcessingWorkflow : WorkflowContainer
     }
 }
 ```
+
+> [!IMPORTANT]
+> `.WithState(...)` is only for values kept in **stack locals or parameters** - those are the only things matcher lambdas are forbidden to capture (`WF000`). Container properties are read directly inside `MatchIf`/`AfterMatch` because the compiled matcher is rebound to the live deserialized container instance; passing them to `WithState` is redundant and freezes the value at wait-creation time.
 
 ---
 
