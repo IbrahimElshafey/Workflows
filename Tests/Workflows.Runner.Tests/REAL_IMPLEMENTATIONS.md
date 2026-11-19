@@ -1,115 +1,26 @@
 # Test Infrastructure - Real Implementations (No Mocking)
 
-## Overview
+The runner test suite uses **real implementations** behind every interface instead of a mocking framework. Integration-level bugs that mocks would hide (serialization round-trips, state cloning, lock contention) surface in the tests.
 
-The test infrastructure has been updated to use **real implementations** instead of mocked dependencies. This provides more realistic testing and catches integration issues that mocks would hide.
+All helpers live in `Tests/Workflows.Runner.Tests/Infrastructure/`.
 
-## Changes Made
+## Implementations
 
-### Replaced Mocked Dependencies
+| Interface | Test implementation | Behaviour |
+| :--- | :--- | :--- |
+| `IWorkflowRegistry` | `InMemoryWorkflowRegistry` | Dictionary-backed registry for workflows, signals and command types; entries added directly, no setup ceremony. |
+| `IWorkflowRunnerClient` | `InMemoryWorkflowRunnerClient` | No-op client that captures sent results for assertion instead of performing I/O. |
+| `ICommandHandlerFactory` | `InMemoryCommandHandlerFactory` | Registers real command handlers via lambdas; synthesizes default results for unregistered commands. |
+| `IServiceProvider` | `TestServiceProvider` | Builds workflow instances with `Activator.CreateInstance`, falling back to `Microsoft.Extensions.DependencyInjection` for services. |
+| `IObjectSerializer` | `TestObjectSerializer` | `System.Text.Json`-based serialization honouring the `SerializationScope` parameter. |
+| `IExpressionSerializer` | `TestExpressionSerializer` | Keeps expressions in memory; deserialization throws because tests reconstruct from source. |
 
-1. **IWorkflowRegistry** → `InMemoryWorkflowRegistry`
-   - Dictionary-based registry storing workflows, signals, and command types
-   - No setup required - just add entries directly
+`WorkflowTestBuilder` wires these into a runner instance and is the entry point most tests use.
 
-2. **IWorkflowRunnerClient** → `InMemoryWorkflowRunnerClient`
-   - No-op client that captures sent results for verification
-   - Doesn't actually send over HTTP - just stores in-memory
+## Removed helpers
 
-3. **ICommandHandlerFactory** → `InMemoryCommandHandlerFactory`
-   - Allows registering real command handlers via lambdas
-   - Creates default mock results for unregistered commands
+Earlier revisions documented `TestDelegateSerializer` (`IDelegateSerializer`) and `TestClosureContextResolver` (`IClosureContextResolver`). Those interfaces no longer exist in the codebase — delegate and closure state is captured by the compiled expression pipeline — so the helpers were deleted.
 
-4. **IServiceProvider** → `TestServiceProvider`
-   - Uses `Activator.CreateInstance` to create workflow instances
-   - Fallback to `Microsoft.Extensions.DependencyInjection` for services
+## Fixtures
 
-5. **IObjectSerializer** → `TestObjectSerializer`
-   - JSON-based serialization using `System.Text.Json`
-   - Handles `SerializationScope` parameter
-
-6. **IExpressionSerializer** → `TestExpressionSerializer`
-   - No-op implementation (expressions kept in memory)
-   - Throws for deserialization (not needed in tests)
-
-7. **IDelegateSerializer** → `TestDelegateSerializer`
-   - No-op implementation (delegates kept in memory)
-   - Throws for deserialization (not needed in tests)
-
-8. **IClosureContextResolver** → `TestClosureContextResolver`
-   - In-memory closure caching with generated keys
-   - Simple counter-based key generation
-
-### Benefits
-
-✅ **More Realistic Testing**
-- Tests exercise actual code paths
-- Integration issues caught early
-- Behavior closer to production
-
-✅ **Easier to Understand**
-- No mock setup/verification code
-- Clear what's happening at each step
-- Simpler test debugging
-
-✅ **Better Coverage**
-- Tests validate real object serialization
-- Actual type resolution logic tested
-- Command handler execution verified
-
-✅ **Faster Test Execution**
-- No mock verification overhead
-- Direct method calls
-- No proxy generation
-
-### Package Changes
-
-**Removed:**
-- `Moq` - No longer needed
-
-**Added:**
-- `Microsoft.Extensions.DependencyInjection` - For TestServiceProvider
-
-## Test Results
-
-**Before (with mocks):** 9/21 passing  
-**After (real implementations):** 10/21 passing
-
-The additional passing test is due to better integration between components.
-
-## Remaining Failures
-
-1. **CallerName null issues** - Some test scenarios don't properly set CallerName on waits
-2. **Sub-workflow DSL tests** - Expected failures (DSL-only enumeration doesn't execute children)
-3. **Command execution in Direct mode** - Needs command handler registration in tests
-
-## Usage Example
-
-```csharp
-// Before (with mocks)
-var registryMock = new Mock<IWorkflowRegistry>();
-registryMock.Setup(r => r.Workflows).Returns(workflows);
-registryMock.Setup(r => r.SignalTypes).Returns(signals);
-
-// After (real implementation)
-var builder = new WorkflowTestBuilder();
-builder.RegisterWorkflow<MyWorkflow>("MyWorkflow");
-builder.RegisterSignal<MySignal>("MySignal");
-builder.SetupCommandHandler<MyCommand, MyResult>("MyHandler", async cmd => 
-{
-    return new MyResult { Success = true };
-});
-
-var runner = builder.Build();
-```
-
-## Future Improvements
-
-1. **Command Handler Registration** - Add helpers to auto-register handlers from workflow types
-2. **State Snapshot Helpers** - Simplified state object creation
-3. **Workflow Factory Helpers** - Pre-configure common workflow scenarios
-4. **Assertion Extensions** - FluentAssertions extensions for workflow-specific checks
-
----
-
-**Status:** ✅ All test infrastructure now uses real implementations - no mocking framework required!
+Reusable workflow definitions live in `Tests/Workflows.Runner.Tests/TestWorkflows/` (cancellation, compensation, versioning, fan-out, nested groups, sub-workflows, SxS). Shared DTOs live in `TestData/TestDataTypes.cs`.

@@ -1,38 +1,55 @@
 # Workflows.Runner.TestShell
 
 ## 1. What is this?
-A unit and integration testing harness library (targeting `net10.0`) that simplifies validating workflow containers in-memory.
+A unit and integration testing harness (targeting `net10.0`) that runs workflow containers in memory — no database, web API or message broker required.
 
 Key features:
-- **`WorkflowTestShell`**: The primary class which creates an isolated, in-memory running context for workflows.
-- **Executor Mocking**: Mock out external client/worker command executors and assert that specific commands were triggered with expected parameters.
-- **Signal Simulation**: Programmatically fire signals into workflows and inspect state updates synchronously.
+- **`WorkflowTestShell`** (namespace `Workflows.TestShell`): builds an isolated in-memory engine around one or more workflows.
+- **Command mocking**: `SetupCommandHandler<TCommand, TResult>(...)` stubs command execution and records the dispatched commands.
+- **Signal simulation**: fire signals or command results and inspect the resulting state, waits and execution log synchronously.
 
 ## 2. How to use?
-Reference this project in your unit test projects to test workflow definitions without spinning up databases, web APIs, or messaging queues.
+Reference `Workflows.Runner.TestShell` from your test project.
 
-### Example (xUnit Test):
+### Example (xUnit test):
+
 ```csharp
+using System.Linq;
 using System.Threading.Tasks;
+using Workflows.TestShell;
 using Xunit;
-using Workflows.Runner.TestShell;
 
 public class MyWorkflowTests
 {
     [Fact]
     public async Task Workflow_ShouldAdvance_OnSignal()
     {
-        // 1. Arrange - Initialize the test shell and register workflow
+        // 1. Arrange
         using var shell = new WorkflowTestShell();
-        shell.RegisterWorkflow<OrderWorkflow>("OrderWorkflow", "1.0.0");
+        shell.RegisterWorkflow<OrderWorkflow>("OrderWorkflow", 1);   // version is an int
+        shell.RegisterSignal<OrderSubmittedEvent>("OrderSubmitted");
 
-        // 2. Act - Start the workflow and post a signal
-        await shell.StartWorkflowAsync("OrderWorkflow");
+        // 2. Act
+        await shell.StartWorkflowAsync("OrderWorkflow", input: null);
         await shell.SimulateSignalAsync("OrderSubmitted", new OrderSubmittedEvent { Total = 150 });
 
-        // 3. Assert - Verify workflow state and history logs
-        Assert.Contains(shell.ExecutionLog, log => log.Description.Contains("OrderSubmitted"));
-        Assert.True(shell.IsWorkflowCompleted);
+        // 3. Assert
+        Assert.Contains(shell.ActiveWaits, w => w.WaitName == "WaitPayment");
+        Assert.Equal(WorkflowInstanceStatus.InProgress, shell.CurrentStatus);
+        Assert.NotEmpty(shell.ExecutionLog);
     }
 }
 ```
+
+### Reading results
+
+| Member | Contents |
+| :--- | :--- |
+| `CurrentState` | The latest `WorkflowStateDto` (state object, waits, status). |
+| `CurrentStatus` | `WorkflowInstanceStatus` of the latest snapshot. |
+| `ActiveWaits` | Waits whose status is `WaitStatus.Waiting`. |
+| `ExecutionLog` | `ExecutionLogEntry` per engine tick: `TriggeringWaitId`, `ConsumedWaitIds`, `NewWaitIds`, `Status`, `SerializedStateSnapshot`, `Timestamp`. |
+
+There is no `IsWorkflowCompleted` flag — assert on `CurrentStatus == WorkflowInstanceStatus.Completed` instead. `ExecutionLogEntry` has no `Description`; use `TriggeringWaitId` / `NewWaitIds` or the serialized snapshot for diagnostics.
+
+Useful simulation helpers: `SimulateSignalAsync(id, data)`, `SimulateCommandResultAsync(commandIdentifier, result)`, `SimulateCommandResultByWaitIdAsync(waitId, result)` and `SimulateMatchAsync(waitDto, signalOrResult)`.

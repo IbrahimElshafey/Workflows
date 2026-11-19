@@ -4,7 +4,7 @@
 
 As the number of workflows, signals, and commands grows in an enterprise project, manual registration becomes a developer bottleneck and a source of runtime errors. Reflection-based auto-registration (e.g., `RegisterFromAssemblyContaining<T>`) solves developer overhead but introduces startup latency and breaks Native AOT (Ahead-Of-Time) compilation compatibility.
 
-This plan details the design of a Roslyn **Source Generator** that automatically discovers workflow classes, validates their structure at compile time, and emits optimized, static, AOT-safe registration code to populate the [WorkflowDefinitionRegistry](file:///d:/MySrc/Workflows/Workflows.Definition/Registration/WorkflowDefinitionRegistry.cs).
+This plan details the design of a Roslyn **Source Generator** that automatically discovers workflow classes, validates their structure at compile time, and emits optimized, static, AOT-safe registration code to populate the [WorkflowDefinitionRegistry](../../Workflows.Definition/Registration/WorkflowDefinitionRegistry.cs).
 
 ---
 
@@ -45,7 +45,7 @@ graph TD
 
 ### Compile-Time Code Analysis
 The source generator will inspect:
-1. **Class Declarations**: Classes inheriting from [WorkflowContainer](file:///d:/MySrc/Workflows/Workflows.Definition/WorkflowContainer-Base.cs).
+1. **Class Declarations**: Classes inheriting from [WorkflowContainer](../../Workflows.Definition/WorkflowContainer-Base.cs).
 2. **Attributes**: Read the name and version from `[Workflow("Name", Version)]`.
 3. **Method Bodies**: Scan the `Run` method for calls to `WaitSignal<TSignal>("Identifier")` and `WaitCommand<TCommand, TResult>("Identifier")` to automatically discover and register signals/commands without explicit declaration.
 
@@ -142,7 +142,7 @@ To prevent runtime failures early, the analyzer component of the generator will 
 * Use semantic model analysis to extract namespace, class names, attribute parameters, and generic invocations inside the `Run` methods.
 
 ### Stage 3: Code Generation & Registration
-* Generate partial implementation of [DI.cs](file:///d:/MySrc/Workflows/Workflows.Definition/DI.cs) implementing `RegisterWorkflows` to automatically call the static generated registration lists.
+* Generate partial implementation of [DI.cs](../../Workflows.Definition/DI.cs) implementing `RegisterWorkflows` to automatically call the static generated registration lists.
 
 ### Stage 4: Testing & Verification
 * Write integration tests under `Tests/Workflows.Runner.Tests` to verify that AOT-safe generated methods produce identical `WorkflowDefinitionRegistry` tables compared to manual/reflection-based registries.

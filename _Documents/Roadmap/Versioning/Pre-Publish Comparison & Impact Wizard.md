@@ -1,5 +1,9 @@
 # 🧙‍♂️ WF Tools: Pre-Publish Comparison & Impact Wizard
 
+> **Status: 🟡 Spec / partially implemented.** The offline model in this document is the design target. What exists today: `dotnet-wf` schema extraction and compatibility verification, `deployment-manifest.json` generation (see [`Workflow Schema Compatibility Verification.md`](Workflow%20Schema%20Compatibility%20Verification.md)), and `WorkflowStateWrapper.AutoMapFrom` with `WorkflowMigrationException`. What does **not** exist: per-instance savepoints during batch migration, the `MigrationFailed`/`Quarantined` statuses (the enum is `New`, `InProgress`, `Completed`, `InError`, `Canceled`, `Running`), and the `WorkflowExecutionErrors` table.
+
+---
+
 ## 1. Overview
 
 The **Pre-Publish Comparison & Impact Wizard** is a core component of the **WF Tools suite** (`dotnet-wf` CLI and embedded Admin UI Wizard). It analyzes workflow assemblies, verifies schema compatibility, generates schema contracts, creates migration boilerplate classes, and produces a deterministic **`deployment-manifest.json`** for deployment pipelines.

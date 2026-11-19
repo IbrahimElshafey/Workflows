@@ -12,7 +12,7 @@ The Workflows engine is built on a strict separation between **Domain Definition
 * **Zero Dependencies:** This library has no knowledge of databases, messaging queues, or execution contexts. It is purely standard C#.
 * **The State Machine:** Workflows are defined by inheriting from `WorkflowContainer` and using native C# `IAsyncEnumerable<Wait>` with `yield return` statements for control flow.
 * **Wait Primitives:** Provides the core suspension instructions: `WaitSignal`, `WaitUntil` (Time), `WaitGroup` (MatchAny/MatchAll), `WaitSubWorkflow`, `ExecuteCommand`, and `Compensate`.
-* **Clean Abstraction:** Infrastructure-specific Data Transfer Objects (DTOs) like `WaitDto` or `WorkflowRunContext` are kept `internal`. The library uses the `[InternalsVisibleTo("Workflows.Runner")]` pattern. This ensures the workflow author's IntelliSense remains perfectly clean while still allowing the engine to extract necessary structural data.
+* **Clean Abstraction:** Infrastructure-specific Data Transfer Objects (DTOs) like `WaitDto` or `WorkflowStateObject` are kept `internal`. The library uses the `[InternalsVisibleTo("Workflows.Runner")]` pattern. This ensures the workflow author's IntelliSense remains perfectly clean while still allowing the engine to extract necessary structural data.
 
 ---
 
@@ -22,9 +22,9 @@ The Workflows engine is built on a strict separation between **Domain Definition
 * **Partial Matching:** When a signal arrives, the Orchestrator does *not* evaluate C# expressions. It performs a fast, relational database lookup (Partial Match) against flat, mandatory indexing keys (`ExactMatchPart` strings) extracted during the workflow's previous step.
 * **Storage Split Strategy:**
     * **SQL (Relational):** Used for querying flat data like Registration, Signals, Wait indexes (including the dedicated `CompensationWaits` table mapped using TPC), and command queues.
-    * **NoSQL/Document (JSON):** Used for storing the `WorkflowRunContext` (serialized closures, local variables, and the state machine index).
-* **Transaction Coordinator:** It is the sole owner of ACID transactions. When the Runner returns a result, the Orchestrator atomically updates the `WorkflowRunContext`, deletes the old waits, and inserts the new waits.
-* **State Hydration:** Once a partial match is found, the Orchestrator fetches the raw `WorkflowRunContext` from the DB (or memory cache) and sends it over the communication bus to the Runner.
+    * **NoSQL/Document (JSON):** Used for storing the `WorkflowStateObject` (serialized closures, local variables, and the state machine index).
+* **Transaction Coordinator:** It is the sole owner of ACID transactions. When the Runner returns a result, the Orchestrator atomically updates the `WorkflowStateObject`, deletes the old waits, and inserts the new waits.
+* **State Hydration:** Once a partial match is found, the Orchestrator fetches the raw `WorkflowStateObject` from the DB (or memory cache) and sends it over the communication bus to the Runner.
 
 ---
 

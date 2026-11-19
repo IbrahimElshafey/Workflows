@@ -2,7 +2,7 @@
 
 This document serves as the single master source of truth tracking the feature status, architecture safeguards, and prioritized implementation roadmap for the Workflows engine codebase.
 
-**Last reviewed:** 2026-07-30 | **Test suite:** 147 unit tests, all passing ✅
+**Last reviewed:** 2026-11-19 | **Test suite:** 152 `[Fact]`/`[Theory]` methods across 28 test classes, all passing ✅
 
 ---
 
@@ -10,25 +10,25 @@ This document serves as the single master source of truth tracking the feature s
 
 | # | Feature | Status | Implementation Details / Commit | Reference Spec |
 |---|---------|--------|----------------------------------|----------------|
-| **1.1** | Distributed Timer Scheduling (`TimeWait`) | ✅ Implemented | Native clustered DB timer engine (`ClaimDueTimersAsync`), bounded `System.Threading.Channels` pipelining, and zero duplicate multi-node claims | [Timer Scheduling](file:///d:/MySrc/Workflows/_Documents/Architecture/Orchestrator-Side%20Distributed%20Timer%20Scheduling.md) |
-| **1.2** | Side-by-Side (SxS) Version Routing | ✅ Implemented | `014eafc` (Out-of-process worker supervision & ALC compiled project routing) | [SxS Architecture](file:///d:/MySrc/Workflows/_Documents/Architecture/Workflow%20Side-by-Side%20(SxS)%20Execution%20Architecture.md) |
+| **1.1** | Distributed Timer Scheduling (`TimeWait`) | ✅ Implemented | Native clustered DB timer engine (`ClaimDueTimersAsync`), bounded `System.Threading.Channels` pipelining, and zero duplicate multi-node claims | [Timer Scheduling](../Architecture/Orchestrator-Side%20Distributed%20Timer%20Scheduling.md) |
+| **1.2** | Side-by-Side (SxS) Version Routing | ✅ Implemented | `014eafc` (Out-of-process worker supervision & ALC compiled project routing) | [How SxS Execution Works](Versioning/How%20SxS%20(Side-by-Side)%20Execution%20Works.md) |
 | **1.3** | Composite Wait Group & Pruning (`GroupWait`) | ✅ Implemented | Runner + Store (Recursive downward pruning of non-completed siblings) | — |
 | **1.4** | Optimistic Concurrency & ConcurrencyToken | ✅ Implemented | Mapped `ConcurrencyToken` in EF Core; verified in `ConcurrencyAndSoftDeleteTests.cs` | — |
-| **1.5** | Massive Fan-Out (WaitMany / WaitAny) | 🟡 Partial | External state DB table (`ExternalChildWaits`); integration tests pending | — |
-| **1.6** | Background DB Pruning Worker | 🟡 Partial | Stale locks expired by worker; dead-row sweeper planned | — |
+| **1.5** | Massive Fan-Out (WaitMany / WaitAny) | 🟡 Partial | External state DB table (`ExternalChildWaits`); runner-level fan-out covered by `MassiveFanOutTests`, DB/orchestrator integration tests pending | — |
+| **1.6** | Background DB Pruning Worker | 🟡 Partial | `LockExpiryWorker` sweeps expired locks and `Scheduler` recovers stale timers (`RecoverStaleTimersAsync`); `PruneProcessedSignalsAsync` exists but has no scheduled sweeper for old signal/outbox rows | — |
 | **1.7** | High-Performance JSON Serialization | 🟡 Partial | Settings cached; direct stream I/O and `ArrayPool<char>` planned | — |
-| **1.8** | Roslyn Analyzer — Attribute Verification | 🟡 Partial | AST closure/yield validation done; needs `[Workflow]` check | — |
+| **1.8** | Roslyn Analyzer — Attribute Verification | ✅ Implemented | AST closure/yield validation plus WF209 (`[Workflow]` missing) and WF210 (`Run`/start method missing) checks | — |
 | **1.9** | UI Administration Dashboard | ✅ Implemented | `f00364f` (ASP.NET Core MVC statistics, wait trees, and trace views) | — |
 | **1.10**| Payload Monitoring & Zombie Recovery | 🔴 Not Started | Size thresholds warning, retry limit circuit breaker policies | — |
-| **2.1** | Distributed Lock Registry | ✅ Implemented | `InstanceLockManager.cs` (Row-level SQL lock manager with TTL expiry worker) | [Lock Registry](file:///d:/MySrc/Workflows/_Documents/Architecture/Distributed%20Lock%20Registry.md) |
-| **2.2** | Idempotent Signal/Command Processing | ✅ Implemented | `SignalInboxEntity` database deduplication table & atomic transaction check | [Idempotent Processing](file:///d:/MySrc/Workflows/_Documents/Architecture/Idempotent%20Signal%20Processing.md) |
-| **2.3** | Poison Message & Dead Letter Queue (DLQ) | 🔴 Not Started | Needs retry count tracking, dead-letter storage, error isolation | [Poison & DLQ Spec](file:///d:/MySrc/Workflows/_Documents/Architecture/Poison%20Message%20&%20DLQ%20Handling.md) |
-| **2.4** | State Payload Encryption at Rest | 🔴 Not Started | Needs `IStateEncryptor` wrapper (AES-256-GCM envelope security) | [Encryption Spec](file:///d:/MySrc/Workflows/_Documents/Architecture/State%20Payload%20Encryption.md) |
-| **2.5** | OpenTelemetry Tracing | 🔴 Not Started | Needs `ActivitySource` instrumentation across orchestrator/runner | [Telemetry Spec](file:///d:/MySrc/Workflows/_Documents/Architecture/Telemetry%20&%20OpenTelemetry%20Integration.md) |
-| **2.6** | Schema Compatibility Verification CLI (`dotnet-wf`) | ✅ Implemented | `dotnet-wf` CLI tool (`WorkflowDiffAnalyzer`, `DeploymentManifestGenerator`) | [Schema Spec](file:///d:/MySrc/Workflows/_Documents/Architecture/Workflow%20Schema%20Compatibility%20Verification.md) |
-| **2.7** | Worker Supervision & DB Capability Routing | ✅ Implemented | `WorkerProcessSupervisor`, `WorkerCapabilityEntity`, and `WorkerDrainWorker` | [Out-of-Process Architecture](file:///d:/MySrc/Workflows/_Documents/Roadmap/Versioning/Out-of-Process%20Worker%20Supervisor%20Architecture.md) |
-| **2.8** | Deterministic Outbox Command Idempotency | ✅ Implemented | [`CommandWaitId`](file:///d:/MySrc/Workflows/DataStore/Workflows.Storage.EntityFrameworkCore/OutboxMessageEntity.cs#L15) unique constraints & outbox deduplication | — |
-| **2.9** | Runner Clustering & Work Partitioning | ❌ Deprecated | Replaced by single-unit embedded in-process hosting model | [Clustering Spec (Obsolete)](file:///d:/MySrc/Workflows/_Documents/Architecture/Runner%20Clustering%20&%20Work%20Partitioning.md) |
+| **2.1** | Distributed Lock Registry | ✅ Implemented | `InstanceLockManager.cs` (Row-level SQL lock manager with TTL expiry worker) | [Lock Registry](../Architecture/Distributed%20Lock%20Registry.md) |
+| **2.2** | Idempotent Signal/Command Processing | ✅ Implemented | `SignalInboxEntity` database deduplication table & atomic transaction check | [Idempotent Processing](../Architecture/Idempotent%20Signal%20Processing.md) |
+| **2.3** | Poison Message & Dead Letter Queue (DLQ) | 🟡 Partial | `DlqMessageEntity`, `IDlqPublisher`/`NoOpDlqPublisher` and `DataStore/AddFailureCountAndDlqMessages.sql` landed; still needs `FailureCount` on `WorkflowInstance`, a `DlqMessages` DbSet, and publisher invocation on failure exhaustion | [Poison & DLQ Spec](../Architecture/Poison%20Message%20%26%20DLQ%20Handling.md) |
+| **2.4** | State Payload Encryption at Rest | 🔴 Not Started | Needs `IStateEncryptor` wrapper (AES-256-GCM envelope security) | [Encryption Spec](../Architecture/State%20Payload%20Encryption.md) |
+| **2.5** | OpenTelemetry Tracing | 🔴 Not Started | Needs `ActivitySource` instrumentation across orchestrator/runner | [Telemetry Spec](../Architecture/Telemetry%20%26%20OpenTelemetry%20Integration.md) |
+| **2.6** | Schema Compatibility Verification CLI (`dotnet-wf`) | ✅ Implemented | `dotnet-wf` CLI tool (`WorkflowDiffAnalyzer`, `DeploymentManifestGenerator`) | [Schema Spec](Versioning/Workflow%20Schema%20Compatibility%20Verification.md) |
+| **2.7** | Worker Supervision & DB Capability Routing | ✅ Implemented | `WorkerProcessSupervisor`, `WorkerCapabilityEntity`, and `WorkerDrainWorker` | [Out-of-Process Architecture](Versioning/Out-of-Process%20Worker%20Supervisor%20Architecture.md) |
+| **2.8** | Deterministic Outbox Command Idempotency | ✅ Implemented | [`CommandWaitId`](../../DataStore/Workflows.Storage.EntityFrameworkCore/OutboxMessageEntity.cs#L15) unique constraints & outbox deduplication | — |
+| **2.9** | Runner Clustering & Work Partitioning | ❌ Deprecated | Replaced by single-unit embedded in-process hosting model | — (obsolete spec removed) |
 
 ---
 
@@ -36,33 +36,33 @@ This document serves as the single master source of truth tracking the feature s
 
 ### 🔴 High Priority (Core Reliability, Migration & Production Readiness)
 
-#### 1. Native Distributed Timer Engine (DB `SKIP LOCKED` Poller)
+#### 1. Native Distributed Timer Engine (DB `SKIP LOCKED` Poller) — ✅ Implemented (`8576d28`)
 * **Goal**: Enable fully reliable, distributed time-based triggers (`TimeWait`) without any external scheduler dependencies (Hangfire / Quartz).
 * **Implementation Details**:
-  - Implement a native DB polling query using `FOR UPDATE SKIP LOCKED` (PostgreSQL / SQL Server) or atomic row locking.
-  - Implement a 2-tier timer engine: near-term timers (< 60s) scheduled in-memory via `System.Threading.Timer`, long-term timers polled from DB.
-  - Cancel scheduled timer checks atomically when parent workflows or wait tokens are cancelled.
+  - Native DB polling via `IWorkflowStore.ClaimDueTimersAsync(batchSize, nodeId, ct)`. **Caveat:** the current implementation is a status-filtered `UPDATE` followed by sequential `SaveChanges` — it is not yet `FOR UPDATE SKIP LOCKED` / rowversion-safe, so two nodes can claim the same timer under contention.
+  - 2-tier engine: a `ConcurrentDictionary` fast path (`System.Threading.Timer`, swept every 100 ms) for the local node plus a 100 ms DB poll (`ClaimDueTimersAsync(50, _nodeId)`) for the distributed case.
+  - `CancelScheduledSignalAsync(timerId)` removes the fast-path entry and marks the DB row; cancelled waits are dropped on the next poll. `RecoverStaleTimersAsync(5 min)` sweeps orphaned claims every 30 s (uses `ExecutionTime`, not a claim timestamp).
 
-#### 2. Workflow Migration Instance Cancellation (`CancelInstance`)
+#### 2. Workflow Migration Instance Cancellation (`CancelInstance`) — ✅ Implemented (`8bfeacf`)
 * **Goal**: Provide a clean mechanism to cancel a workflow instance during migration if its state is unmigratable or deprecated.
 * **Implementation Details**:
   - Add `CancelInstance(string reason)` helper method to the `WorkflowMigration` base class.
   - Implement `WorkflowMigrationCancelledException` to halt migration when invoked.
   - Intercept `WorkflowMigrationCancelledException` in `WorkflowMigrationExecutor` to transition the instance to `WorkflowInstanceStatus.Canceled` (status 400), append a `CancellationHistoryEntry`, and stop execution.
 
-#### 3. Workflow Replacement & Respawn Migration Strategy (`CancelAndRespawn`)
+#### 3. Workflow Replacement & Respawn Migration Strategy (`CancelAndRespawn`) — ✅ Implemented (`8bfeacf`)
 * **Goal**: Enable replacing legacy V1 workflow instances with fresh V2 instances when internal state migration is unsafe or impractical.
 * **Implementation Details**:
   - Support `MigrationStrategy.CancelAndRespawn` in `WorkflowMigration`.
   - Provide an async callback `OnMigrateAsync(oldInstance, runnerClient)` allowing developers to start a new V2 instance with mapped inputs.
   - Atomically cancel the V1 instance with an audit link pointing to the newly spawned V2 `WorkflowInstanceId`.
 
-#### 4. Poison Message Retry Counters & DLQ Integration
+#### 4. Poison Message Retry Counters & DLQ Integration — 🟡 Scaffolded, Not Wired
 * **Goal**: Quarantine repeatedly failing signals or crashing workflow instances.
 * **Implementation Details**:
-  - Implement a `FailureCount` counter in the `WorkflowInstances` schema.
-  - Increment counter on unhandled exception and roll back state update.
-  - If `FailureCount >= 3`, transition instance status to `InError` and route payload to a Dead Letter Queue (`workflows-dlq`).
+  - ⬜ `WorkflowInstances.FailureCount` exists only in `DataStore/AddFailureCountAndDlqMessages.sql`; it is not mapped on the `WorkflowInstance` entity.
+  - ⬜ Nothing increments or resets `FailureCount` today.
+  - ⬜ `DlqMessageEntity` + `IDlqPublisher`/`NoOpDlqPublisher` exist, but `WorkflowsDbContext` has no `DlqMessages` DbSet and `PublishAsync` is never called. See [Poison & DLQ Spec](../Architecture/Poison%20Message%20%26%20DLQ%20Handling.md).
 
 ---
 
@@ -114,13 +114,13 @@ This document serves as the single master source of truth tracking the feature s
 ## ⚠️ Architectural Safeguards & Edge Case Rules
 
 ### 1. Concurrent Mutation of Container-Level Collections
-* **Engine Guarantee:** Sibling executions are *logically parallel but physically sequential*. All signal matches, callbacks, and state transitions are serialized through the Orchestrator using instance-level database locks ([`InstanceLockManager`](file:///d:/MySrc/Workflows/DataStore/Workflows.Storage.EntityFrameworkCore/InstanceLockManager.cs)).
+* **Engine Guarantee:** Sibling executions are *logically parallel but physically sequential*. All signal matches, callbacks, and state transitions are serialized through the Orchestrator using instance-level database locks ([`InstanceLockManager`](../../DataStore/Workflows.Storage.EntityFrameworkCore/InstanceLockManager.cs)).
 
 ### 2. Compensation & Cancellation Async Dispatch (Outbox-style)
 * **How it works:** When a compensation or cancellation is requested, it is pushed to a background worker channel (`_channel.CompensationWriter` or `_channel.CancellationWriter`) and persisted. `CompensationWorker` and `CancelerWorker` process these requests asynchronously.
 
 ### 3. Worker Sub-Process Draining & OS Memory Reclamation
-* **Implemented Mechanism:** Suspended instances can wait for weeks. To prevent resident process bloat under frequent deployments, [`WorkerDrainWorker`](file:///d:/MySrc/Workflows/Hosting/Workflows.Hosting.InProcess/WorkerDrainWorker.cs) monitors live DB active instance counts per `DllVersion` and automatically terminates worker processes (`ShutdownWorkerAsync`) when active instance counts reach 0.
+* **Implemented Mechanism:** Suspended instances can wait for weeks. To prevent resident process bloat under frequent deployments, [`WorkerDrainWorker`](../../Hosting/Workflows.Hosting.InProcess/WorkerDrainWorker.cs) monitors live DB active instance counts per `DllVersion` and automatically terminates worker processes (`ShutdownWorkerAsync`) when active instance counts reach 0.
 
 ### 4. Deep Recursive Schema-Drift (`WF301`) Verification
 * **The Rule:** The Roslyn validator checks top-level properties of state POCOs, generic arguments of `.WithState<TState>()`, and nested object graphs against schema contracts to flag unsafe state shifts before publishing.

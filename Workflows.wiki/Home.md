@@ -11,8 +11,8 @@ Use the sidebar or the links below to navigate the documentation:
 * **[Architecture Overview](Architecture-Overview)**: Hybrid database design, execution cycle, stateless compute, out-of-process IPC workers, and Admin UI architecture.
 * **[Writing Workflows](Writing-Workflows)**: Developer guide to authoring workflows, wait primitives, sub-workflows, Roslyn static analysis rules, and no-closure constraints.
 * **[In-Process & Worker Hosting](In-Process-Hosting)**: Set up unified in-process hosts (SQLite/Postgres/SQL Server), WebAPI/gRPC endpoints, and out-of-process worker supervisors.
-* **[CLI Tooling Suite (`dotnet-wf`)](file:///d:/MySrc/Workflows/Workflows.Tools.CLI/README.md)**: Command reference for schema extraction, build pipeline drift verification, manifest generation, and migration boilerplate.
-* **[Embedded Admin Web UI](file:///d:/MySrc/Workflows/Workflows.Admin.UI/README.md)**: Explore the ASP.NET Core dashboard, vis-network DAG visualization, execution trace timelines, and live signal triggers.
+* **[CLI Tooling Suite (`dotnet-wf`)](../Workflows.Tools.CLI/README.md)**: Command reference for schema extraction, build pipeline drift verification, manifest generation, and migration boilerplate.
+* **[Embedded Admin Web UI](../Workflows.Admin.UI/README.md)**: Explore the ASP.NET Core dashboard, vis-network DAG visualization, execution trace timelines, and live signal triggers.
 
 ---
 

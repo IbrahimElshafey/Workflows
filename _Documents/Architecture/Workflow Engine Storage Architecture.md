@@ -18,10 +18,10 @@ The `WorkflowInstances` table serves as the Aggregate Root. Instead of mapping e
 | :--- | :--- | :--- |
 | **Id** | Guid (PK) | Unique identifier for the specific workflow run. |
 | **Status** | Enum | Current state: `Running`, `Completed`, `InError`. |
-| **StateObject** | JSON / JSONB | **The Source of Truth.** Holds the serialized `WorkflowRunContext`. |
+| **StateObject** | JSON / JSONB | **The Source of Truth.** Holds the serialized `WorkflowStateObject`. |
 
 ### What's inside `StateObject` (JSON)?
-This column contains the complete `WorkflowRunContext`, which includes:
+This column contains the complete `WorkflowStateObject`, which includes:
 * **WorkflowContainer:** The developer's class instance with all local variables.
 * **Internal Mechanics:** The C# state machine index and compiler-generated closures.
 * **Recursive Wait Tree:** The hierarchical wait trees.

@@ -39,4 +39,4 @@ The sample uses SQLite by default (`workflows-admin-sample.db`). You can overrid
 
 Write actions (start, cancel, signal, terminate) are enabled automatically when `IOrchestrator` is registered in DI. This sample registers the full in-process workflow engine, so the action panel is available on instance detail pages.
 
-To run the admin UI in read-only mode, omit `AddWorkflowsOrchestrator()` and `AddWorkflowsInProcessHosting()` from `Program.cs`.
+To run the admin UI in read-only mode, remove `AddWorkflowsInProcessHost(...)` (or register the admin UI alone, without an `IOrchestrator`) from `Program.cs` and set `options.EnableWriteActions = false`.

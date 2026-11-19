@@ -1,23 +1,26 @@
 # Workflows.Runner
 
 ## 1. What is this?
-The core runtime execution engine (targeting `netstandard2.1`) for the workflows system. It is responsible for driving individual workflow instances forward through their defined state machines.
+The stateless execution engine (targeting `net10.0`) for the workflows system. It drives individual workflow instances forward through their state machines and never touches the database directly.
 
 Key features:
-- **State Machine Execution**: Hydrates workflow instances, interprets the yield-returned yields/waits, and manages step execution context.
-- **Match Compilation**: Dynamically compiles signal and result matching lambda expressions using `FastExpressionCompiler` for high-performance execution.
-- **Wait Resolution**: Coordinates matching of incoming events (signals, command execution results, delays) to current active waits.
+- **State Machine Execution**: hydrates workflow instances from a serialized snapshot, advances the `IAsyncEnumerable<Wait>` iterator and returns the new state plus the yielded waits.
+- **Match Compilation**: compiles signal/command match expressions with `FastExpressionCompiler`, caching templates to avoid re-parsing.
+- **Exact Matching**: validates that an incoming signal, command result or timer satisfies the workflow's `MatchIf` expressions.
+- **Migration**: hosts `WorkflowMigrationExecutor`, which applies V1 → V2 migrations (see `_Documents/Roadmap/Versioning/Versioning - Workflow Migration.md`).
 
 ## 2. How to use?
-Register runner services in your DI container. Typically, the runner is used by a hosting application or worker node that process signals and commands.
+The runner is normally registered by the host. Add it next to the shared services:
 
-### Example:
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 using Workflows.Runner;
+using Workflows.Shared;   // AddWorkflowsShared (Workflows.Common.Abstraction)
 
 var services = new ServiceCollection();
 
-// Register runner services
-services.AddWorkflowsRunner();
+services.AddWorkflowsShared();   // serializers + transport factory
+services.AddWorkflowsRunner();   // state machine runner, wait serializers, match compiler
 ```
+
+`AddWorkflowsInProcessHost(connectionString)` (from `Workflows.Hosting.InProcess`) builds on top of these registrations and adds the orchestrator, scheduler, workers and channels.

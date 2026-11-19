@@ -77,7 +77,7 @@ Asynchronous Commands are used for distributed, out-of-process tasks that requir
 
 4. **Decoupled Dispatch:** A background relay service tails the Outbox table and passes the message to the registered `IPublisher`. The message leaves the building. The Runner thread is entirely dead and resources are freed.
 5. **Agnostic Processing:** The external microservice processes the payload completely independently. It contains zero references to the workflow engine DLLs. Once completed, it broadcasts a response payload or domain event via the transport broker.
-6. **Orchestrator Ingestion & Matching:** The `ISubscriber` intercepts the response message. The `Orchestrator` runs its configured **Correlation Matching Expression** to instantly extract the target key. It runs a Tier 1 SQL index scan against the `CommandWaits` table, matches the instance, pulls the `WorkflowRunContext`, and routes the payload to a stateless `WorkflowRunner` thread pool worker to advance the code machine to the next line.
+6. **Orchestrator Ingestion & Matching:** The `ISubscriber` intercepts the response message. The `Orchestrator` runs its configured **Correlation Matching Expression** to instantly extract the target key. It runs a Tier 1 SQL index scan against the `CommandWaits` table, matches the instance, pulls the `WorkflowStateObject`, and routes the payload to a stateless `WorkflowRunner` thread pool worker to advance the code machine to the next line.
 
 ### Split-Layer Registration Pass
 

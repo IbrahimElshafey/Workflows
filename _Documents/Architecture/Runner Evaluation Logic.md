@@ -5,25 +5,25 @@
 The Workflows engine uses a **100% stateless** execution model. The **Runner** acts purely as a logical evaluation unit. When execution resumes, it operates on a fully hydrated execution context (`WorkflowExecutionContext`) compiled from the serialized snapshot (`WorkflowStateDto`) sent by the Orchestrator.
 
 The Runner's lifecycle is structured as a **Two-Phase Pipeline**:
-1. **Incoming Phase (Matchers)**: Validates incoming events (signals, timer triggers, command results) against the pending wait conditions.
+1. **Incoming Phase (Completion Checkers)**: Validates incoming events (signals, timer triggers, command results) against the pending wait conditions.
 2. **Execution Cycle (Serializers)**: Advances the C# compiler-generated state machine and prepares newly yielded wait points.
 
 All yielded waits suspend execution of the C# state machine run loop. However, wait serializers can flag whether the instance context should be preserved in the memory cache (`KeepInCache = true`) or unloaded from the cache (`KeepInCache = false`).
 
 ---
 
-## 1. The Incoming Phase: Matchers
+## 1. The Incoming Phase: Completion Checkers
 
-When an external trigger arrives, the Orchestrator loads the workflow instance's state and sends a `WorkflowExecutionRequest` containing the triggering wait ID. The Runner resolves the corresponding `WorkflowWaitMatcher` from the `MatcherFactory`:
+When an external trigger arrives, the Orchestrator loads the workflow instance's state and sends a `WorkflowExecutionRequest` containing the triggering wait ID. The Runner resolves the corresponding `WaitCompletionChecker` from the `CompletionCheckerFactory`:
 
-* **`SignalWaitMatcher`**: Evaluates the compiled expression tree (e.g. `.MatchExact(...)` and `.Where(...)`) in RAM against the incoming signal data. If the condition matches, the wait is marked `Completed`.
-* **`TimeWaitMatcher`**: Timers are treated as external events scheduled by the Orchestrator. When they fire, this matcher marks the timer wait as `Completed`.
-* **`DeferredCommandMatcher`**: Handles incoming async command results. If the execution succeeded, it routes the payload to `OnResultAction`. If an exception is returned, it routes to `OnFailureAction`.
-* **`GroupWaitMatcher`**: Evaluates compound conditions (`MatchAll`, `MatchAny`, custom `MatchIf`). It aggregates statuses of child waits recursively:
+* **`SignalCompletionChecker`**: Evaluates the compiled expression tree (e.g. `.MatchExact(...)` and `.Where(...)`) in RAM against the incoming signal data. If the condition matches, the wait is marked `Completed`.
+* **`TimeWaitCompletion Checker`**: Timers are treated as external events scheduled by the Orchestrator. When they fire, this checker marks the timer wait as `Completed`.
+* **`CommandCompletionChecker`**: Handles incoming async command results. If the execution succeeded, it routes the payload to `OnResultAction`. If an exception is returned, it routes to `OnFailureAction`.
+* **`GroupCompletionChecker`**: Evaluates compound conditions (`MatchAll`, `MatchAny`, custom `MatchIf`). It aggregates statuses of child waits recursively:
   - `MatchAll`: Matches only when all child waits are `Completed`.
   - `MatchAny` / `MatchFirst`: Matches when any single child completes. Triggering this causes downward pruning, marking sibling waits as cancelled.
   - `MatchIf` (Custom Expression): Evaluates a custom delegate. If it returns true, the group completes and siblings are pruned.
-* **`SubWorkflowWaitMatcher`**: A special recursive matcher. It loads the child workflow's state machine stream, advances it using `StateMachineAdvancer`, and cascades execution. If the child completes, the matcher marks the sub-workflow wait as `Completed` and continues upward.
+* **`WorkflowCompletionChecker`**: A special recursive checker. It loads the child workflow's state machine stream, advances it using `StateMachineAdvancer`, and cascades execution. If the child completes, the checker marks the sub-workflow wait as `Completed` and continues upward.
 
 ---
 
@@ -39,7 +39,7 @@ Once the matching phase completes successfully, the Runner loops, calling `State
 
 ---
 
-## 3. Cancellation & Pruning (`CancelProcessor`)
+## 3. Cancellation & Pruning (`CancelTokensHandler`)
 
 Cancellation is integrated directly into the runner's execution cycle to handle timeouts, business aborts, or alternate execution branches:
 
@@ -56,7 +56,7 @@ When a request arrives, the Runner runs a single compute tick:
 
 ```
 1. Hydrate Execution Context (Populate state, closures, and local variables)
-2. Run Matcher (Evaluate incoming event -> update matching wait statuses)
+2. Run Completion Checker (Evaluate incoming event -> update matching wait statuses)
 3. If matches successfully:
      while (ContinueExecutionLoop)
      {

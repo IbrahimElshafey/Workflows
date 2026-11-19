@@ -112,6 +112,6 @@ If breaking changes are detected without a corresponding migration script, `veri
 
 ## 📂 Related Architecture Documentation
 
-- 📘 [Pre-Publish Comparison & Impact Wizard](file:///d:/MySrc/Workflows/_Documents/Roadmap/Versioning/Pre-Publish%20Comparison%20&%20Impact%20Wizard.md)
-- 📘 [Workflow Schema Compatibility Verification](file:///d:/MySrc/Workflows/_Documents/Roadmap/Versioning/Workflow%20Schema%20Compatibility%20Verification.md)
-- 📘 [Versioning - Workflow Migration](file:///d:/MySrc/Workflows/_Documents/Roadmap/Versioning/Versioning%20-%20Workflow%20Migration.md)
+- 📘 [Pre-Publish Comparison & Impact Wizard](../_Documents/Roadmap/Versioning/Pre-Publish%20Comparison%20%26%20Impact%20Wizard.md)
+- 📘 [Workflow Schema Compatibility Verification](../_Documents/Roadmap/Versioning/Workflow%20Schema%20Compatibility%20Verification.md)
+- 📘 [Versioning - Workflow Migration](../_Documents/Roadmap/Versioning/Versioning%20-%20Workflow%20Migration.md)

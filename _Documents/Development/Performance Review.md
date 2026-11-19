@@ -24,7 +24,7 @@ Below is the detailed analysis of the performance bottlenecks, their architectur
 ### 1. N+1 DB Queries in `SaveContextSyncAsync` Candidate Matching
 
 #### Code Location
-[WorkflowStore.cs:L82-L103](file:///d:/MySrc/Workflows/DataStore/Workflows.Storage.EntityFrameworkCore/WorkflowStore.cs#L82-L103)
+[WorkflowStore.cs:L82-L103](../../DataStore/Workflows.Storage.EntityFrameworkCore/WorkflowStore.cs#L82-L103)
 
 #### The Problem
 When checking for candidate running instances to match/reuse during context saving:
@@ -55,7 +55,7 @@ This reduces the DB queries from **O(N) to 0** for this matching phase, executin
 ### 2. N+1 DB Queries in `Orchestrator.ProcessSignalAsync` Instance Loading
 
 #### Code Location
-[Orchestrator.cs:L236-L250](file:///d:/MySrc/Workflows/Workflows.Orchestrator/Orchestrator.cs#L236-L250)
+[Orchestrator.cs:L236-L250](../../Workflows.Orchestrator/Orchestrator.cs#L236-L250)
 
 #### The Problem
 When routing incoming signals, `ProcessSignalAsync` retrieves a list of candidate `instanceIds` and loads their states one-by-one in a loop:
@@ -83,7 +83,7 @@ This is a textbook N+1 query problem, especially critical for broadcast signals 
 ### 3. N+1 DB Queries in `WorkflowStore` External Waits Hydration
 
 #### Code Location
-[WorkflowStore.cs:L451-L470](file:///d:/MySrc/Workflows/DataStore/Workflows.Storage.EntityFrameworkCore/WorkflowStore.cs#L451-L470)
+[WorkflowStore.cs:L451-L470](../../DataStore/Workflows.Storage.EntityFrameworkCore/WorkflowStore.cs#L451-L470)
 
 #### The Problem
 To hydrate external child waits, the store traverses the wait hierarchy and queries the database for *each* external group wait it encounters:
@@ -119,7 +119,7 @@ HydrateExternalChildWaitsFromList(waits, extChildWaits); // Pure in-memory mappi
 ### 4. ITemplateRepository Missing In-Memory Cache
 
 #### Code Location
-[TemplateRepository.cs](file:///d:/MySrc/Workflows/DataStore/Workflows.Storage.EntityFrameworkCore/TemplateRepository.cs)
+[TemplateRepository.cs](../../DataStore/Workflows.Storage.EntityFrameworkCore/TemplateRepository.cs)
 
 #### The Problem
 `TemplateRepository` is queried on every mapping operation and signal evaluation (via `SignalPreFilter`) to fetch expressions. Because it is scoped, it hits EF's `Find` on every call, requiring change-tracker lookups or database queries for static/immutable template rows.
@@ -136,7 +136,7 @@ Check the cache first in `GetTemplate`, and populate/invalidate it in `SaveTempl
 ### 5. Redundant Expression Compilation in `Mapper.cs`
 
 #### Code Location
-[Mapper.cs:L331-L340](file:///d:/MySrc/Workflows/Workflows.Runner/Mapper.cs#L331-L340) & [Mapper.cs:L546-L555](file:///d:/MySrc/Workflows/Workflows.Runner/Mapper.cs#L546-L555)
+[Mapper.cs:L331-L340](../../Workflows.Runner/Mapper.cs#L331-L340) & [Mapper.cs:L546-L555](../../Workflows.Runner/Mapper.cs#L546-L555)
 
 #### The Problem
 When mapping command and signal waits, `Mapper.cs` compiles the `instanceExactMatchExpr` every single time to evaluate the exact match part, even though this delegate could be reused:
@@ -158,7 +158,7 @@ Since compiled delegates are already cached inside `SignalCompletionChecker.Sign
 ### 6. Reflection and `Activator.CreateInstance` in Sub-workflows
 
 #### Code Location
-[WorkflowRunLoop.cs:L149-L167](file:///d:/MySrc/Workflows/Workflows.Runner/WorkflowRunLoop.cs#L149-L167) & [WorkflowStateService.cs:L116-L135](file:///d:/MySrc/Workflows/Workflows.Runner/Pipeline/WorkflowStateService.cs#L116-L135)
+[WorkflowRunLoop.cs:L149-L167](../../Workflows.Runner/WorkflowRunLoop.cs#L149-L167) & [WorkflowStateService.cs:L116-L135](../../Workflows.Runner/Pipeline/WorkflowStateService.cs#L116-L135)
 
 #### The Problem
 When invoking a sub-workflow:

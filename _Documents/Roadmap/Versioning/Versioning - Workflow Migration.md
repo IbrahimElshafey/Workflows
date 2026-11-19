@@ -8,7 +8,7 @@ This document details the architecture, auto-generation process, and API syntax 
 
 When workflow definitions evolve, existing active instances must either run to completion on their original version or be migrated to the new schema:
 
-* **Side-by-Side (SxS) Execution:** The instance is pinned to V1 and executed inside an isolated `AssemblyLoadContext` (ALC) until termination. (For details on SxS routing and ALC isolation, see [Versioning.md](file:///d:/MySrc/Workflows/_Documents/Roadmap/Versioning/Versioning.md)).
+* **Side-by-Side (SxS) Execution:** The instance is pinned to V1 and executed inside an isolated `AssemblyLoadContext` (ALC) until termination. (For details on SxS routing and ALC isolation, see [Versioning - Why Both SxS and Migration.md](Versioning%20-%20Why%20Both%20SxS%20and%20Migration.md)).
 * **Data Migration:** The suspended V1 instance's data and execution checkpoint are converted into a V2 format so it can resume running under the V2 engine.
 
 ---
@@ -41,10 +41,10 @@ When the Source Generator detects a version increment, it creates a migration st
 4. A wait checkpoint named `VerifyStock` in V1 was replaced by `ParallelVerification` in V2.
 
 ```csharp
-public class OrderWorkflowMigration_20260529 : WorkflowMigration
+[WorkflowMigration("OrderWorkflow", fromVersion: 1, toVersion: 2)]
+public class OrderWorkflowMigration_1_To_2 : WorkflowMigration<OrderWorkflowV1, OrderWorkflowV2>
 {
-    [WorkflowMigration("OrderWorkflow", "1.0", "2.0")]
-    public override void MigrateInstance(OrderWorkflowV1 old, OrderWorkflowV2 _new)
+    public override void MigrateState(OrderWorkflowV1 old, OrderWorkflowV2 _new)
     {
         // ----------------------------------------------------------------------
         // AUTO-MAPPED FIELDS
@@ -66,21 +66,21 @@ public class OrderWorkflowMigration_20260529 : WorkflowMigration
         // Initialize it below (e.g., _new.Instance.Amount = 0.0m;).
     }
 
-    public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
+    public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
     {
         // ----------------------------------------------------------------------
         // WAIT STATE CONFLICTS (Manual Resolution Required)
         // ----------------------------------------------------------------------
-        
+
         // TODO: Wait point 'VerifyStock' exists in V1 active paths but is missing in V2 CFG.
         // Provide mapping rules to re-route this suspended wait by returning a new V2 Wait checkpoint.
         if (oldWait.WaitName == "VerifyStock")
         {
-            // return _new.WaitSignal<InventoryAllocatedEvent>("ParallelVerification");
+            // return MigrationWait(WaitSignal<InventoryAllocatedEvent>("ParallelVerification", "ParallelVerification"));
         }
-        
+
         // Default: Recreate the current wait in V2 if compatible
-        return _new.RecreateWait(oldWait.WaitName);
+        return MigrationWait(RecreateWait(oldWait.WaitName));
     }
 }
 ```
@@ -94,10 +94,10 @@ Once the draft is generated, the developer resolves the conflicts using a clean,
 ### 3.1 The Resolved Migration Class
 
 ```csharp
-public class OrderWorkflowMigration_20260529 : WorkflowMigration
+[WorkflowMigration("OrderWorkflow", fromVersion: 1, toVersion: 2)]
+public class OrderWorkflowMigration_1_To_2 : WorkflowMigration<OrderWorkflowV1, OrderWorkflowV2>
 {
-    [WorkflowMigration("OrderWorkflow", "1.0", "2.0")]
-    public override void MigrateInstance(OrderWorkflowV1 old, OrderWorkflowV2 _new)
+    public override void MigrateState(OrderWorkflowV1 old, OrderWorkflowV2 _new)
     {
         // 1. Automatic Copy of Compatible Fields
         _new.AutoMapFrom(old);
@@ -110,12 +110,12 @@ public class OrderWorkflowMigration_20260529 : WorkflowMigration
         AddToOld(old.Instance).Property("MigratedAt", DateTime.UtcNow);
     }
 
-    public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
+    public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
     {
         // 1. Transition the old 'VerifyStock' step to the new 'ParallelVerification' in V2
         if (oldWait.WaitName == "VerifyStock")
         {
-            return _new.WaitSignal<InventoryAllocatedEvent>("ParallelVerification");
+            return MigrationWait(WaitSignal<InventoryAllocatedEvent>("InventoryAllocated", "ParallelVerification"));
         }
 
         // 2. Inspect active wait DTO properties (e.g., checks if a specific child wait is completed)
@@ -123,14 +123,14 @@ public class OrderWorkflowMigration_20260529 : WorkflowMigration
         {
             // CRITICAL: Since we jump directly to the AuthorizePayment step, the engine
             // must explicitly dispatch the payment authorization command to the bus.
-            _new.ScheduleCommand(new RequestPaymentCommand(_new.Instance.OrderNumber, _new.Instance.Amount));
-            
+            ScheduleCommand(new RequestPaymentCommand(_new.Instance.OrderNumber, _new.Instance.Amount));
+
             // Return the V2 Wait object representing the next step
-            return _new.WaitSignal<PaymentResult>("AuthorizePayment");
+            return MigrationWait(WaitSignal<PaymentResult>("PaymentResult", "AuthorizePayment"));
         }
-        
+
         // Default Fallback: Recreate the same wait name in the V2 topology
-        return _new.RecreateWait(oldWait.WaitName);
+        return MigrationWait(RecreateWait(oldWait.WaitName));
     }
 }
 ```
@@ -221,10 +221,71 @@ return WaitSubWorkflow("ShippingSubWorkflow", v2Container.ShippingSubWorkflow())
 ### 5.2 Runtime Migration Execution Sequence
 
 1. **Instantiation:** The migration runner reads the target migration class based on the registered `[WorkflowMigration]` metadata.
-2. **Instance State Migration:** The engine loads the V1 and V2 assemblies via ALC, reconstructs the typed state wrappers `OrderWorkflowV1` and `OrderWorkflowV2`, and invokes `MigrateInstance(old, _new)` to map the class instance variables.
+2. **Instance State Migration:** The engine loads the V1 and V2 assemblies via ALC, reconstructs the typed state wrappers `OrderWorkflowV1` and `OrderWorkflowV2`, and invokes `MigrateState(old, _new)` (the `MigrateInstance` alias is kept for backward compatibility) to map the class instance variables.
 3. **Active Wait Migration:** The engine loops over all active waits (status `Waiting`) in the V1 `WorkflowStateDto`. For each active wait, it invokes `MigrateActiveWait(oldWait, _new)` to map the wait DTO to its V2 equivalent. If the active wait is a `SubWorkflowWaitDto`, the engine additionally calls `MigrateSubWorkflowState` (see Section 6).
 4. **Execution Position Resolution:** For each returned V2 `Wait` object, the engine resolves its compiler-generated `<>1__state` index (e.g. `4`) by matching it against V2's control flow graph (CFG) manifest, updates the DTO's state index, and saves the new V2 wait state in the database.
 5. **State Persistence:** The V2 wrapper converts the migrated object back into the updated `WorkflowStateDto` schema, completing the migration.
+
+### 5.3 Migration Strategies: `InPlace` vs `CancelAndRespawn`
+
+`WorkflowMigration<TOld, TNew>` exposes a `Strategy` property (default `InPlace`) that selects how the instance is transitioned:
+
+| Strategy | Behavior |
+| :--- | :--- |
+| `MigrationStrategy.InPlace` (default) | Migrate the existing instance's state and waits to V2 and keep the **same** `WorkflowInstanceId`. |
+| `MigrationStrategy.CancelAndRespawn` | Invoke `OnMigrateAsync`, cancel the V1 instance, and start a **new** V2 instance with mapped inputs. |
+
+#### Cancelling an unmigratable instance
+
+Call the protected `CancelInstance(string reason)` helper from any migration phase when the state cannot be migrated (deprecated flow, corrupt payload, unsupported schema drift). It throws `WorkflowMigrationCancelledException`, which the `WorkflowMigrationExecutor` intercepts:
+
+```csharp
+public override void MigrateState(OrderWorkflowV1 old, OrderWorkflowV2 _new)
+{
+    if (old.Instance.IsLegacyFlow)
+        CancelInstance("Legacy pre-2024 orders cannot be migrated to V2.");
+}
+```
+
+The executor then:
+
+1. Sets `WorkflowInstanceStatus.Canceled` (`400`) on the V1 instance.
+2. Appends a `CancellationHistoryEntry` with `Token = "Migration"` and the supplied reason.
+3. Persists the change through `IWorkflowStore.ReplaceMigratedStateAsync` and stops migration.
+
+#### Replacing an instance (`CancelAndRespawn`)
+
+For states that are unsafe to migrate, opt into respawn and provide an `OnMigrateAsync` override that starts the V2 instance and returns its new ID:
+
+```csharp
+[WorkflowMigration("OrderWorkflow", fromVersion: 1, toVersion: 2)]
+public class OrderWorkflowMigration_1_To_2 : WorkflowMigration<OrderWorkflowV1, OrderWorkflowV2>
+{
+    public OrderWorkflowMigration_1_To_2()
+    {
+        Strategy = MigrationStrategy.CancelAndRespawn;
+    }
+
+    public override void MigrateState(OrderWorkflowV1 old, OrderWorkflowV2 _new) { }
+
+    public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
+        => MigrationWait(RecreateWait(oldWait.WaitName));
+
+    public override async Task<Guid?> OnMigrateAsync(
+        OrderWorkflowV1 old,
+        OrderWorkflowV2 _new,
+        IOrchestrator runnerClient,
+        CancellationToken cancellationToken = default)
+    {
+        return await runnerClient.StartWorkflowAsync(
+            "OrderWorkflow",
+            version: 2,
+            input: new OrderInput { OrderNumber = old.Instance.OrderId.ToString() });
+    }
+}
+```
+
+If `OnMigrateAsync` returns an ID, the V1 instance is cancelled with a `CancellationHistoryEntry` whose `Token` is `"CancelAndRespawn"`, `ReplacementWorkflowInstanceId` points at the new instance, and `AuditLink` records `Respawned as V2 Instance ID: {id}`. Both the cancellation and the audit link are written in the same `ReplaceMigratedStateAsync` call. Returning `null` still cancels V1 (the respawn is treated as unnecessary), so only opt into this strategy when `OnMigrateAsync` actually starts the replacement.
 
 ---
 
@@ -270,24 +331,24 @@ When the internal structure of the sub-workflow method changes between V1 and V2
 The migration class can override `MigrateSubWorkflowState` to handle this:
 
 ```csharp
-public class OrderWorkflowMigration_20260529
+[WorkflowMigration("OrderWorkflow", fromVersion: 1, toVersion: 2)]
+public class OrderWorkflowMigration_1_To_2
     : WorkflowMigration<OrderWorkflowV1, OrderWorkflowV2>
 {
-    [WorkflowMigration("OrderWorkflow", "1.0", "2.0")]
-    public override void MigrateInstance(OrderWorkflowV1 old, OrderWorkflowV2 _new)
+    public override void MigrateState(OrderWorkflowV1 old, OrderWorkflowV2 _new)
     {
         _new.AutoMapFrom(old);
         _new.Instance.OrderNumber = old.Instance.OrderId.ToString();
     }
 
-    public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
+    public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
     {
         // If suspended inside ShippingSubWorkflow — return it by name.
         // Engine will call MigrateSubWorkflowState next to remap the child's checkpoint.
         if (oldWait is SubWorkflowWaitDto sub && sub.MethodFullPath.EndsWith("ShippingSubWorkflow"))
-            return WaitSubWorkflow("ShippingSubWorkflow");  // DSL from MigrationContainer
+            return MigrationWait(WaitSubWorkflow("ShippingSubWorkflow"));  // DSL from MigrationContainer
 
-        return RecreateWait(oldWait.WaitName);              // DSL from MigrationContainer
+        return MigrationWait(RecreateWait(oldWait.WaitName));               // DSL from MigrationContainer
     }
 
     // Called by the engine after MigrateActiveWait returns a SubWorkflowWait.
@@ -316,21 +377,37 @@ public abstract class WorkflowMigration<TOld, TNew> : MigrationContainer
     where TOld : WorkflowStateWrapper
     where TNew : WorkflowStateWrapper
 {
+    // Selects InPlace (default) or CancelAndRespawn.
+    public MigrationStrategy Strategy { get; set; } = MigrationStrategy.InPlace;
+
     // Phase 1: Map the parent workflow's class-level instance fields.
     // Called once per migrated instance.
-    public abstract void MigrateInstance(TOld old, TNew _new);
+    public abstract void MigrateState(TOld old, TNew _new);
+
+    // Alias for MigrateState kept for backward compatibility.
+    public virtual void MigrateInstance(TOld old, TNew _new) => MigrateState(old, _new);
 
     // Phase 2: Called once per active wait DTO (and once per child inside a GroupWaitDto).
-    // Returns the V2 Wait object the engine should substitute.
-    public abstract Wait MigrateActiveWait(WaitInfrastructureDto oldWait, TNew _new);
+    // Returns the V2 Wait object plus an optional StateIndex override.
+    public abstract MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, TNew _new);
 
     // Phase 3 (optional): Called after MigrateActiveWait returns a SubWorkflowWait,
     // to migrate the child's own frozen StateIndex and local variables.
     // Default auto-remaps by wait name against the V2 CFG.
     public virtual Wait MigrateSubWorkflowState(SubWorkflowWaitDto oldSubWait, TNew _new)
         => SubWorkflow_RecreateWait(oldSubWait.MethodFullPath, oldSubWait.WaitName);
+
+    // Throws WorkflowMigrationCancelledException → instance becomes Canceled (400).
+    protected void CancelInstance(string reason);
+
+    // CancelAndRespawn hook: start the replacement V2 instance and return its ID.
+    public virtual Task<Guid?> OnMigrateAsync(TOld old, TNew _new, IOrchestrator runnerClient,
+        CancellationToken cancellationToken = default);
 }
 ```
+
+> [!NOTE]
+> Only the interface names `IOrchestrator`, `WaitInfrastructureDto`, `SubWorkflowWaitDto`, `MigratedWait` and `MigrationStrategy` live in the `Workflows.*` assemblies — `WorkflowMigration<,>` and `MigrationContainer` live in `Workflows.Definition`, while `WorkflowMigrationExecutor` lives in `Workflows.Runner`.
 
 > [!NOTE]
 > `MigrateSubWorkflowState` has a default implementation that auto-remaps the child's checkpoint by name. The developer only needs to override it when the sub-workflow's internal step sequence or naming changed between versions.
@@ -387,25 +464,25 @@ If the group shape is **unchanged** (same number of children, same types), the e
 If the **group structure itself changed** (e.g. a third sub-workflow was added, or the group policy changed from `MatchAll` to `MatchAny`), the developer intercepts the `GroupWaitDto` directly in `MigrateActiveWait` and returns a fully rebuilt group using the native DSL — same syntax as in workflow code:
 
 ```csharp
-public override Wait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
+public override MigratedWait MigrateActiveWait(WaitInfrastructureDto oldWait, OrderWorkflowV2 _new)
 {
     // Intercept the group when its structure changed
     if (oldWait is GroupWaitDto group && group.WaitName == "ParallelFulfillment")
     {
         // V2 adds a WarehouseSubWorkflow to the group.
         // WaitGroup / WaitSubWorkflow come from MigrationContainer — identical DSL to workflow code.
-        return WaitGroup(
+        return MigrationWait(WaitGroup(
             [
                 WaitSubWorkflow("ShippingSubWorkflow"),
                 WaitSubWorkflow("BillingSubWorkflow"),
                 WaitSubWorkflow("WarehouseSubWorkflow"),   // new in V2
             ],
             "ParallelFulfillment"
-        ).MatchAll();
+        ).MatchAll());
         // Engine then calls MigrateSubWorkflowState for each child that maps to a V1 frozen frame
     }
 
-    return RecreateWait(oldWait.WaitName);
+    return MigrationWait(RecreateWait(oldWait.WaitName));
 }
 ```
 
@@ -429,23 +506,25 @@ ChildWaits during migration:
 
 ## 8. Failure Isolation & Rollback Guarantees
 
-### 8.1 Batch Migration Blast Radius Isolation
-During batch migrations against live DB rows:
-- Each workflow instance executes inside an **isolated DB savepoint**.
-- If `AutoMapFrom` or user migration logic throws a `WorkflowMigrationException` for instance `#105`:
-  - Instance `#105`'s migration rolls back to `StateObject_PreMigration_V1`.
-  - Its status is updated to `MigrationFailed` / `Quarantined` and logged to `WorkflowExecutionErrors`.
-  - Instance `#105` remains on Version 1 and continues executing on Worker V1.
-  - Sibling instances (`#101–#104`, `#106+`) in the batch complete their migration normally.
+### 8.1 What the engine guarantees today
 
-### 8.2 Archived Binary Respawn Guarantee
-If Worker V1 was decommissioned and a late trigger (e.g. saga compensation 3 days later) arrives:
-- The Host Supervisor resolves the exact version binary archive (`/Archive/Binaries/V1/Workflows.Worker.dll`) registered for `WorkflowVersion = 1`.
-- It executes: `dotnet Workflows.Worker.dll --version 1.0.0 --archive-path /Archive/Binaries/V1`.
-- It **never** spins up latest V2 binaries to run a V1 instance.
+`WorkflowMigrationExecutor.MigrateAsync` performs the entire migration for **one** instance in a single unit of work:
 
-### 8.3 Rollback & Late Compensation Concurrency Guard
-During the 15-minute `DrainingGracePeriod` post-migration:
-- All state migrations, rollbacks, and incoming signal/compensation dispatches for a given `WorkflowInstanceId` are strictly serialized using the Orchestrator's row-level `InstanceLockManager`.
-- If a post-migration anomaly triggers a DB rollback to `StateObject_PreMigration_V1` while a late compensation event arrives concurrently, the rollback acquires the instance lock first. The incoming compensation request waits in queue until the rollback completes, then executes cleanly against the pre-migration V1 state on Worker V1.
+- The V1 state is loaded with `IWorkflowStore.GetInstanceStateAsync`.
+- The V2 state and migrated waits are written through one `IWorkflowStore.ReplaceMigratedStateAsync` call, so a failure before that call leaves the persisted V1 row untouched (the instance keeps running on V1).
+- `WorkflowMigrationCancelledException` is the only exception the executor converts into a persisted outcome (`WorkflowInstanceStatus.Canceled` + `CancellationHistoryEntry`). Any other exception (`WorkflowMigrationException` from `AutoMapFrom`, invalid casts, missing manifest entries) propagates to the caller, which aborts the batch loop for that invocation.
+
+### 8.2 Not implemented yet
+
+The following behaviours are **design intent, not current code**. Do not rely on them:
+
+- Per-instance DB savepoints inside a batch, and a `MigrationFailed` / `Quarantined` instance status (the enum only defines `New`, `InProgress`, `Completed`, `InError`, `Canceled`, `Running`).
+- Logging failures to a `WorkflowExecutionErrors` table — no such table exists; DLQ/error persistence is still scaffolded (see [Poison Message & DLQ Handling](../../Architecture/Poison%20Message%20%26%20DLQ%20Handling.md)).
+- A `StateObject_PreMigration_V1` snapshot column and a post-migration `DrainingGracePeriod` rollback window.
+
+To retry a failed migration today, re-run the migration entry point for that `WorkflowInstanceId`; the V1 row is still authoritative and unchanged.
+
+### 8.3 Version pinning during rollback
+
+Active instances never silently move to a newer binary: routing is capability-based (`WorkerCapabilities` → `WorkerProcessSupervisor.ResolveWorkerVersionForWorkflow`), so an instance at `WorkflowVersion = 1` keeps dispatching to the worker version that registered that capability until it is migrated or completes. If the V1 worker binary is no longer deployed, the instance cannot be routed — the supervisor only spawns workers from `Workflows.Runner.dll` next to the host, so keep the archived worker build deployed for as long as V1 instances remain active.
 

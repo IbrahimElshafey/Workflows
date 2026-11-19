@@ -1,22 +1,22 @@
 # Workflows.Orchestrator
 
 ## 1. What is this?
-The control plane orchestrator (targeting `net10.0`) of the workflows engine. It acts as the central coordinator for all workflow instances, routing signals and command results, managing persistence, and executing background timers for delayed steps.
+The control plane orchestrator (targeting `net10.0`) of the workflows engine. It is the sole owner of database transactions: it routes signals and command results, persists execution state, and fires delayed steps through the timer engine.
 
 Key responsibilities:
-- **Instance Coordination**: Orchestrates workflow starting, pausing, compensation, and execution loops.
-- **Background Scheduler**: Runs a polling scheduler (`Scheduler`) for resolving timeouts, delays, and recurring timers.
-- **Persistence Handling**: Interfaces with database stores to commit and load workflow execution states.
-- **Runner Proxying**: Dispatches actual step execution tasks to the `Workflows.Runner` over configured message transports.
+- **Instance Coordination**: starts instances, applies signals, command results, cancellation and compensation, and commits the resulting state atomically.
+- **Scheduler**: `Scheduler` implements `IExternalScheduler` and `IHostedService` — an in-memory fast path plus a clustered DB poller (`ClaimDueTimersAsync`) that recovers stale claims.
+- **Persistence Handling**: drives `IWorkflowStore` (SQLite / SQL Server / PostgreSQL) to load and commit snapshots.
+- **Runner Proxying**: dispatches execution requests to the `Workflows.Runner` over the configured transport.
 
 ## 2. How to use?
-Inject `IOrchestrator` into your business logic, web APIs, or message handlers to interact with workflow instances.
+Inject `IOrchestrator` (namespace `Workflows.Abstraction.Orchestrator`) into your controllers, web APIs or message handlers:
 
-### Example:
 ```csharp
 using System;
 using System.Threading.Tasks;
-using Workflows.Abstraction;
+using Workflows.Abstraction.DTOs;
+using Workflows.Abstraction.Orchestrator;
 
 public class OrderController
 {
@@ -27,14 +27,21 @@ public class OrderController
         _orchestrator = orchestrator;
     }
 
-    public async Task StartOrderProcess(Guid orderId, decimal amount)
+    public async Task<Guid> StartOrderProcess(decimal amount)
     {
-        await _orchestrator.StartWorkflowAsync(
-            name: "OrderProcessingWorkflow",
-            version: "1.0.0",
-            instanceId: orderId,
-            input: new { Amount = amount }
-        );
+        // Returns the new WorkflowInstanceId
+        return await _orchestrator.StartWorkflowAsync(
+            workflowName: "OrderProcessingWorkflow",
+            version: 1,
+            input: new { Amount = amount });
     }
+
+    public Task Cancel(Guid instanceId) =>
+        _orchestrator.CancelWorkflowAsync(instanceId, token: "user-cancel", reason: "Requested by customer");
+
+    public Task SubmitSignal(SignalDto signal) =>
+        _orchestrator.ProcessSignalAsync(signal);
 }
 ```
+
+Version is an `int`, not a semantic version string, and the caller does not supply the instance ID — the engine generates it and returns it from `StartWorkflowAsync`.

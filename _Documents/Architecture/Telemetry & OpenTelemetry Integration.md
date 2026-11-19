@@ -2,6 +2,11 @@
 
 This document specifies the design for distributed tracing, metric collection, and structured logging in the Workflows engine, fully aligning with **OpenTelemetry (OTel)** standards.
 
+> **Status: 🔴 Design only — not implemented.** Nothing in this document exists in the codebase yet; see the roadmap entry in [ROADMAP.md](../Roadmap/ROADMAP.md).
+
+---
+
+
 ---
 
 ## 1. Trace Context Propagation

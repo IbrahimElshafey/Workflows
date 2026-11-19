@@ -37,7 +37,7 @@ graph LR
 Stores the complete snapshot of the workflow run as the single source of truth.
 * `Id` (Guid, Primary Key): Unique run identifier.
 * `Status` (Enum): `Running`, `Completed`, or `InError`.
-* `StateObject` (JSON/JSONB): Serialized `WorkflowRunContext` containing container properties, C# state machine step index, and wait tree.
+* `StateObject` (JSON/JSONB): Serialized `WorkflowStateObject` containing container properties, C# state machine step index, and wait tree.
 
 ### B. The Indexing Tables (`SignalWaits`, `CommandWaits`, `CompensationWaits`)
 Flat, relational tables dedicated solely to indexing active wait states for incoming signals, external commands, or schedulers.

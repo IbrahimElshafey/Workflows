@@ -40,6 +40,8 @@ graph TD
     StoragePostgres["Workflows.Storage.Postgres"]
     StorageSqlServer["Workflows.Storage.SqlServer"]
 
+    StorageEF --> Abstraction
+    StorageEF --> CommonAbstraction
     StorageSqlite --> StorageEF
     StoragePostgres --> StorageEF
     StorageSqlServer --> StorageEF
@@ -93,6 +95,7 @@ graph TD
     SampleAdminUI --> Orchestrator
     SampleAdminUI --> HostingInProcess
     SampleAdminUI --> StorageSqlite
+    SampleAdminUI --> StorageSqlServer
 
     SampleOutOfProcess --> HostingInProcess
     SampleOutOfProcess --> ToolsCLI
@@ -124,13 +127,14 @@ graph TD
     TestRunner --> ClientGrpc
     TestRunner --> StorageEF
     TestRunner --> StorageSqlite
+    TestRunner --> ToolsCLI
 ```
 
 ## Key Observations
 
 - **Foundational layer**: `Workflows.Primitives` is referenced by `Workflows.Abstraction` and `Workflows.Definition`.
 - **Central hub**: `Workflows.Common.Abstraction` pulls together `Workflows.Abstraction`, `Workflows.Communication.Abstraction`, and `Workflows.Definition`, and is consumed by `Workflows.Runner`, `Workflows.Orchestrator`, tests, and samples.
-- **Storage providers**: `Workflows.Storage.Sqlite`, `Workflows.Storage.Postgres`, and `Workflows.Storage.SqlServer` all depend on `Workflows.Storage.EntityFrameworkCore`.
+- **Storage providers**: `Workflows.Storage.Sqlite`, `Workflows.Storage.Postgres`, and `Workflows.Storage.SqlServer` all depend on `Workflows.Storage.EntityFrameworkCore`, which in turn references `Workflows.Abstraction` and `Workflows.Common.Abstraction`.
 - **Client stack**: `Workflows.Client.WebApi` and `Workflows.Client.gRPC` both depend on the shared `Workflows.Client` project.
 - **CLI & Tools**: `Workflows.Tools.CLI` brings together Roslyn `Workflows.Analyzers`, `Workflows.Definition`, and `Workflows.Common` to offer schema extraction, verification, manifest generation, and migration boilerplate creation.
 - **Out-of-Process Worker Supervision**: `Samples/OutOfProcessWorkerSample` references `Workflows.Hosting.InProcess` (which contains `WorkerProcessSupervisor`), `Workflows.Tools.CLI`, and `Workflows.Runner` for managing dynamic out-of-process worker execution over IPC.

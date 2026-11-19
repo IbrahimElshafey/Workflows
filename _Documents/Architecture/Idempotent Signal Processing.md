@@ -76,28 +76,22 @@ To prevent the `SignalInbox` table from growing indefinitely and slowing down lo
 
 The deduplication logic is integrated into the Orchestrator's signal processing pipeline.
 
+The orchestrator does not expose a separate "deliver idempotently" entry point — deduplication happens inside the normal commit path:
+
+1. `InboxPollerWorker` pulls `SignalInboxEntity` rows that have not been dispatched.
+2. `InboxOrchestrator.ProcessSignalAsync(SignalDto)` resolves the waiting instances through the `SignalWaits` index.
+3. Before persisting the new state, the store calls `IWorkflowStore.HasSignalBeenProcessedAsync(signalId)` inside the same transaction that writes the advance.
+4. `PruneProcessedSignalsAsync(cutoff)` trims the inbox on a schedule.
+
 ```csharp
-public class IdempotentSignalProcessor : ISignalProcessor
+// Inside the transactional commit path (WorkflowStore)
+if (await _store.HasSignalBeenProcessedAsync(signal.Id))
 {
-    private readonly ISignalInboxStore _inboxStore;
-    private readonly IOrchestrator _orchestrator;
-
-    public async Task ProcessSignalAsync(SignalRequest request)
-    {
-        // 1. Perform quick out-of-transaction read check (Optimization)
-        if (await _inboxStore.HasBeenProcessedAsync(request.MessageId))
-        {
-            Log.Warning("Duplicate message detected: {MessageId}. Discarding.", request.MessageId);
-            return;
-        }
-
-        // 2. Route message to Orchestrator (Orchestrator wraps the database transaction)
-        await _orchestrator.DeliverSignalIdempotentlyAsync(
-            request.MessageId,
-            request.InstanceId,
-            request.SignalPath,
-            request.Payload
-        );
-    }
+    _logger.LogWarning("Duplicate signal {SignalId} discarded.", signal.Id);
+    return;
 }
+
+await _store.SaveContextSyncAsync(stateDto, completedWaitIds, triggeringSignalId: signal.Id);
 ```
+
+Because the check and the write share one transaction, a redelivered message can never advance an instance twice.

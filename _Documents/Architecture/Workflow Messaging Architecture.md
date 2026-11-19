@@ -133,14 +133,18 @@ Upon completing the state machine tick, the runner returns the updated run conte
 
 ## 4. Signal Ingestion
 
-External signals do not use custom HTTP transport adapters or brokers. They are posted directly to the orchestrator interface (`IOrchestrator.PostSignalAsync`) via the API controllers or dashboard services:
+External signals do not use custom HTTP transport adapters or brokers. They are handed to the orchestrator interface via the API controllers or dashboard services:
 
 ```csharp
 public interface IOrchestrator
 {
-    Task StartWorkflowAsync(StartWorkflowRequest request);
-    Task PostSignalAsync(string signalPath, object signalPayload, Guid? signalId = null);
+    Task<Guid> StartWorkflowAsync(string workflowName, int version, object input);
+    Task ProcessSignalAsync(SignalDto signal);
+    Task ProcessCommandResultAsync(CommandResultDto result);
+    Task CancelWorkflowAsync(Guid instanceId, string token, string reason = "");
 }
 ```
+
+`ProcessSignalAsync` takes a `SignalDto`, not a signal path + payload pair — the orchestrator resolves which instances are waiting on that signal path through the `SignalWaits` routing index (see [Idempotent Signal Processing](Idempotent%20Signal%20Processing.md)).
 
 This ensures that signal handling is transactional, idempotent, and leverages the SQLite-backed inbox tables for deduplication prior to runner dispatch.

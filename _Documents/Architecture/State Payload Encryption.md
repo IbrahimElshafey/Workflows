@@ -2,6 +2,11 @@
 
 This document specifies the design for encrypting the serialized JSON `StateObject` blob in the database, ensuring security compliance (e.g., GDPR, HIPAA, PCI-DSS) for sensitive workflow variables.
 
+> **Status: 🔴 Design only — not implemented.** Nothing in this document exists in the codebase yet; see the roadmap entry in [ROADMAP.md](../Roadmap/ROADMAP.md).
+
+---
+
+
 ---
 
 ## 1. Architectural Strategy: Envelope Encryption
