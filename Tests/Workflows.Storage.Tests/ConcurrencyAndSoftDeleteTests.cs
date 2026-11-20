@@ -8,7 +8,9 @@ using Workflows.Abstraction.DTOs;
 using Workflows.Storage.EntityFrameworkCore;
 using Xunit;
 
-namespace Workflows.Runner.Tests
+using Workflows.Runner.Tests.Infrastructure;
+
+namespace Workflows.Storage.Tests
 {
     public class ConcurrencyAndSoftDeleteTests : IDisposable
     {

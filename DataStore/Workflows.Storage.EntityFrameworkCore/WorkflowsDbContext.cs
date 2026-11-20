@@ -28,6 +28,8 @@ namespace Workflows.Storage.EntityFrameworkCore
         public DbSet<CommandResultEntity> CommandResults { get; set; }
         public DbSet<SignalInboxEntity> SignalInbox { get; set; }
         public DbSet<WorkerCapabilityEntity> WorkerCapabilities { get; set; }
+        public DbSet<DlqMessageEntity> DlqMessages { get; set; }
+        public DbSet<WorkflowInstanceSnapshotEntity> WorkflowInstanceSnapshots { get; set; }
 
 
         public WorkflowsDbContext(DbContextOptions<WorkflowsDbContext> options) : this(options, null)
@@ -299,6 +301,21 @@ namespace Workflows.Storage.EntityFrameworkCore
                 entity.HasKey(e => e.Id);
                 entity.HasIndex(e => new { e.WorkflowType, e.WorkflowVersion, e.IsActive });
                 entity.HasIndex(e => new { e.DllVersion, e.IsActive });
+            });
+
+            modelBuilder.Entity<DlqMessageEntity>(entity =>
+            {
+                entity.ToTable("DlqMessages");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => e.WorkflowInstanceId);
+                entity.HasIndex(e => new { e.Status, e.CreatedAt });
+            });
+
+            modelBuilder.Entity<WorkflowInstanceSnapshotEntity>(entity =>
+            {
+                entity.ToTable("WorkflowInstanceSnapshots");
+                entity.HasKey(e => e.Id);
+                entity.HasIndex(e => new { e.WorkflowInstanceId, e.CreatedAt });
             });
         }
 

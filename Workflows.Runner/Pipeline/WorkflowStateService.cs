@@ -419,7 +419,6 @@ namespace Workflows.Runner.Pipeline
                         if (!inputProp.CanRead) continue;
                         var containerProp = containerType.GetProperty(inputProp.Name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
                         var value = inputProp.GetValue(input);
-                        Console.WriteLine($"[PopulateNewWorkflowContext] Input Property = {inputProp.Name}, containerProp found = {containerProp != null}, Value = {value}");
                         if (containerProp != null && containerProp.CanWrite)
                         {
                             containerProp.SetValue(workflowInstance, value);

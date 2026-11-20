@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using Workflows.Abstraction.DTOs.Waits;
 using Workflows.Abstraction.Enums;
+using Workflows.Abstraction.Runner;
+using Workflows.Primitives;
 using Workflows.Admin.UI.Models;
 using Workflows.Storage.EntityFrameworkCore;
 
@@ -13,17 +15,20 @@ namespace Workflows.Admin.UI.Services
         private readonly IMetricsAggregatorService _metricsAggregator;
         private readonly ITopologyExtractorService _topologyExtractor;
         private readonly ITraceAggregatorService _traceAggregator;
+        private readonly WorkflowRunnerOptions _runnerOptions;
 
         public AdminQueryService(
             WorkflowsDbContext dbContext,
             IMetricsAggregatorService metricsAggregator,
             ITopologyExtractorService topologyExtractor,
-            ITraceAggregatorService traceAggregator)
+            ITraceAggregatorService traceAggregator,
+            WorkflowRunnerOptions? runnerOptions = null)
         {
             _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             _metricsAggregator = metricsAggregator ?? throw new ArgumentNullException(nameof(metricsAggregator));
             _topologyExtractor = topologyExtractor ?? throw new ArgumentNullException(nameof(topologyExtractor));
             _traceAggregator = traceAggregator ?? throw new ArgumentNullException(nameof(traceAggregator));
+            _runnerOptions = runnerOptions ?? new WorkflowRunnerOptions();
         }
 
         public Task<DashboardViewModel> GetDashboardMetricsAsync(CancellationToken ct = default)
@@ -64,6 +69,12 @@ namespace Workflows.Admin.UI.Services
             if (filter.CreatedBefore.HasValue)
             {
                 query = query.Where(i => i.Created <= filter.CreatedBefore.Value);
+            }
+
+            if (filter.StuckRollbacks == true)
+            {
+                var compensationFailedValue = (int)WorkflowInstanceStatus.CompensationFailed;
+                query = query.Where(i => i.Status == compensationFailedValue);
             }
 
             if (filter.HasError.HasValue)
@@ -129,6 +140,7 @@ namespace Workflows.Admin.UI.Services
 
             var waitTree = BuildWaitTree(instance.Waits);
             var activeSignalWaits = CollectActiveSignalWaits(instance.Waits);
+            var subWorkflowDepth = CalculateSubWorkflowDepth(instance.Waits);
 
             return new InstanceDetailViewModel
             {
@@ -149,7 +161,9 @@ namespace Workflows.Admin.UI.Services
                 WaitTree = waitTree,
                 CancellationHistory = instance.CancellationHistory ?? new List<Workflows.Abstraction.DTOs.CancellationHistoryEntry>(),
                 CanExecuteActions = canExecuteActions,
-                ActiveSignalWaits = activeSignalWaits
+                ActiveSignalWaits = activeSignalWaits,
+                SubWorkflowDepth = subWorkflowDepth,
+                MaxSubWorkflowDepth = _runnerOptions.MaxSubWorkflowDepth
             };
         }
 
@@ -233,6 +247,35 @@ namespace Workflows.Admin.UI.Services
                 }
             }
             return count;
+        }
+
+        /// <summary>
+        /// Computes the deepest sub-workflow nesting recorded in the persisted wait tree.
+        /// A sub-workflow wait owns the child instance's waits, so each such node adds one level.
+        /// </summary>
+        private static int CalculateSubWorkflowDepth(IEnumerable<WaitInfrastructureDto>? waits)
+        {
+            if (waits == null) return 0;
+
+            var deepest = 0;
+            foreach (var wait in waits)
+            {
+                var nested = CalculateSubWorkflowDepth(wait.ChildWaits);
+                if (wait is ExternalGroupWaitDto externalGroup)
+                {
+                    var externalNested = CalculateSubWorkflowDepth(externalGroup.ExternalChildWaits);
+                    if (externalNested > nested) nested = externalNested;
+                }
+
+                if (wait.WaitType == WaitType.SubWorkflowWait || wait.WaitType == WaitType.PlaceholderSubWorkflow)
+                {
+                    nested++;
+                }
+
+                if (nested > deepest) deepest = nested;
+            }
+
+            return deepest;
         }
 
         private static List<WaitTreeNodeViewModel> BuildWaitTree(List<WaitInfrastructureDto>? waits)

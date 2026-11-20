@@ -21,7 +21,9 @@ using Workflows.Runner;
 using Workflows.Runner.Migration;
 using Xunit;
 
-namespace Workflows.Runner.Tests
+using Workflows.Runner.Tests.Infrastructure;
+
+namespace Workflows.Storage.Tests
 {
     // Strongly-typed state POCOs
     public class OrderWorkflowAdvancedState_V1
@@ -129,8 +131,8 @@ namespace Workflows.Runner.Tests
             var services = new ServiceCollection();
             services.AddDbContext<WorkflowsDbContext>(opt => opt.UseSqlite(_connection));
             services.AddScoped<IWorkflowStore, WorkflowStore>();
-            services.AddSingleton<IObjectSerializer, Infrastructure.TestObjectSerializer>();
-            services.AddSingleton<IExpressionSerializer, Infrastructure.TestExpressionSerializer>();
+            services.AddSingleton<IObjectSerializer, TestObjectSerializer>();
+            services.AddSingleton<IExpressionSerializer, TestExpressionSerializer>();
             services.AddWorkflowsRunner();
 
             var mockDispatcher = new MockMessageDispatcher();
@@ -289,8 +291,8 @@ namespace Workflows.Runner.Tests
             var services = new ServiceCollection();
             services.AddDbContext<WorkflowsDbContext>(opts => opts.UseSqlite(connection));
             services.AddScoped<IWorkflowStore, WorkflowStore>();
-            services.AddSingleton<IObjectSerializer, Infrastructure.TestObjectSerializer>();
-            services.AddSingleton<IExpressionSerializer, Infrastructure.TestExpressionSerializer>();
+            services.AddSingleton<IObjectSerializer, TestObjectSerializer>();
+            services.AddSingleton<IExpressionSerializer, TestExpressionSerializer>();
             services.AddWorkflowsRunner();
             services.AddSingleton<IMessageDispatcher, MockMessageDispatcher>();
 
@@ -354,8 +356,8 @@ namespace Workflows.Runner.Tests
             var services = new ServiceCollection();
             services.AddDbContext<WorkflowsDbContext>(opts => opts.UseSqlite(connection));
             services.AddScoped<IWorkflowStore, WorkflowStore>();
-            services.AddSingleton<IObjectSerializer, Infrastructure.TestObjectSerializer>();
-            services.AddSingleton<IExpressionSerializer, Infrastructure.TestExpressionSerializer>();
+            services.AddSingleton<IObjectSerializer, TestObjectSerializer>();
+            services.AddSingleton<IExpressionSerializer, TestExpressionSerializer>();
             services.AddWorkflowsRunner();
             services.AddSingleton<IMessageDispatcher, MockMessageDispatcher>();
 

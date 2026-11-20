@@ -89,7 +89,7 @@ namespace Workflows.Runner.Tests.Infrastructure
             return this;
         }
 
-        public IWorkflowRunner Build()
+        public IWorkflowRunner Build(Action<IServiceCollection>? configure = null)
         {
             var services = new ServiceCollection();
             services.AddWorkflowsRunner();
@@ -98,6 +98,7 @@ namespace Workflows.Runner.Tests.Infrastructure
             services.AddSingleton<ICommandHandlerFactory>(_handlerFactory);
             services.AddSingleton<IObjectSerializer>(_objectSerializer);
             services.AddSingleton<IExpressionSerializer>(new TestExpressionSerializer());
+            configure?.Invoke(services);
             var provider = services.BuildServiceProvider();
             return provider.GetRequiredService<IWorkflowRunner>();
         }

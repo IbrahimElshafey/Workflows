@@ -220,6 +220,36 @@ namespace Workflows.Analyzers
             DiagnosticSeverity.Error,
             isEnabledByDefault: true);
 
+        // WF010: Write to a member excluded from the snapshot
+        public const string DiagnosticIdWF010 = "WF010";
+        private static readonly DiagnosticDescriptor WF010 = new DiagnosticDescriptor(
+            DiagnosticIdWF010,
+            "Ignored state member is written",
+            "Member '{0}' is excluded from serialization but workflow method '{1}' writes to it. The value is lost at the next yield; keep it in a serialized member.",
+            "Workflow.Serialization",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
+        // WF011: Interface or abstract typed state member
+        public const string DiagnosticIdWF011 = "WF011";
+        private static readonly DiagnosticDescriptor WF011 = new DiagnosticDescriptor(
+            DiagnosticIdWF011,
+            "State member cannot be reconstructed",
+            "Member '{0}' is declared as '{1}', which cannot be reconstructed from the persisted snapshot. Use a concrete type or supply polymorphic metadata.",
+            "Workflow.Serialization",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
+        // WF400: Self-recursive sub-workflow
+        public const string DiagnosticIdWF400 = "WF400";
+        private static readonly DiagnosticDescriptor WF400 = new DiagnosticDescriptor(
+            DiagnosticIdWF400,
+            "Self-recursive sub-workflow",
+            "Sub-workflow '{0}' passes itself to WaitSubWorkflow. Unbounded recursion grows the persisted snapshot without limit; prefer a flat loop over a state property.",
+            "Workflow.Structure",
+            DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
         // WF300: Version bumped — archive required
         public const string DiagnosticIdWF300 = "WF300";
         private static readonly DiagnosticDescriptor WF300 = new DiagnosticDescriptor(
@@ -241,7 +271,7 @@ namespace Workflows.Analyzers
             isEnabledByDefault: true);
 
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(
-            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF008, WF009, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209, WF_ERR_UNSAFE_STATE, WF210, WF211, WF300, WF301);
+            WF000, WF001, WF003, WF004, WF005, WF006, WF007, WF008, WF009, WF010, WF011, WF103, WF201, WF202, WF203, WF204, WF205, WF206, WF207, WF208, WF209, WF_ERR_UNSAFE_STATE, WF210, WF211, WF300, WF301, WF400);
 
         public override void Initialize(AnalysisContext context)
         {
@@ -264,6 +294,7 @@ namespace Workflows.Analyzers
             Rules.StructureRules.AnalyzeNamedType(context, WF201, WF202, WF209, WF210, WF211);
             Rules.WaitRules.AnalyzeNamedType(context, WF204, WF205, WF206, WF207, WF208);
             Rules.VersioningRules.AnalyzeNamedType(context, WF300, WF301);
+            Rules.SerializationRules.AnalyzeStateShape(context, WF011);
         }
 
         private static void AnalyzeAwaitForeach(SyntaxNodeAnalysisContext context)
@@ -294,6 +325,7 @@ namespace Workflows.Analyzers
         private static void AnalyzeAssignmentExpression(SyntaxNodeAnalysisContext context)
         {
             Rules.PurityRules.AnalyzeAssignmentExpression(context, WF103);
+            Rules.SerializationRules.AnalyzeIgnoredStateWrite(context, WF010);
         }
 
         private static void AnalyzeInvocationExpression(SyntaxNodeAnalysisContext context)
@@ -306,6 +338,8 @@ namespace Workflows.Analyzers
             var methodSymbol = context.SemanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
             if (methodSymbol == null) return;
 
+            Rules.SerializationRules.AnalyzeWithStateShape(context, invocation, methodSymbol, WF011);
+            Rules.SubWorkflowRules.AnalyzeInvocation(context, invocation, methodSymbol, WF400);
             Rules.ClosureRules.AnalyzeInvocation(context, invocation, methodSymbol, WF000);
             Rules.PurityRules.AnalyzeMatchIfPurity(context, invocation, methodSymbol, WF203);
         }

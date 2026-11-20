@@ -98,6 +98,20 @@ namespace Workflows.Runner
             return null;
         }
 
+        /// <summary>
+        /// Match templates are cached in process-wide statics (signal, command and group caches) and
+        /// persisted to the template repository, so a key has to identify the workflow that declared the
+        /// wait. Without the container type, two workflows that use the same identifier and the same match
+        /// expression text produce the same key: the first compiled delegate - bound to its own container -
+        /// is then reused for the second workflow and throws an <see cref="InvalidCastException"/> that the
+        /// matcher swallows, leaving the wait unmatched.
+        /// </summary>
+        private static string ScopeTemplateKey(string key, WorkflowContainer? container)
+        {
+            var workflowType = container?.GetType().Name;
+            return string.IsNullOrEmpty(workflowType) ? key : $"{key}:{workflowType}";
+        }
+
         public TimeWaitDto MapToDto(TimeWait waitsGroup)
         {
             if(waitsGroup == null)
@@ -152,6 +166,7 @@ namespace Workflows.Runner
                     matchFuncName = $"{waitsGroup.WaitName}:{hash}";
                 }
 
+                matchFuncName = ScopeTemplateKey(matchFuncName, waitsGroup.WorkflowContainer);
                 _callbackRegistry.Register(matchFuncName, waitsGroup.GroupMatchFilterOriginal);
 
                 if (_templateRepository != null)
@@ -276,6 +291,8 @@ namespace Workflows.Runner
                         "Match_" + commandWait.HandlerKey);
                     matchTemplateHashKey = $"Cmd_{commandWait.HandlerKey}:{hash}";
                 }
+
+                matchTemplateHashKey = ScopeTemplateKey(matchTemplateHashKey, commandWait.WorkflowContainer);
             }
 
             MatchTransformationResult? transformResult = null;
@@ -443,9 +460,10 @@ namespace Workflows.Runner
             }
             else
             {
-                var wfName = signalWait.WorkflowContainer?.GetType().Name ?? string.Empty;
-                templateHashKey = $"{signalWait.SignalIdentifier}:{wfName}";
+                templateHashKey = signalWait.SignalIdentifier;
             }
+
+            templateHashKey = ScopeTemplateKey(templateHashKey, signalWait.WorkflowContainer);
             // Register the live AfterMatchAction delegate in the CallbackRegistry so the
             // SignalWaitMatcher can retrieve it by the stable hash key without reflection.
             if (signalWait.AfterMatchAction != null && !string.IsNullOrEmpty(templateHashKey))

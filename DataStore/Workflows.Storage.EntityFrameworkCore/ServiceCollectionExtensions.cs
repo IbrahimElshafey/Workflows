@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Workflows.Abstraction.Persistence;
 
 namespace Workflows.Storage.EntityFrameworkCore
@@ -12,6 +13,10 @@ namespace Workflows.Storage.EntityFrameworkCore
             services.AddScoped<ITemplateRepository, TemplateRepository>();
             services.AddScoped<IInstanceLockManager, InstanceLockManager>();
             services.AddSingleton<WorkflowAuditingInterceptor>();
+
+            // No-op DLQ publisher so the compensation worker can always resolve IDlqPublisher.
+            // TryAdd semantics keep any application-supplied publisher registered earlier.
+            services.TryAddSingleton<IDlqPublisher, NoOpDlqPublisher>();
             return services;
         }
     }

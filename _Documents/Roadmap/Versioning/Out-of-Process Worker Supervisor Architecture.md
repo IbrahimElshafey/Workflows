@@ -37,3 +37,59 @@ During the 15-minute `DrainingGracePeriod` post-migration:
 | **Memory Reclamation** | 🔴 Cooperative GC unloading traps | 🟢 **OS Level Reclamation** on Process Exit |
 | **Crash Resilience** | 🔴 Unhandled Worker exception crashes host | 🟢 Worker crash isolated from Host Supervisor |
 | **Deterministic Deploy** | 🟡 Host guesses runtime behavior | 🟢 **Guided by `deployment-manifest.json` + Live DB** |
+
+---
+
+## 4. Implemented: worker build archive
+
+The respawn guarantee in section 2.1 is implemented by `WorkerArchiveStore`
+(`Hosting/Workflows.Hosting.InProcess/WorkerArchiveStore.cs`).
+
+- **Archive root.** `{AppContext.BaseDirectory}/worker-archive` by default;
+  override with the `WORKFLOWS_WORKER_ARCHIVE` environment variable or the
+  `WorkerArchiveStore` constructor.
+- **Layout.** `{root}/{version}/` holds a full copy of the published worker build
+  plus `worker-archive.json` (`Version`, `ExecutableName`, `RuntimeIdentifier`,
+  `SourceDirectory`, `ArchivedAt`). Nesting is preserved, so a self-contained
+  publish keeps its `runtimes/` and satellite folders.
+- **Entry point.** `Workflows.Runner.exe` wins over `Workflows.Runner.dll` when both
+  are present, so an archived self-contained publish is launched as an executable
+  on its own runtime instead of through the host's `dotnet`.
+
+### Where it is used
+
+1. `WorkerDrainWorker` archives the build **before** terminating a worker
+   (`WorkerDrainOptions.ArchiveBeforeShutdown`, default `true`). A failed archive
+   logs a warning and does not block the drain.
+2. `WorkerProcessSupervisor.ResolveWorkerExecutable(version)` returns the archived
+   executable when the version has one and only falls back to the host's
+   `Workflows.Runner.dll`/`.exe` otherwise. `EnsureWorkerAsync` spawns that path, so a
+   late compensation for a retired version never runs on the host runtime.
+3. `TryArchiveWorkerAsync` is idempotent: archiving a version that is already
+   archived returns `true` without copying the archive onto itself.
+
+### Producing an archivable build
+
+Publish each worker version self-contained and hand the output folder to the
+archive (the drain worker does this automatically for the directory the worker was
+launched from):
+
+```powershell
+dotnet publish Workflows.Runner/Workflows.Runner.csproj -c Release -r win-x64 --self-contained -o publish/1.4.0
+```
+
+```csharp
+var archive = new WorkerArchiveStore();                       // or ("D:/wf/worker-archive")
+await archive.ArchiveAsync("1.4.0", "publish/1.4.0", "win-x64");
+
+var supervisor = new WorkerProcessSupervisor(archiveStore: archive);
+```
+
+### Known limitation
+
+`WorkflowInstanceSnapshots` (pre-migration state) and the archive solve different
+halves of the same problem: the snapshot restores *state*, the archive restores the
+*code that can execute it*. Parked instances (`CompensationFailed` /
+`MigrationFailed`) are therefore kept alive by the drain guard
+(`AllowShutdownWithParkedInstances` defaults to `false`) and, once archived, can be
+retried indefinitely without keeping the old host process resident.

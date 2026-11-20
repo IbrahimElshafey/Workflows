@@ -12,7 +12,9 @@ using Workflows.Storage.EntityFrameworkCore;
 using Workflows.Shared.Serialization;
 using Xunit;
 
-namespace Workflows.Runner.Tests
+using Workflows.Runner.Tests.Infrastructure;
+
+namespace Workflows.Storage.Tests
 {
     public class WorkflowStoreTests : IDisposable
     {
@@ -110,7 +112,7 @@ namespace Workflows.Runner.Tests
 
             using (var context = new WorkflowsDbContext(_options))
             {
-                var serializer = new Infrastructure.TestObjectSerializer();
+                var serializer = new TestObjectSerializer();
                 var store = new WorkflowStore(context, serializer);
 
                 // Scenario A: Signal matches Wait 1 (OrderId="ORD-123") and Broadcast Wait (Wait 4)
@@ -151,7 +153,7 @@ namespace Workflows.Runner.Tests
 
             using (var context = new WorkflowsDbContext(_options))
             {
-                var serializer = new Infrastructure.TestObjectSerializer();
+                var serializer = new TestObjectSerializer();
                 var store = new WorkflowStore(context, serializer);
 
                 var state = new WorkflowStateDto
@@ -266,7 +268,7 @@ namespace Workflows.Runner.Tests
 
                 using (var context = new TestWorkflowsDbContext(options))
                 {
-                    var serializer = new Infrastructure.TestObjectSerializer();
+                    var serializer = new TestObjectSerializer();
                     var store = new WorkflowStore(context, serializer);
 
                     // Test 1: Primitive JValue and "$" path
@@ -318,7 +320,7 @@ namespace Workflows.Runner.Tests
         [Fact]
         public async Task StartWorkflow_CalledTwiceWithSameStateAndWaits_ShouldDeduplicateAndReturnSameInstanceId()
         {
-            var serializer = new Infrastructure.TestObjectSerializer();
+            var serializer = new TestObjectSerializer();
             var instId1 = Guid.NewGuid();
             var instId2 = Guid.NewGuid();
 
@@ -399,7 +401,7 @@ namespace Workflows.Runner.Tests
         public async Task PersistedJson_ShouldHaveZeroTypeProperties()
         {
             // Arrange
-            var serializer = new Infrastructure.TestObjectSerializer();
+            var serializer = new TestObjectSerializer();
             var instId = Guid.NewGuid();
             var instanceData = new TestWorkflowInstance { Value = "type-free-test-value" };
 
@@ -459,7 +461,7 @@ namespace Workflows.Runner.Tests
         {
             var instId = Guid.NewGuid();
             var messageId = Guid.NewGuid();
-            var serializer = new Infrastructure.TestObjectSerializer();
+            var serializer = new TestObjectSerializer();
 
             var state = new WorkflowStateDto
             {

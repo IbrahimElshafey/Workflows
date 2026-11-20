@@ -19,10 +19,68 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 10.0.x
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
       run: dotnet build --no-restore
+
+  test:
+
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: runner
+            project: Tests/Workflows.Runner.Tests/Workflows.Runner.Tests.csproj
+          - name: storage-sqlite
+            project: Tests/Workflows.Storage.Tests/Workflows.Storage.Tests.csproj
+          - name: out-of-process
+            project: Tests/Workflows.OutOfProcess.Tests/Workflows.OutOfProcess.Tests.csproj
+
+    name: test (${{ matrix.name }})
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Restore dependencies
+      run: dotnet restore ${{ matrix.project }}
     - name: Test
-      run: dotnet test --no-build --verbosity normal
+      run: dotnet test ${{ matrix.project }} --no-restore --verbosity normal --logger "trx;LogFileName=${{ matrix.name }}.trx"
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-${{ matrix.name }}
+        path: "**/TestResults/*.trx"
+        if-no-files-found: ignore
+
+  # Smoke run of the benchmark harness. It is advisory only: measurement numbers from a shared
+  # runner are meaningless, so a regression here must not block a merge.
+  benchmarks:
+
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Restore dependencies
+      run: dotnet restore Benchmarks/Workflows.Benchmarks/Workflows.Benchmarks.csproj
+    - name: Run benchmarks (quick)
+      run: dotnet run -c Release --no-restore --project Benchmarks/Workflows.Benchmarks -- --quick
+    - name: Upload benchmark results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: "**/BenchmarkDotNet.Artifacts/**"
+        if-no-files-found: ignore

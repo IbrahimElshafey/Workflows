@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" Version="7.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.2.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Serializer stubs shared with the runner suite; linked rather than duplicated. -->
+    <Compile Include="..\Workflows.Runner.Tests\Infrastructure\TestObjectSerializer.cs" Link="Infrastructure\TestObjectSerializer.cs" />
+    <Compile Include="..\Workflows.Runner.Tests\Infrastructure\TestExpressionSerializer.cs" Link="Infrastructure\TestExpressionSerializer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Workflows.Abstraction\Workflows.Abstraction.csproj" />
+    <ProjectReference Include="..\..\Workflows.Common.Abstraction\Workflows.Common.Abstraction.csproj" />
+    <ProjectReference Include="..\..\Workflows.Definition\Workflows.Definition.csproj" />
+    <ProjectReference Include="..\..\Workflows.Runner\Workflows.Runner.csproj" />
+    <ProjectReference Include="..\..\Hosting\Workflows.Hosting.InProcess\Workflows.Hosting.InProcess.csproj" />
+    <ProjectReference Include="..\..\DataStore\Workflows.Storage.EntityFrameworkCore\Workflows.Storage.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\DataStore\Workflows.Storage.Sqlite\Workflows.Storage.Sqlite.csproj" />
+    <ProjectReference Include="..\..\DataStore\Workflows.Storage.Postgres\Workflows.Storage.Postgres.csproj" />
+    <ProjectReference Include="..\..\DataStore\Workflows.Storage.SqlServer\Workflows.Storage.SqlServer.csproj" />
+  </ItemGroup>
+
+</Project>

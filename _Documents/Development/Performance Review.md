@@ -8,14 +8,24 @@ Below is the detailed analysis of the performance bottlenecks, their architectur
 
 ## Summary of Findings
 
-| ID | Component | Bottleneck | Impact | Proposed Optimization |
+| ID | Component | Bottleneck | Impact | Proposed Optimization | Status |
+|---|---|---|---|---|---|
+| **1** | `WorkflowStore` | N+1 DB Queries in `SaveContextSyncAsync` candidate matching | **Severe** | Use in-memory wait comparison instead of querying `SignalWaits` and `ExternalChildWaits` inside a `foreach` loop. | **Fixed** |
+| **2** | `Orchestrator` | N+1 DB Queries in `ProcessSignalAsync` instance loading | **Severe** | Introduce batch-state loading (`GetInstancesStatesAsync`) to load all candidate instances in a single query. | **Fixed** |
+| **3** | `WorkflowStore` | N+1 DB Queries in `LoadInstanceStateFromDbAsync` external waits hydration | **Major** | Fetch all external child waits for the instance in a single query and hydrate in memory. | **Fixed** |
+| **4** | `TemplateRepository` | DB queries on static template lookups | **Medium** | Introduce a static thread-safe cache (`ConcurrentDictionary`) in `TemplateRepository`. | Open |
+| **5** | `Mapper` | Redundant compilation of `instanceExactMatchExpr` | **Medium** | Lookup in-memory checker caches (`SignalCache`/`CommandCache`) for compiled delegates before compiling. | Open |
+| **6** | `WorkflowRunLoop` | Reflection and `Activator.CreateInstance` in sub-workflows | **Low-Medium** | Implement a compiled factory & method cache for sub-workflow metadata. | Open |
+
+### Implementation status of the N+1 fixes (items 1-3)
+
+| Item | What changed | Query cost before | Query cost after | Regression test |
 |---|---|---|---|---|
-| **1** | `WorkflowStore` | N+1 DB Queries in `SaveContextSyncAsync` candidate matching | **Severe** | Use in-memory wait comparison instead of querying `SignalWaits` and `ExternalChildWaits` inside a `foreach` loop. |
-| **2** | `Orchestrator` | N+1 DB Queries in `ProcessSignalAsync` instance loading | **Severe** | Introduce batch-state loading (`GetInstancesStatesAsync`) to load all candidate instances in a single query. |
-| **3** | `WorkflowStore` | N+1 DB Queries in `LoadInstanceStateFromDbAsync` external waits hydration | **Major** | Fetch all external child waits for the instance in a single query and hydrate in memory. |
-| **4** | `TemplateRepository` | DB queries on static template lookups | **Medium** | Introduce a static thread-safe cache (`ConcurrentDictionary`) in `TemplateRepository`. |
-| **5** | `Mapper` | Redundant compilation of `instanceExactMatchExpr` | **Medium** | Lookup in-memory checker caches (`SignalCache`/`CommandCache`) for compiled delegates before compiling. |
-| **6** | `WorkflowRunLoop` | Reflection and `Activator.CreateInstance` in sub-workflows | **Low-Medium** | Implement a compiled factory & method cache for sub-workflow metadata. |
+| 1 | The first-wait probe for candidate instances is now two set-based queries (`SignalWaits` + `ExternalChildWaits` filtered by the candidate id list) resolved into a `HashSet<Guid>`, instead of two `AnyAsync` calls per candidate. | `2 x candidates` | `2` | `WorkflowStoreTests` (dedup path) |
+| 2 | `IWorkflowStore.GetInstanceStatesAsync(IReadOnlyCollection<Guid>)` loads every candidate with one `Where(ids.Contains(i.Id))` query and reuses warm `IWorkflowInstanceCache` entries. `Orchestrator.ProcessSignalAsync` uses it instead of looping `GetInstanceStateAsync`. | `1 x candidates` | `1` (+1 external-child hydration per instance) | `InstanceStateBulkLoadTests.GetInstanceStatesAsync_ShouldLoadAllInstancesWithAConstantNumberOfQueries` |
+| 3 | `HydrateExternalChildWaitsAsync` collects every `ExternalGroupWaitDto` in the tree first and hydrates them from a single `ExternalChildWaits` query grouped by `ParentWaitId`, instead of one query per group. | `1 x external groups` | `1` per instance | `InstanceStateBulkLoadTests` (asserts `1 + N` commands for `N` instances) |
+
+Measured numbers for the runner tick and the signal-to-commit round trip are produced by `Benchmarks/Workflows.Benchmarks`; see the note in the "Measured performance" section below rather than relying on the estimates in this review.
 
 ---
 
@@ -184,3 +194,69 @@ This eliminates reflection and `Activator.CreateInstance` completely during sub-
 We will verify these performance enhancements using:
 1. **Existing Unit & Integration Tests**: Run all tests in the solution to ensure no regression or behavior changes.
 2. **Benchmark / Throughput Verification**: Measure signal processing execution times and count sql database command roundtrips during massive workflows.
+
+---
+
+## Measured performance
+
+`Benchmarks/Workflows.Benchmarks` is the only source of performance numbers for this repository.
+Every figure below was produced by that project; nothing in this document is an estimate.
+
+### How to reproduce
+
+```powershell
+# Both suites, short runs (about two minutes on the reference machine)
+dotnet run -c Release --project Benchmarks/Workflows.Benchmarks -- --quick
+
+# One suite only
+dotnet run -c Release --project Benchmarks/Workflows.Benchmarks -- --quick --filter SignalToCommit
+```
+
+`--quick` selects `Job.ShortRun` (3 warmup + 3 measured iterations) on the in-process emit
+toolchain, which keeps a smoke run short. `[IterationSetup]` prunes finished waits and inbox rows
+before each iteration so the measurement describes a steady-state instance rather than a snapshot
+that grows with every iteration. Drop `--quick` for the default BenchmarkDotNet job if you need
+tighter confidence intervals.
+
+CI runs `--quick` as an advisory (non-blocking) job and uploads `BenchmarkDotNet.Artifacts`.
+
+The Postgres variant of the signal-to-commit suite joins the run when `WORKFLOWS_TEST_POSTGRES`
+holds a connection string to a disposable database; SQLite always runs.
+
+### Reference machine
+
+| | |
+|---|---|
+| CPU | Intel Core i9-9880H, 8 physical / 16 logical cores, 2.30 GHz |
+| Memory | 32 GB |
+| OS | Windows 11 Pro 10.0.22621 |
+| Runtime | .NET 10.0.13 |
+| SDK | 10.0.402 |
+| BenchmarkDotNet | 0.14.0 (`ShortRun` + `InProcessEmitToolchain`) |
+
+### Results
+
+| Benchmark | Provider | Mean | StdDev | Allocated |
+|---|---|---|---|---|
+| Resume one signal (in-memory, no SQLite) | none | 747.8 us | 67.5 us | 577.4 KB |
+| Signal -> match -> run -> commit | SQLite in-memory | 36.22 ms | 2.19 ms | 41.66 MB |
+
+| Diagnostic | Value |
+|---|---|
+| SQL commands per signal round trip | 16 |
+
+Reading the numbers:
+
+* **`Resume one signal`** is the runner alone: a serialized context is deserialized, the consumed
+  wait is pruned, and `RunWorkflowAsync` resumes the loop for one tick. It is the floor for any
+  scheduling-latency work done inside the process.
+* **`Signal -> match -> run -> commit`** is the full path the N+1 fixes target: signal injection,
+  candidate matching, instance hydration, runner execution, and the transactional commit. It is
+  dominated by EF Core materialization and change tracking, not by the engine itself.
+* **16 SQL commands** per round trip is the number to watch when adding store work; it is asserted
+  indirectly by `InstanceStateBulkLoadTests` (constant command count regardless of candidate count).
+
+Do not quote these figures as throughput guarantees. They come from one laptop with a
+short-run job, so the confidence interval is wide (see the BenchmarkDotNet output for the raw
+`Error` column), and SQLite in-memory has no network latency. Use them to compare runs on the
+same machine, not to size production hardware.

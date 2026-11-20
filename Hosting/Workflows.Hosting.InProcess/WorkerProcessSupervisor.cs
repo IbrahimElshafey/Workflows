@@ -21,18 +21,69 @@ namespace Workflows.Hosting.InProcess
     {
         private readonly ConcurrentDictionary<string, WorkerProcessInfo> _workers = new();
         private readonly ConcurrentDictionary<(string Type, int Version), HashSet<string>> _capabilityMap = new();
+        private readonly ConcurrentDictionary<string, string> _publishDirectories = new();
         private readonly string _workerExecutablePath;
+        private readonly WorkerArchiveStore? _archiveStore;
 
-        public IReadOnlyDictionary<string, WorkerProcessInfo> ActiveWorkers => _workers;
+        // Virtual so the drain worker can be exercised without spawning real sub-processes.
+        public virtual IReadOnlyDictionary<string, WorkerProcessInfo> ActiveWorkers => _workers;
 
-        public WorkerProcessSupervisor(string? workerExecutablePath = null)
+        public WorkerProcessSupervisor(string? workerExecutablePath = null, WorkerArchiveStore? archiveStore = null)
         {
+            _archiveStore = archiveStore;
             _workerExecutablePath = workerExecutablePath ?? 
                 Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Workflows.Runner.exe");
             
             if (!File.Exists(_workerExecutablePath))
             {
                 _workerExecutablePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Workflows.Runner.dll");
+            }
+        }
+
+        /// <summary>Archive that keeps retired worker builds respawnable. <c>null</c> when archiving is off.</summary>
+        public WorkerArchiveStore? ArchiveStore => _archiveStore;
+
+        /// <summary>
+        /// Picks the executable used to spawn a version: an archived build when one exists, otherwise the
+        /// build the host was deployed with. A retired version must not silently run on the host runtime - the
+        /// host may have moved past the TFM its assemblies target.
+        /// </summary>
+        public virtual string ResolveWorkerExecutable(string version)
+        {
+            return _archiveStore?.FindArchivedWorker(version)?.ExecutablePath ?? _workerExecutablePath;
+        }
+
+        /// <summary>
+        /// Archives the build behind a version so a late compensation can respawn it. Never throws: a failed
+        /// archive must not keep the drain from completing.
+        /// </summary>
+        public virtual Task<bool> TryArchiveWorkerAsync(string version, string? sourceDirectory = null, CancellationToken ct = default)
+        {
+            if (_archiveStore == null) return Task.FromResult(false);
+
+            try
+            {
+                if (sourceDirectory == null)
+                {
+                    // Copying an archive onto itself would delete the only remaining build of this version.
+                    if (_archiveStore.IsArchived(version)) return Task.FromResult(true);
+
+                    sourceDirectory = _publishDirectories.TryGetValue(version, out var publishDir)
+                        ? publishDir
+                        : Path.GetDirectoryName(_workerExecutablePath);
+                }
+
+                if (string.IsNullOrEmpty(sourceDirectory) || !Directory.Exists(sourceDirectory))
+                {
+                    return Task.FromResult(false);
+                }
+
+                _archiveStore.ArchiveAsync(version, sourceDirectory, ct: ct).GetAwaiter().GetResult();
+                return Task.FromResult(_archiveStore.IsArchived(version));
+            }
+            catch (Exception)
+            {
+                return Task.FromResult(false);
             }
         }
 
@@ -74,10 +125,12 @@ namespace Workflows.Hosting.InProcess
             }
 
             string pipeName = $"wf-worker-{version.Replace('.', '-')}-{Guid.NewGuid():N}";
-            string args = $"\"{_workerExecutablePath}\" --version \"{version}\" --ipc-pipe \"{pipeName}\"";
+            string workerExecutable = ResolveWorkerExecutable(version);
+            string args = $"\"{workerExecutable}\" --version \"{version}\" --ipc-pipe \"{pipeName}\"";
             if (!string.IsNullOrEmpty(assemblyPath))
             {
                 args += $" --assembly-path \"{assemblyPath}\"";
+                _publishDirectories[version] = Path.GetDirectoryName(assemblyPath) ?? string.Empty;
             }
 
             var psi = new ProcessStartInfo
@@ -144,7 +197,7 @@ namespace Workflows.Hosting.InProcess
             }
         }
 
-        public async Task ShutdownWorkerAsync(string version, CancellationToken ct = default)
+        public virtual async Task ShutdownWorkerAsync(string version, CancellationToken ct = default)
         {
             if (_workers.TryRemove(version, out var info))
             {

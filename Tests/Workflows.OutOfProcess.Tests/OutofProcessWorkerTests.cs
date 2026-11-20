@@ -6,7 +6,7 @@ using Workflows.Hosting.InProcess;
 using Workflows.Tools.CLI;
 using Xunit;
 
-namespace Workflows.Runner.Tests
+namespace Workflows.OutOfProcess.Tests
 {
     public class OutofProcessWorkerTests
     {
@@ -25,7 +25,7 @@ namespace Workflows.Runner.Tests
                 // Assert
                 File.Exists(schemaFile).Should().BeTrue();
                 string content = File.ReadAllText(schemaFile);
-                content.Should().Contain("SxSWorkflow");
+                content.Should().Contain("OutOfProcessSampleWorkflow");
             }
             finally
             {

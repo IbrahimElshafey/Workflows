@@ -30,6 +30,8 @@ namespace Workflows.Runner
         private readonly IWorkflowRegistry _workflowRegistry;
         private readonly IWorkflowHydrator _hydrator;
         private readonly Mapper _mapper;
+        private readonly WorkflowRunnerOptions _options;
+        private int _subWorkflowDepth;
 
         public WorkflowRunLoop(
             StateMachineAdvancer stateMachineAdvancer,
@@ -37,7 +39,8 @@ namespace Workflows.Runner
             WorkflowExecutionContext context,
             IWorkflowRegistry workflowRegistry,
             IWorkflowHydrator hydrator,
-            Mapper mapper)
+            Mapper mapper,
+            WorkflowRunnerOptions options)
         {
             _stateMachineAdvancer = stateMachineAdvancer ?? throw new ArgumentNullException(nameof(stateMachineAdvancer));
             _cancelHandler = cancelHandler ?? throw new ArgumentNullException(nameof(cancelHandler));
@@ -45,6 +48,7 @@ namespace Workflows.Runner
             _workflowRegistry = workflowRegistry ?? throw new ArgumentNullException(nameof(workflowRegistry));
             _hydrator = hydrator ?? throw new ArgumentNullException(nameof(hydrator));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _options = options ?? new WorkflowRunnerOptions();
         }
 
         /// <summary>
@@ -121,10 +125,19 @@ namespace Workflows.Runner
         public async Task ResumeSubWorkflowAsync(SubWorkflowWaitDto subWorkflowWaitDto)
         {
             var previousSub = _context.CurrentSubWorkflow;
-            _context.CurrentSubWorkflow = subWorkflowWaitDto;
+            _subWorkflowDepth++;
 
             try
             {
+                var maxDepth = _options.MaxSubWorkflowDepth;
+                if (maxDepth > 0 && _subWorkflowDepth > maxDepth)
+                {
+                    throw new InvalidOperationException(
+                        $"Sub-workflow nesting depth {_subWorkflowDepth} exceeded the configured MaxSubWorkflowDepth of {maxDepth}. " +
+                        "Unbounded recursive sub-workflows grow the persisted snapshot without limit; replace the review loop with a flat iteration over a state property.");
+                }
+
+                _context.CurrentSubWorkflow = subWorkflowWaitDto;
                 // Get workflow types — resolve by instance version first, fall back to latest
                 var workflowName = _context.WorkflowState.WorkflowType;
                 var workflowVersion = _context.WorkflowState.WorkflowVersion;
@@ -226,6 +239,7 @@ namespace Workflows.Runner
             }
             finally
             {
+                _subWorkflowDepth--;
                 _context.CurrentSubWorkflow = previousSub;
             }
         }

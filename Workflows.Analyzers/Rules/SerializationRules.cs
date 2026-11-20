@@ -303,6 +303,186 @@ namespace Workflows.Analyzers.Rules
             }
         }
 
+        // ── WF010: write to an ignored state member ──────────────────────────────────
+
+        /// <summary>
+        /// A member marked [JsonIgnore] is not part of the persisted snapshot, so anything a workflow
+        /// method writes into it is lost the moment the state is rehydrated (which happens after every
+        /// yield). This catches the write at the point the author can see it.
+        /// </summary>
+        public static void AnalyzeIgnoredStateWrite(
+            SyntaxNodeAnalysisContext context,
+            DiagnosticDescriptor descriptor)
+        {
+            var assignment = (AssignmentExpressionSyntax)context.Node;
+            var methodSymbol = context.SemanticModel.GetEnclosingSymbol(assignment.SpanStart) as IMethodSymbol;
+            if(!WorkflowAnalyzer.IsWorkflowMethod(methodSymbol))
+                return;
+
+            if(methodSymbol?.ContainingType == null || !WorkflowAnalyzer.InheritsFromWorkflowContainer(methodSymbol.ContainingType))
+                return;
+
+            var symbol = context.SemanticModel.GetSymbolInfo(assignment.Left).Symbol;
+            var member = symbol as ISymbol;
+            if(member is not IPropertySymbol && member is not IFieldSymbol)
+                return;
+
+            if(member!.IsStatic || !HasIgnoreAttribute(member))
+                return;
+
+            var diagnostic = Diagnostic.Create(
+                descriptor,
+                assignment.Left.GetLocation(),
+                member.Name,
+                methodSymbol!.Name);
+            context.ReportDiagnostic(diagnostic);
+        }
+
+        private static bool HasIgnoreAttribute(ISymbol member) => member.GetAttributes().Any(attribute =>
+        {
+            var name = attribute.AttributeClass?.Name;
+            if(name != "JsonIgnoreAttribute")
+                return false;
+
+            var ns = attribute.AttributeClass?.ContainingNamespace?.ToDisplayString();
+            return ns == "Newtonsoft.Json" || ns == "System.Text.Json.Serialization";
+        });
+
+        // ── WF011: interface/abstract typed state member ─────────────────────────────
+
+        /// <summary>
+        /// The snapshot serializer writes concrete types. A member whose declared type is an interface
+        /// (or an abstract class) has no way back unless the author supplied polymorphic metadata, so
+        /// deserialization either throws or silently yields an empty value.
+        /// </summary>
+        public static void AnalyzeStateShape(SymbolAnalysisContext context, DiagnosticDescriptor descriptor)
+        {
+            var type = (INamedTypeSymbol)context.Symbol;
+            if(type.TypeKind != TypeKind.Class)
+                return;
+
+            var isContainer = WorkflowAnalyzer.InheritsFromWorkflowContainer(type);
+            if(!isContainer)
+                return;
+
+            ReportUnreconstructableMembers(context, type, descriptor);
+
+            // The state DTO supplied by the start method is serialized exactly like the container.
+            var stateType = WorkflowAnalyzer.GetWorkflowStateType(type);
+            if(stateType is INamedTypeSymbol namedState)
+            {
+                ReportUnreconstructableMembers(context, namedState, descriptor);
+            }
+        }
+
+        /// <summary>
+        /// Same check for a state type handed to <c>.WithState&lt;T&gt;()</c>.
+        /// </summary>
+        public static void AnalyzeWithStateShape(
+            SyntaxNodeAnalysisContext context,
+            InvocationExpressionSyntax invocation,
+            IMethodSymbol methodSymbol,
+            DiagnosticDescriptor descriptor)
+        {
+            if(methodSymbol.Name != "WithState")
+                return;
+
+            ITypeSymbol? stateType = methodSymbol.TypeArguments.Length == 1
+                ? methodSymbol.TypeArguments[0]
+                : context.SemanticModel.GetTypeInfo(invocation.ArgumentList.Arguments.FirstOrDefault()?.Expression!).Type;
+
+            if(stateType is not INamedTypeSymbol namedState || namedState.TypeKind != TypeKind.Class)
+                return;
+
+            var stateArgument = invocation.ArgumentList.Arguments.FirstOrDefault();
+            var location = stateArgument?.GetLocation() ?? invocation.GetLocation();
+            foreach(var member in UnreconstructableMembers(namedState))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(descriptor, location, member.Member.Name, member.Type.ToDisplayString()));
+            }
+        }
+
+        private static void ReportUnreconstructableMembers(
+            SymbolAnalysisContext context,
+            INamedTypeSymbol type,
+            DiagnosticDescriptor descriptor)
+        {
+            foreach(var member in UnreconstructableMembers(type))
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    descriptor,
+                    member.Member.Locations.FirstOrDefault(),
+                    member.Member.Name,
+                    member.Type.ToDisplayString()));
+            }
+        }
+
+        private static IEnumerable<(ISymbol Member, ITypeSymbol Type)> UnreconstructableMembers(INamedTypeSymbol type)
+        {
+            var seen = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+            for(var current = type; current != null && current.SpecialType == SpecialType.None; current = current.BaseType)
+            {
+                foreach(var member in current.GetMembers())
+                {
+                    if(!seen.Add(member) || member.IsImplicitlyDeclared)
+                        continue;
+
+                    ITypeSymbol? memberType = member switch
+                    {
+                        IPropertySymbol { IsStatic: false, IsIndexer: false, SetMethod: not null } p => p.Type,
+                        IFieldSymbol { IsStatic: false, IsConst: false } f => f.Type,
+                        _ => null
+                    };
+
+                    if(memberType == null)
+                        continue;
+
+                    if(member.GetAttributes().Any(a => a.AttributeClass?.Name == "JsonConverterAttribute"
+                                                        || a.AttributeClass?.Name == "JsonConverter"))
+                        continue;
+
+                    if(IsUnreconstructableAbstraction(memberType))
+                    {
+                        yield return (member, memberType);
+                    }
+                }
+            }
+        }
+        private static bool IsUnreconstructableAbstraction(ITypeSymbol type)
+        {
+            if(type.TypeKind != TypeKind.Interface && !(type.TypeKind == TypeKind.Class && type.IsAbstract))
+                return false;
+
+            // The serializer restores these from their concrete counterparts.
+            var fullName = type is INamedTypeSymbol named && named.IsGenericType
+                ? named.ConstructedFrom.ToDisplayString()
+                : type.ToDisplayString();
+
+            if(_reconstructableAbstractions.Contains(fullName))
+                return false;
+
+            // An explicit converter on the abstraction itself gives the serializer a way back.
+            if(type.GetAttributes().Any(a => a.AttributeClass?.Name == "JsonConverterAttribute"
+                                              || a.AttributeClass?.Name == "JsonConverter"))
+                return false;
+
+            return true;
+        }
+
+        private static readonly HashSet<string> _reconstructableAbstractions = new()
+        {
+            "System.Collections.Generic.IEnumerable<T>",
+            "System.Collections.Generic.ICollection<T>",
+            "System.Collections.Generic.IList<T>",
+            "System.Collections.Generic.IReadOnlyCollection<T>",
+            "System.Collections.Generic.IReadOnlyList<T>",
+            "System.Collections.Generic.ISet<T>",
+            "System.Collections.Generic.IDictionary<TKey, TValue>",
+            "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>",
+            "System.IAsyncEnumerable<T>",
+            "System.IFormattable",
+        };
+
         public static void AnalyzeWithStateInvocation(
             SyntaxNodeAnalysisContext context,
             InvocationExpressionSyntax invocation,

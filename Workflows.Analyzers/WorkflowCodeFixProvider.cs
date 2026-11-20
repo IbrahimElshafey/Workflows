@@ -1,8 +1,10 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
+using Microsoft.CodeAnalysis.Formatting;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Composition;
 using System.Linq;
@@ -19,7 +21,8 @@ namespace Workflows.Analyzers
             WorkflowAnalyzer.DiagnosticIdWF201,
             WorkflowAnalyzer.DiagnosticIdWF001,
             WorkflowAnalyzer.DiagnosticIdWFUnsafeState,
-            WorkflowAnalyzer.DiagnosticIdWF300);
+            WorkflowAnalyzer.DiagnosticIdWF300,
+            WorkflowAnalyzer.DiagnosticIdWF400);
 
         public sealed override FixAllProvider GetFixAllProvider() => WellKnownFixAllProviders.BatchFixer;
 
@@ -104,7 +107,116 @@ namespace Workflows.Analyzers
                             equivalenceKey: "ArchiveWorkflowVersion"),
                         diagnostic);
                 }
+            } else if(diagnostic.Id == WorkflowAnalyzer.DiagnosticIdWF400)
+            {
+                // The diagnostic points at the workflow method reference passed to WaitSubWorkflow.
+                var selfCall = root.FindToken(diagnosticSpan.Start).Parent?.AncestorsAndSelf()
+                    .OfType<InvocationExpressionSyntax>()
+                    .FirstOrDefault();
+                var method = selfCall?.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+
+                // Only offer the rewrite where flattening is provably equivalent: the self-call must be in
+                // tail position and the workflow method must take the state as its single parameter.
+                if(method == null || selfCall == null || CreateFlatLoop(method, selfCall) == null)
+                    return;
+
+                context.RegisterCodeFix(
+                    CodeAction.Create(
+                        title: "Rewrite self-recursion as a flat loop",
+                        createChangedDocument: c => FlattenSelfRecursionAsync(context.Document, selfCall, c),
+                        equivalenceKey: "FlattenSubWorkflowRecursion"),
+                    diagnostic);
             }
+        }
+
+        /// <summary>
+        /// Builds <code>while (true) { ...body...; state = arg; continue; }</code> for a tail self-call.
+        /// Returns <c>null</c> when the shape is not safe to rewrite.
+        /// </summary>
+        private static WhileStatementSyntax? CreateFlatLoop(MethodDeclarationSyntax method, InvocationExpressionSyntax selfCall)
+        {
+            if(method.Body == null)
+                return null;
+
+            // Recursion re-enters the method with a fresh state argument; a loop can only do that by
+            // reassigning the single state parameter. Local variables declared in the body are re-initialized
+            // per iteration, which matches the recursive behaviour exactly.
+            if(method.ParameterList.Parameters.Count != 1)
+                return null;
+
+            var stateParameter = method.ParameterList.Parameters[0];
+            if(stateParameter.Modifiers.Count > 0 || stateParameter.Identifier.IsKind(SyntaxKind.ThisKeyword))
+                return null;
+
+            var statements = method.Body.Statements;
+            var recursiveStatement = selfCall.AncestorsAndSelf()
+                .OfType<StatementSyntax>()
+                .FirstOrDefault(s => s.Parent == method.Body);
+            if(recursiveStatement == null)
+                return null;
+
+            int index = statements.IndexOf(recursiveStatement);
+            if(index <= 0)
+                return null; // nothing to loop over
+
+            bool isTail = index == statements.Count - 1 ||
+                          (index == statements.Count - 2 && statements[index + 1].IsKind(SyntaxKind.YieldBreakStatement));
+            if(!isTail)
+                return null;
+
+            var arguments = selfCall.ArgumentList.Arguments;
+            if(arguments.Count > 1)
+                return null;
+
+            var loopStatements = new List<StatementSyntax>();
+            for(int i = 0; i < index; i++)
+            {
+                loopStatements.Add(statements[i]);
+            }
+
+            if(arguments.Count == 1)
+            {
+                loopStatements.Add(
+                    SyntaxFactory.ExpressionStatement(
+                        SyntaxFactory.AssignmentExpression(
+                            SyntaxKind.SimpleAssignmentExpression,
+                            SyntaxFactory.IdentifierName(stateParameter.Identifier.ValueText),
+                            arguments[0].Expression))
+                    .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken)));
+            }
+
+            loopStatements.Add(SyntaxFactory.ContinueStatement());
+
+            return SyntaxFactory.WhileStatement(
+                    SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression),
+                    SyntaxFactory.Block(loopStatements))
+                .WithLeadingTrivia(statements[0].GetLeadingTrivia())
+                .WithAdditionalAnnotations(Formatter.Annotation);
+        }
+
+        private async Task<Document> FlattenSelfRecursionAsync(
+            Document document,
+            InvocationExpressionSyntax selfCall,
+            CancellationToken cancellationToken)
+        {
+            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            if(root == null)
+                return document;
+
+            var method = selfCall.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+            if(method?.Body == null)
+                return document;
+
+            var loop = CreateFlatLoop(method, selfCall);
+            if(loop == null)
+                return document;
+
+            var newMethod = method.WithBody(
+                method.Body.WithStatements(SyntaxFactory.SingletonList<StatementSyntax>(loop)));
+
+            var newDocument = document.WithSyntaxRoot(root.ReplaceNode(method, newMethod));
+            return await Formatter.FormatAsync(newDocument, Formatter.Annotation, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
 
         private async Task<Document> ReplaceWithWaitSubWorkflowAsync(

@@ -88,7 +88,6 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
             // Validate signal identifier match
             if (!string.Equals(signalWaitDto.SignalIdentifier, signal.SignalIdentifier, StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine($"[SignalWaitMatcher] Signal identifier mismatch! DTO: '{signalWaitDto.SignalIdentifier}', signal: '{signal.SignalIdentifier}'");
                 throw new InvalidOperationException($"SignalWaitMatcher: Signal identifier mismatch! DTO: '{signalWaitDto.SignalIdentifier}', signal: '{signal.SignalIdentifier}'");
             }
 
@@ -101,19 +100,15 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
                     _context.WorkflowState.StateObject.Locals.TryGetValue(signalWaitDto.Id.ToString(), out explicitState);
                 }
             }
-            Console.WriteLine($"[SignalWaitMatcher] explicitState type: {explicitState?.GetType().FullName}, value: {explicitState}");
-
             // Get or compile the match expression from cache if available
             var compiledMatch = GetOrBuildCompiledMatch(signalWaitDto);
             if (compiledMatch != null)
             {
-                Console.WriteLine($"[SignalWaitMatcher] compiledMatch is not null. Evaluating...");
                 // Evaluate match expression using DTO data
                 bool matchResult = false;
                 try
                 {
                     matchResult = compiledMatch(signal.Data, explicitState, _context.WorkflowInstance);
-                    Console.WriteLine($"[SignalWaitMatcher] Evaluation result: {matchResult}");
                 }
                 catch (Exception ex)
                 {
@@ -124,26 +119,18 @@ namespace Workflows.Runner.Pipeline.CompletionChecker
                     return false; // Match expression failed
                 }
             }
-            else
-            {
-                Console.WriteLine($"[SignalWaitMatcher] compiledMatch is null!");
-            }
-
             // Execute AfterMatchAction — try registry by TemplateHashKey first (stable, no reflection)
-            Console.WriteLine($"[SignalWaitMatcher] TemplateHashKey: {signalWaitDto.TemplateHashKey}");
             if (!string.IsNullOrWhiteSpace(signalWaitDto.TemplateHashKey))
             {
                 try
                 {
                     ExecuteAfterMatchAction(signalWaitDto.TemplateHashKey, signal.Data, explicitState);
-                    Console.WriteLine($"[SignalWaitMatcher] ExecuteAfterMatchAction finished successfully.");
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[SignalWaitMatcher] ExecuteAfterMatchAction threw exception: {ex}");
                 }
             }
-
 
             // Mark this wait as completed
             signalWaitDto.Status = WaitStatus.Completed;

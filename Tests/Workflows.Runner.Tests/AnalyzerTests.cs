@@ -767,6 +767,137 @@ namespace TestWorkflows.Archive.MyWorkflow.V1
             diagnostics.Should().ContainSingle(d => d.Id == "WF301");
         }
 
+        [Fact]
+        public async Task WF301_NestedStateMembers_ShouldNotTriggerError()
+        {
+            var source = @"
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows.Archive.MyWorkflow.V1
+{
+    public sealed class MyWorkflowV1 : WorkflowStateWrapper
+    {
+        public MyWorkflowV1(Workflows.Abstraction.DTOs.WorkflowStateDto dto) : base(dto) {}
+        public ReviewState? Review { get; set; }
+        public List<ReviewItem>? Items { get; set; }
+    }
+
+    public sealed class ReviewState
+    {
+        public string? Notes { get; set; }
+    }
+
+    public sealed class ReviewItem
+    {
+        public int Score { get; set; }
+    }
+}";
+            var schemaContent = @"{""SchemaVersion"": 1, ""WorkflowName"": ""MyWorkflow"", ""StateProperties"": [
+  { ""Name"": ""Review"", ""TypeFqn"": ""ReviewState"" },
+  { ""Name"": ""Items"", ""TypeFqn"": ""List<ReviewItem>"" },
+  { ""Name"": ""Notes"", ""TypeFqn"": ""string"" },
+  { ""Name"": ""Score"", ""TypeFqn"": ""int"" }
+]}";
+
+            var diagnostics = await RunAnalyzerOnArchivedAsync(source, schemaContent);
+
+            diagnostics.Should().NotContain(d => d.Id == "WF301");
+        }
+
+        [Fact]
+        public async Task WF301_WithStateTypeArguments_ShouldNotTriggerError()
+        {
+            var source = @"
+using Workflows.Definition;
+
+namespace TestWorkflows.Archive.MyWorkflow.V1
+{
+    public sealed class MyWorkflowV1 : WorkflowStateWrapper
+    {
+        public MyWorkflowV1(Workflows.Abstraction.DTOs.WorkflowStateDto dto) : base(dto) {}
+
+        public void Configure()
+        {
+            var wait = new FakeWait();
+            wait.WithState(new PendingReview { Reviewer = ""someone"" });
+        }
+    }
+
+    public sealed class FakeWait
+    {
+        public FakeWait WithState<T>(T state) => this;
+    }
+
+    public sealed class PendingReview
+    {
+        public string? Reviewer { get; set; }
+    }
+}";
+            // `Reviewer` only exists on the WithState<T> argument type, not on the archived type itself.
+            var schemaContent = @"{""SchemaVersion"": 1, ""WorkflowName"": ""MyWorkflow"", ""StateProperties"": [
+  { ""Name"": ""Reviewer"", ""TypeFqn"": ""string"" }
+]}";
+
+            var diagnostics = await RunAnalyzerOnArchivedAsync(source, schemaContent);
+
+            diagnostics.Should().NotContain(d => d.Id == "WF301");
+        }
+
+        [Fact]
+        public async Task WF301_DeletedNestedMember_ShouldStillTriggerError()
+        {
+            var source = @"
+using Workflows.Definition;
+
+namespace TestWorkflows.Archive.MyWorkflow.V1
+{
+    public sealed class MyWorkflowV1 : WorkflowStateWrapper
+    {
+        public MyWorkflowV1(Workflows.Abstraction.DTOs.WorkflowStateDto dto) : base(dto) {}
+        public ReviewState? Review { get; set; }
+    }
+
+    public sealed class ReviewState
+    {
+        public string? Notes { get; set; }
+    }
+}";
+            var schemaContent = @"{""SchemaVersion"": 1, ""WorkflowName"": ""MyWorkflow"", ""StateProperties"": [
+  { ""Name"": ""Review"", ""TypeFqn"": ""ReviewState"" },
+  { ""Name"": ""Notes"", ""TypeFqn"": ""string"" },
+  { ""Name"": ""RemovedMember"", ""TypeFqn"": ""string"" }
+]}";
+
+            var diagnostics = await RunAnalyzerOnArchivedAsync(source, schemaContent);
+
+            diagnostics.Should().ContainSingle(d => d.Id == "WF301" && d.GetMessage().Contains("RemovedMember"));
+        }
+
+        private static Task<List<Diagnostic>> RunAnalyzerOnArchivedAsync(string source, string schemaContent)
+        {
+            var syntaxTree = CSharpSyntaxTree.ParseText(source, path: "d:/MySrc/Workflows/Archive/MyWorkflow/V1/MyWorkflow_V1.cs");
+            var references = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => MetadataReference.CreateFromFile(a.Location))
+                .Cast<MetadataReference>()
+                .ToList();
+
+            var compilation = CSharpCompilation.Create(
+                "TestAssembly",
+                new[] { syntaxTree },
+                references,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+            // WF301 only looks for sibling *_Schema.json additional files.
+            var additionalText = new InMemoryAdditionalText("d:/MySrc/Workflows/Archive/MyWorkflow/V1/MyWorkflow_V1_Schema.json", schemaContent);
+            var compilationWithAnalyzers = compilation.WithAnalyzers(
+                ImmutableArray.Create<DiagnosticAnalyzer>(new WorkflowAnalyzer()),
+                new AnalyzerOptions(ImmutableArray.Create<AdditionalText>(additionalText)));
+
+            return compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync().ContinueWith(t => t.Result.ToList());
+        }
+
         private async Task<List<Diagnostic>> RunAnalyzerWithAdditionalFilesAsync(string source, string schemaPath, string schemaContent)
         {
             var syntaxTree = CSharpSyntaxTree.ParseText(source);
@@ -1134,6 +1265,204 @@ namespace TestWorkflows
             var diagnostics = await RunAnalyzerAsync(source);
 
             diagnostics.Where(d => d.Id == "WF009" || d.Id == "WF008").Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task WF400_SelfRecursiveSubWorkflow_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""RecursiveWorkflow"", 1)]
+    public sealed class RecursiveWorkflow : WorkflowContainer
+    {
+        public async IAsyncEnumerable<Wait> Run(RecursiveWorkflowState state)
+        {
+            yield return WaitSubWorkflow(Child(), ""Child"");
+        }
+
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> Child()
+        {
+            yield return WaitSubWorkflow(Child(), ""ChildAgain"");
+        }
+    }
+
+    public class RecursiveWorkflowState { }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            var wf400 = diagnostics.Where(d => d.Id == "WF400").ToList();
+            wf400.Should().ContainSingle();
+            wf400[0].GetMessage().Should().Contain("Child");
+        }
+
+        [Fact]
+        public async Task WF400_DistinctSubWorkflow_ShouldNotTriggerDiagnostic()
+        {
+            var source = @"
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""NonRecursiveWorkflow"", 1)]
+    public sealed class NonRecursiveWorkflow : WorkflowContainer
+    {
+        public async IAsyncEnumerable<Wait> Run(NonRecursiveWorkflowState state)
+        {
+            yield return WaitSubWorkflow(Child(), ""Child"");
+        }
+
+        [SubWorkflow]
+        private async IAsyncEnumerable<Wait> Child()
+        {
+            yield return WaitSignal<string>(""ChildSignal"", ""Child signal"");
+        }
+    }
+
+    public class NonRecursiveWorkflowState { }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            diagnostics.Where(d => d.Id == "WF400").Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task WF010_IgnoredStateMemberWrittenInWorkflowMethod_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System.Collections.Generic;
+using Newtonsoft.Json;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""IgnoredWriteWorkflow"", 1)]
+    public sealed class IgnoredWriteWorkflow : WorkflowContainer
+    {
+        [JsonIgnore]
+        public string CachedToken { get; set; } = ""initial"";
+
+        public async IAsyncEnumerable<Wait> Run(IgnoredWriteWorkflowState state)
+        {
+            CachedToken = ""mutated"";
+            yield return WaitSignal<string>(""OrderReceived"", ""Wait for order"");
+        }
+    }
+
+    public class IgnoredWriteWorkflowState { }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            var wf010 = diagnostics.Where(d => d.Id == "WF010").ToList();
+            wf010.Should().ContainSingle();
+            wf010[0].GetMessage().Should().Contain("CachedToken");
+        }
+
+        [Fact]
+        public async Task WF010_SerializedStateMemberWrite_ShouldNotTriggerDiagnostic()
+        {
+            var source = @"
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    [Workflow(""SerializedWriteWorkflow"", 1)]
+    public sealed class SerializedWriteWorkflow : WorkflowContainer
+    {
+        public string CachedToken { get; set; } = ""initial"";
+
+        public async IAsyncEnumerable<Wait> Run(SerializedWriteWorkflowState state)
+        {
+            CachedToken = ""mutated"";
+            yield return WaitSignal<string>(""OrderReceived"", ""Wait for order"");
+        }
+    }
+
+    public class SerializedWriteWorkflowState { }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            diagnostics.Where(d => d.Id == "WF010").Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task WF011_InterfaceTypedStateMember_ShouldTriggerDiagnostic()
+        {
+            var source = @"
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    public interface IOrderLedger
+    {
+        int Size { get; set; }
+    }
+
+    [Workflow(""InterfaceMemberWorkflow"", 1)]
+    public sealed class InterfaceMemberWorkflow : WorkflowContainer
+    {
+        public IOrderLedger Ledger { get; set; }
+
+        public async IAsyncEnumerable<Wait> Run(InterfaceMemberWorkflowState state)
+        {
+            yield return WaitSignal<string>(""OrderReceived"", ""Wait for order"");
+        }
+    }
+
+    public class InterfaceMemberWorkflowState { }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            var wf011 = diagnostics.Where(d => d.Id == "WF011").ToList();
+            wf011.Should().ContainSingle();
+            wf011[0].GetMessage().Should().Contain("Ledger").And.Contain("IOrderLedger");
+        }
+
+        [Fact]
+        public async Task WF011_CollectioAndConcreteStateMembers_ShouldNotTriggerDiagnostic()
+        {
+            var source = @"
+using System.Collections.Generic;
+using Workflows.Definition;
+
+namespace TestWorkflows
+{
+    public sealed class OrderLedger
+    {
+        public int Size { get; set; }
+    }
+
+    [Workflow(""ConcreteMemberWorkflow"", 1)]
+    public sealed class ConcreteMemberWorkflow : WorkflowContainer
+    {
+        public OrderLedger Ledger { get; set; }
+        public IList<string> Tags { get; set; } = new List<string>();
+        public IReadOnlyDictionary<string, string> Meta { get; set; } = new Dictionary<string, string>();
+
+        public async IAsyncEnumerable<Wait> Run(ConcreteMemberWorkflowState state)
+        {
+            yield return WaitSignal<string>(""OrderReceived"", ""Wait for order"");
+        }
+    }
+
+    public class ConcreteMemberWorkflowState { }
+}";
+
+            var diagnostics = await RunAnalyzerAsync(source);
+
+            diagnostics.Where(d => d.Id == "WF011").Should().BeEmpty();
         }
     }
 

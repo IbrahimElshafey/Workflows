@@ -41,7 +41,8 @@ namespace Workflows.Storage.EntityFrameworkCore
         public async Task SaveContextSyncAsync(
             WorkflowStateDto state,
             IEnumerable<string> completedWaitIds,
-            Guid? triggeringSignalId = null)
+            Guid? triggeringSignalId = null,
+            DlqMessage? dlqMessage = null)
         {
             if (state == null) throw new ArgumentNullException(nameof(state));
 
@@ -83,11 +84,30 @@ namespace Workflows.Storage.EntityFrameworkCore
                             .Where(i => i.WorkflowType == state.WorkflowType && i.Status == (int)WorkflowInstanceStatus.Running)
                             .ToListAsync();
 
+                        // One query per wait table instead of two per candidate (the previous shape was a
+                        // textbook N+1: O(candidates) round trips on the hottest save path).
+                        var instancesWithFirstWait = new HashSet<Guid>();
+                        if (candidates.Count > 0)
+                        {
+                            var candidateIds = candidates.Select(c => c.Id).ToList();
+
+                            var signalFirstWaits = await _dbContext.SignalWaits
+                                .Where(sw => sw.IsFirstWait && candidateIds.Contains(sw.WorkflowInstanceId))
+                                .Select(sw => sw.WorkflowInstanceId)
+                                .ToListAsync();
+
+                            var externalFirstWaits = await _dbContext.ExternalChildWaits
+                                .Where(ec => ec.IsFirstWait && candidateIds.Contains(ec.WorkflowInstanceId))
+                                .Select(ec => ec.WorkflowInstanceId)
+                                .ToListAsync();
+
+                            foreach (var id in signalFirstWaits) instancesWithFirstWait.Add(id);
+                            foreach (var id in externalFirstWaits) instancesWithFirstWait.Add(id);
+                        }
+
                         foreach (var candidate in candidates)
                         {
-                            bool hasFirstWait = await _dbContext.SignalWaits.AnyAsync(sw => sw.WorkflowInstanceId == candidate.Id && sw.IsFirstWait) ||
-                                                await _dbContext.ExternalChildWaits.AnyAsync(ec => ec.WorkflowInstanceId == candidate.Id && ec.IsFirstWait);
-                            if (hasFirstWait)
+                            if (instancesWithFirstWait.Contains(candidate.Id))
                             {
                                 continue;
                             }
@@ -185,6 +205,13 @@ namespace Workflows.Storage.EntityFrameworkCore
                         }
                     }
 
+                    // Same-transaction DLQ insert: a terminal CompensationFailed status must never be
+                    // committed without its dead letter row, and vice versa.
+                    if (dlqMessage != null)
+                    {
+                        _dbContext.DlqMessages.Add(ToDlqMessageEntity(dlqMessage));
+                    }
+
                     if (state.WorkflowType == "ConcurrencyRetryTest" && MockConcurrencyRetryCount > 0)
                     {
                         MockConcurrencyRetryCount--;
@@ -196,7 +223,9 @@ namespace Workflows.Storage.EntityFrameworkCore
 
                     if (_cache != null)
                     {
-                        if (state.Status == WorkflowInstanceStatus.Completed || state.Status == WorkflowInstanceStatus.InError)
+                        if (state.Status == WorkflowInstanceStatus.Completed
+                            || state.Status == WorkflowInstanceStatus.InError
+                            || state.Status == WorkflowInstanceStatus.CompensationFailed)
                         {
                             _cache.Remove(state.Id);
                         }
@@ -211,6 +240,12 @@ namespace Workflows.Storage.EntityFrameworkCore
                         foreach (var notification in notifications)
                         {
                             _outboxNotificationDispatcher.NotifyCommandDispatched(notification);
+                        }
+
+                        // Wake the compensation worker immediately instead of waiting for its next DB sweep.
+                        if (state.Status == WorkflowInstanceStatus.InError && HasWaitingCompensationWait(state.Waits))
+                        {
+                            _outboxNotificationDispatcher.NotifyCompensationRequired(state.Id);
                         }
                     }
                 }
@@ -236,6 +271,20 @@ namespace Workflows.Storage.EntityFrameworkCore
                     CollectNewWaitsRecursive(wait.ChildWaits, result);
                 }
             }
+        }
+
+        private static bool HasWaitingCompensationWait(IEnumerable<WaitInfrastructureDto>? waits)
+        {
+            if (waits == null) return false;
+            foreach (var wait in waits)
+            {
+                if (wait is CompensationWaitDto compWait && compWait.Status == WaitStatus.Waiting)
+                    return true;
+
+                if (HasWaitingCompensationWait(wait.ChildWaits))
+                    return true;
+            }
+            return false;
         }
 
         private void MarkWaitsAsPersistedRecursive(IEnumerable<WaitInfrastructureDto> waits)
@@ -345,7 +394,10 @@ namespace Workflows.Storage.EntityFrameworkCore
             {
                 record = new CompensationWaitEntity
                 {
-                    Token = compensationWait.Token ?? string.Empty
+                    Token = compensationWait.Token ?? string.Empty,
+                    Attempts = compensationWait.Attempts,
+                    LastError = compensationWait.LastError,
+                    NextAttemptUtc = compensationWait.NextAttemptUtc
                 };
             }
             else
@@ -431,9 +483,57 @@ namespace Workflows.Storage.EntityFrameworkCore
             var dbInstance = await _dbContext.WorkflowInstances.FindAsync(instanceId);
             if (dbInstance == null) return null;
 
+            return await MapToStateDtoAsync(dbInstance);
+        }
+
+        public async Task<List<WorkflowStateDto>> GetInstanceStatesAsync(IReadOnlyCollection<Guid> instanceIds)
+        {
+            var result = new List<WorkflowStateDto>();
+            if (instanceIds == null || instanceIds.Count == 0) return result;
+
+            var pending = new List<Guid>();
+            var seen = new HashSet<Guid>();
+
+            foreach (var instanceId in instanceIds)
+            {
+                if (!seen.Add(instanceId)) continue;
+
+                if (_cache != null)
+                {
+                    // Warm entries win; the null factory means a miss is simply reported, not cached.
+                    var cached = await _cache.GetOrAddAsync(instanceId, _ => Task.FromResult<WorkflowStateDto?>(null));
+                    if (cached != null)
+                    {
+                        result.Add(cached);
+                        continue;
+                    }
+                }
+
+                pending.Add(instanceId);
+            }
+
+            if (pending.Count > 0)
+            {
+                var dbInstances = await _dbContext.WorkflowInstances
+                    .Where(i => pending.Contains(i.Id))
+                    .ToListAsync();
+
+                foreach (var dbInstance in dbInstances)
+                {
+                    var state = await MapToStateDtoAsync(dbInstance);
+                    _cache?.Update(state.Id, state);
+                    result.Add(state);
+                }
+            }
+
+            return result;
+        }
+
+        private async Task<WorkflowStateDto> MapToStateDtoAsync(WorkflowInstance dbInstance)
+        {
             var waits = dbInstance.Waits ?? new();
             MarkWaitsAsPersistedRecursive(waits);
-            await HydrateExternalChildWaitsAsync(_dbContext, instanceId, waits);
+            await HydrateExternalChildWaitsAsync(_dbContext, dbInstance.Id, waits);
 
             return new WorkflowStateDto
             {
@@ -444,27 +544,45 @@ namespace Workflows.Storage.EntityFrameworkCore
                 WorkflowVersion = dbInstance.WorkflowVersion,
                 StateObject = dbInstance.StateObject,
                 Waits = waits,
-                CancellationHistory = dbInstance.CancellationHistory
+                CancellationHistory = dbInstance.CancellationHistory,
+                ErrorMessage = dbInstance.ErrorMessage
             };
         }
 
         internal static async Task HydrateExternalChildWaitsAsync(WorkflowsDbContext dbContext, Guid instanceId, List<WaitInfrastructureDto> waits)
         {
             if (waits == null) return;
+
+            // Collect every external group in the tree first: one query for the whole instance instead of
+            // one query per group (each fan-out level used to add a round trip).
+            var groups = new List<ExternalGroupWaitDto>();
+            CollectExternalGroupWaits(waits, groups);
+            if (groups.Count == 0) return;
+
+            var childEntities = await dbContext.ExternalChildWaits
+                .Where(e => e.WorkflowInstanceId == instanceId)
+                .ToListAsync();
+
+            var byParent = childEntities.ToLookup(e => e.ParentWaitId);
+
+            foreach (var externalGroup in groups)
+            {
+                externalGroup.ExternalChildWaits = byParent[externalGroup.Id].Select(MapToWaitDto).ToList();
+            }
+        }
+
+        private static void CollectExternalGroupWaits(IEnumerable<WaitInfrastructureDto> waits, List<ExternalGroupWaitDto> groups)
+        {
             foreach (var wait in waits)
             {
                 if (wait is ExternalGroupWaitDto externalGroup)
                 {
-                    var childEntities = await dbContext.ExternalChildWaits
-                        .Where(e => e.WorkflowInstanceId == instanceId && e.ParentWaitId == externalGroup.Id)
-                        .ToListAsync();
-
-                    externalGroup.ExternalChildWaits = childEntities.Select(MapToWaitDto).ToList();
+                    groups.Add(externalGroup);
                 }
 
                 if (wait.ChildWaits != null)
                 {
-                    await HydrateExternalChildWaitsAsync(dbContext, instanceId, wait.ChildWaits);
+                    CollectExternalGroupWaits(wait.ChildWaits, groups);
                 }
             }
         }
@@ -777,6 +895,23 @@ namespace Workflows.Storage.EntityFrameworkCore
                     _dbContext.TimeWaits.Add(timeRecord);
                 }
             }
+            else if (record is CompensationWaitEntity compRecord)
+            {
+                var existing = await _dbContext.CompensationWaits.FindAsync(compRecord.Id);
+                if (existing != null)
+                {
+                    existing.Status = compRecord.Status;
+                    existing.Token = compRecord.Token;
+                    existing.Attempts = compRecord.Attempts;
+                    existing.LastError = compRecord.LastError;
+                    existing.NextAttemptUtc = compRecord.NextAttemptUtc;
+                    _dbContext.CompensationWaits.Update(existing);
+                }
+                else
+                {
+                    _dbContext.CompensationWaits.Add(compRecord);
+                }
+            }
             // Base WorkflowWaitEntity (group/sub-workflow containers) — no concrete table, skip.
         }
 
@@ -995,7 +1130,11 @@ namespace Workflows.Storage.EntityFrameworkCore
                         ?? throw new InvalidOperationException($"Workflow instance '{instanceId}' not found.");
 
                     dbInstance.WorkflowVersion = newVersion;
-                    dbInstance.WorkflowType = newState.WorkflowType;
+                    // A migration never changes the workflow type, and a snapshot restore may not carry it.
+                    if (!string.IsNullOrEmpty(newState.WorkflowType))
+                    {
+                        dbInstance.WorkflowType = newState.WorkflowType;
+                    }
                     dbInstance.Status = (int)newState.Status;
                     dbInstance.StateObject = newState.StateObject ?? new();
                     dbInstance.CancellationHistory = newState.CancellationHistory ?? new();
@@ -1141,7 +1280,12 @@ namespace Workflows.Storage.EntityFrameworkCore
 
         private static string? ExtractErrorMessage(WorkflowStateDto state)
         {
-            if (state.Status != WorkflowInstanceStatus.InError)
+            // Explicit error propagated by the state (e.g. a failed compensation attempt) wins.
+            if (!string.IsNullOrEmpty(state.ErrorMessage))
+                return state.ErrorMessage;
+
+            if (state.Status != WorkflowInstanceStatus.InError
+                && state.Status != WorkflowInstanceStatus.CompensationFailed)
                 return null;
 
             // Try to extract an error message from the state object's instance if available.
@@ -1164,7 +1308,192 @@ namespace Workflows.Storage.EntityFrameworkCore
         {
             return status == WorkflowInstanceStatus.Completed
                 || status == WorkflowInstanceStatus.InError
+                || status == WorkflowInstanceStatus.CompensationFailed
                 || status == WorkflowInstanceStatus.Canceled;
+        }
+
+        public async Task AppendDlqMessageAsync(DlqMessage message, System.Threading.CancellationToken ct = default)
+        {
+            if (message == null) throw new ArgumentNullException(nameof(message));
+
+            _dbContext.DlqMessages.Add(ToDlqMessageEntity(message));
+
+            await _dbContext.SaveChangesAsync(ct);
+        }
+
+        public async Task SaveInstanceSnapshotAsync(WorkflowInstanceSnapshot snapshot, System.Threading.CancellationToken ct = default)
+        {
+            if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+
+            _dbContext.WorkflowInstanceSnapshots.Add(new WorkflowInstanceSnapshotEntity
+            {
+                Id = string.IsNullOrEmpty(snapshot.Id) ? Guid.NewGuid().ToString("N") : snapshot.Id,
+                WorkflowInstanceId = snapshot.InstanceId,
+                WorkflowType = snapshot.WorkflowType ?? string.Empty,
+                FromVersion = snapshot.FromVersion,
+                ToVersion = snapshot.ToVersion,
+                Reason = snapshot.Reason ?? string.Empty,
+                StateJson = snapshot.StateJson ?? string.Empty,
+                CreatedAt = snapshot.CreatedAt == default ? DateTime.UtcNow : snapshot.CreatedAt
+            });
+
+            await _dbContext.SaveChangesAsync(ct);
+        }
+
+        public async Task<List<WorkflowInstanceSnapshot>> GetInstanceSnapshotsAsync(Guid instanceId, System.Threading.CancellationToken ct = default)
+        {
+            return await _dbContext.WorkflowInstanceSnapshots
+                .Where(s => s.WorkflowInstanceId == instanceId)
+                .OrderBy(s => s.CreatedAt)
+                .Select(s => new WorkflowInstanceSnapshot
+                {
+                    Id = s.Id,
+                    InstanceId = s.WorkflowInstanceId,
+                    WorkflowType = s.WorkflowType,
+                    FromVersion = s.FromVersion,
+                    ToVersion = s.ToVersion,
+                    Reason = s.Reason,
+                    StateJson = s.StateJson,
+                    CreatedAt = s.CreatedAt
+                })
+                .ToListAsync(ct);
+        }
+
+        public async Task<bool> RestoreInstanceSnapshotAsync(string snapshotId, System.Threading.CancellationToken ct = default)
+        {
+            if (string.IsNullOrEmpty(snapshotId)) return false;
+
+            var snapshot = await _dbContext.WorkflowInstanceSnapshots
+                .FirstOrDefaultAsync(s => s.Id == snapshotId, ct);
+
+            if (snapshot == null) return false;
+
+            var state = _serializer.Deserialize<WorkflowStateDto>(
+                snapshot.StateJson,
+                SerializationScope.CompilerGeneratedClass);
+
+            await ReplaceMigratedStateAsync(
+                snapshot.WorkflowInstanceId,
+                state,
+                state.Waits ?? new List<WaitInfrastructureDto>(),
+                snapshot.FromVersion,
+                ct);
+
+            return true;
+        }
+
+        public async Task<Dictionary<string, int>> GetParkedInstanceCountsByDllVersionAsync(
+            System.Threading.CancellationToken ct = default)
+        {
+            var capabilities = await _dbContext.WorkerCapabilities
+                .Where(c => c.IsActive)
+                .ToListAsync(ct);
+
+            var parkedInstances = await _dbContext.WorkflowInstances
+                .Where(i => i.Status == (int)WorkflowInstanceStatus.CompensationFailed
+                         || i.Status == (int)WorkflowInstanceStatus.MigrationFailed)
+                .Select(i => new { i.WorkflowType, i.WorkflowVersion })
+                .ToListAsync(ct);
+
+            var instanceCounts = parkedInstances
+                .GroupBy(i => new { i.WorkflowType, i.WorkflowVersion })
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            var dllCounts = new Dictionary<string, int>();
+            foreach (var group in capabilities.GroupBy(c => c.DllVersion))
+            {
+                int total = 0;
+                foreach (var cap in group)
+                {
+                    if (instanceCounts.TryGetValue(new { WorkflowType = cap.WorkflowType, WorkflowVersion = cap.WorkflowVersion }, out var count))
+                    {
+                        total += count;
+                    }
+                }
+                dllCounts[group.Key] = total;
+            }
+
+            return dllCounts;
+        }
+
+        private static DlqMessageEntity ToDlqMessageEntity(DlqMessage message)
+        {
+            return new DlqMessageEntity
+            {
+                WorkflowInstanceId = message.InstanceId,
+                WorkflowType = message.WorkflowType ?? string.Empty,
+                FailureCount = message.FailureCount,
+                PayloadJson = message.PayloadJson,
+                ErrorMessage = message.ErrorMessage,
+                CreatedAt = message.FailedAt == default ? DateTime.UtcNow : message.FailedAt,
+                Status = 0
+            };
+        }
+
+        public async Task<bool> ResetCompensationAsync(Guid instanceId, System.Threading.CancellationToken ct = default)
+        {
+            var dbInstance = await _dbContext.WorkflowInstances
+                .FirstOrDefaultAsync(i => i.Id == instanceId, ct);
+
+            if (dbInstance == null) return false;
+
+            // Idempotent guard: only instances that are stuck mid-rollback can be retried.
+            if ((WorkflowInstanceStatus)dbInstance.Status != WorkflowInstanceStatus.CompensationFailed)
+                return false;
+
+            var resetCount = ResetCompensationWaitsRecursive(dbInstance.Waits);
+            if (resetCount == 0) return false;
+
+            dbInstance.Status = (int)WorkflowInstanceStatus.InError;
+            dbInstance.ErrorMessage = null;
+            dbInstance.CompletedAt = null;
+            dbInstance.Modified = DateTime.UtcNow;
+            dbInstance.LastAdvanceReason = "Compensation retry requested";
+            dbInstance.ConcurrencyToken = Guid.NewGuid().ToString();
+            dbInstance.ActiveWaitCount = CountActiveWaitsRecursive(dbInstance.Waits);
+
+            var compensationRows = await _dbContext.CompensationWaits
+                .Where(w => w.WorkflowInstanceId == instanceId)
+                .ToListAsync(ct);
+
+            foreach (var row in compensationRows)
+            {
+                row.Status = (int)WaitStatus.Waiting;
+                row.Attempts = 0;
+                row.LastError = null;
+                row.NextAttemptUtc = null;
+            }
+
+            _dbContext.WorkflowInstances.Update(dbInstance);
+            await _dbContext.SaveChangesAsync(ct);
+
+            _cache?.Remove(instanceId);
+            _outboxNotificationDispatcher?.NotifyCompensationRequired(instanceId);
+            return true;
+        }
+
+        private static int ResetCompensationWaitsRecursive(IEnumerable<WaitInfrastructureDto>? waits)
+        {
+            if (waits == null) return 0;
+
+            var count = 0;
+            foreach (var wait in waits)
+            {
+                if (wait is CompensationWaitDto compWait)
+                {
+                    compWait.Status = WaitStatus.Waiting;
+                    compWait.Attempts = 0;
+                    compWait.LastError = null;
+                    compWait.NextAttemptUtc = null;
+                    count++;
+                }
+
+                count += ResetCompensationWaitsRecursive(wait.ChildWaits);
+
+                if (wait is ExternalGroupWaitDto externalGroup)
+                    count += ResetCompensationWaitsRecursive(externalGroup.ExternalChildWaits);
+            }
+            return count;
         }
 
         public async Task RegisterWorkerCapabilitiesAsync(
@@ -1220,8 +1549,16 @@ namespace Workflows.Storage.EntityFrameworkCore
                 .Where(c => c.IsActive)
                 .ToListAsync(ct);
 
+            // "Active" for drain purposes includes instances whose rollback has not finished yet: a
+            // waiting compensation still needs a worker able to run the compensation handler for that
+            // workflow version. Shutting the last worker of that version down would strand the saga.
             var activeInstances = await _dbContext.WorkflowInstances
-                .Where(i => i.Status == (int)WorkflowInstanceStatus.Running || i.Status == (int)WorkflowInstanceStatus.InProgress || i.Status == (int)WorkflowInstanceStatus.New)
+                .Where(i =>
+                    i.Status == (int)WorkflowInstanceStatus.Running
+                    || i.Status == (int)WorkflowInstanceStatus.InProgress
+                    || i.Status == (int)WorkflowInstanceStatus.New
+                    || (i.Status == (int)WorkflowInstanceStatus.InError
+                        && _dbContext.CompensationWaits.Any(w => w.WorkflowInstanceId == i.Id && w.Status == (int)WaitStatus.Waiting)))
                 .Select(i => new { i.WorkflowType, i.WorkflowVersion })
                 .ToListAsync(ct);
 

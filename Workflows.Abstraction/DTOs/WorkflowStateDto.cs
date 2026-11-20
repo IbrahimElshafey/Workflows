@@ -45,6 +45,12 @@ namespace Workflows.Abstraction.DTOs
         public string WorkflowType { get; internal set; }
         public int WorkflowVersion { get; internal set; }
         public int WaitCounter { get; set; }
+
+        /// <summary>
+        /// Optional error message associated with the current status (for example a failed
+        /// compensation attempt). Persisted to the denormalized <c>WorkflowInstance.ErrorMessage</c> column.
+        /// </summary>
+        public string? ErrorMessage { get; set; }
     }
 }
 

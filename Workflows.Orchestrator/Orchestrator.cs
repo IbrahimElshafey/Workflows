@@ -233,11 +233,12 @@ namespace Workflows.Orchestrator
             var signalDataJson = signalDto.Data != null ? Newtonsoft.Json.JsonConvert.SerializeObject(signalDto.Data, new Newtonsoft.Json.Converters.StringEnumConverter()) : string.Empty;
             var instanceIds = await _workflowStore.FindInstancesWaitingForSignalAsync(signalDto.SignalIdentifier, signalDataJson);
 
-            // Group candidate states by WorkflowType to evaluate them sequentially per workflow type
+            // Group candidate states by WorkflowType to evaluate them sequentially per workflow type.
+            // The states are loaded in one round trip instead of one per candidate (signal fan-out is the
+            // hottest path in the orchestrator).
             var statesByWorkflowType = new Dictionary<string, List<WorkflowStateDto>>();
-            foreach (var instanceId in instanceIds)
+            foreach (var state in await _workflowStore.GetInstanceStatesAsync(instanceIds))
             {
-                var state = await _workflowStore.GetInstanceStateAsync(instanceId);
                 if (state == null) continue;
 
                 var wfType = state.WorkflowType ?? string.Empty;

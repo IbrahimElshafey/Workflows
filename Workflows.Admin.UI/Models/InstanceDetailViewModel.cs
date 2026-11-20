@@ -23,6 +23,26 @@ namespace Workflows.Admin.UI.Models
         public string? LastAdvanceReason { get; set; }
 
         /// <summary>
+        /// Deepest sub-workflow nesting persisted for this instance, counted from the wait tree.
+        /// </summary>
+        public int SubWorkflowDepth { get; set; }
+
+        /// <summary>
+        /// Configured <c>WorkflowRunnerOptions.MaxSubWorkflowDepth</c>. Zero or negative means the runtime guard is disabled.
+        /// </summary>
+        public int MaxSubWorkflowDepth { get; set; }
+
+        /// <summary>
+        /// True when no runtime recursion guard is configured, so sub-workflow nesting can grow unbounded.
+        /// </summary>
+        public bool IsSubWorkflowDepthGuardDisabled => MaxSubWorkflowDepth <= 0;
+
+        /// <summary>
+        /// True when the instance has already reached the configured nesting limit and the next nesting would throw.
+        /// </summary>
+        public bool IsSubWorkflowDepthAtLimit => MaxSubWorkflowDepth > 0 && SubWorkflowDepth >= MaxSubWorkflowDepth;
+
+        /// <summary>
         /// Serialized JSON representation of the workflow container instance variables.
         /// </summary>
         public string VariablesJson { get; set; } = "{}";
@@ -36,6 +56,11 @@ namespace Workflows.Admin.UI.Models
         public List<CancellationHistoryEntry> CancellationHistory { get; set; } = new();
 
         public bool CanExecuteActions { get; set; }
+
+        /// <summary>
+        /// True when the manual "retry compensation" action is available (requires write actions and an IWorkflowStore).
+        /// </summary>
+        public bool CanRetryCompensation { get; set; }
         public List<SignalWaitOption> ActiveSignalWaits { get; set; } = new();
     }
 

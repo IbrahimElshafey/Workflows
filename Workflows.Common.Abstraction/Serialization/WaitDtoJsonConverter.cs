@@ -36,8 +36,10 @@ namespace Workflows.Shared.Serialization
             switch (waitType)
             {
                 case WaitType.Command:
-                case WaitType.Compensation:
                     targetType = typeof(CommandWaitDto);
+                    break;
+                case WaitType.Compensation:
+                    targetType = typeof(CompensationWaitDto);
                     break;
                 case WaitType.SubWorkflowWait:
                     targetType = typeof(SubWorkflowWaitDto);

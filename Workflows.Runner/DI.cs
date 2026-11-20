@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System;
 using System.Linq;
 using System.Linq.Expressions;
@@ -21,6 +22,7 @@ namespace Workflows.Runner
         public static IServiceCollection AddWorkflowsRunner(this IServiceCollection services)
         {
             // Core services - all internal, no interfaces
+            services.TryAddSingleton<WorkflowRunnerOptions>();
             services.AddSingleton<IWorkflowHydrator, WorkflowHydrator>();
             services.AddScoped<WorkflowStateService>();
             services.AddSingleton<CallbackRegistry>();

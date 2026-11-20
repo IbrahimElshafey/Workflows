@@ -35,6 +35,11 @@ namespace Workflows.Admin.UI.Models
         public DateTime? CreatedAfter { get; set; }
         public DateTime? CreatedBefore { get; set; }
         public bool? HasError { get; set; }
+
+        /// <summary>
+        /// When true, only instances stuck mid-rollback (<see cref="WorkflowInstanceStatus.CompensationFailed"/>) are listed.
+        /// </summary>
+        public bool? StuckRollbacks { get; set; }
         public int Page { get; set; } = 1;
         public int PageSize { get; set; } = 25;
     }

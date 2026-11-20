@@ -354,3 +354,7 @@ MigrationBackup/
 /Examples/RefernceLibrary/Properties/launchSettings.json
 /sample_workflows.db-shm
 /sample_workflows.db-wal
+
+# AI assistant scratch folders
+/.jules/
+/.qwen/

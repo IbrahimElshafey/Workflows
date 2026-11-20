@@ -1,5 +1,5 @@
-# Get the location where this script is saved
-$currentDir = $PSScriptRoot
+# Clean the repository root (the parent of this script folder)
+$currentDir = Split-Path -Parent $PSScriptRoot
 
 try {
     Write-Host "Cleaning bin and obj folders in: $currentDir" -ForegroundColor Cyan

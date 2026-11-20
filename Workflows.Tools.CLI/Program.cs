@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 
 namespace Workflows.Tools.CLI
 {
@@ -41,7 +42,8 @@ namespace Workflows.Tools.CLI
                         string manifestDir = GetArg(args, "--out") ?? "./";
 
                         var report = WorkflowDiffAnalyzer.CompareAssemblies(oldAsm, newAsm);
-                        string manifestPath = DeploymentManifestGenerator.GenerateManifest(oldAsm, newAsm, manifestDir);
+                        bool allowInstantDrop = args.Any(a => a.Equals("--allow-instant-drop", StringComparison.OrdinalIgnoreCase));
+                        string manifestPath = DeploymentManifestGenerator.GenerateManifest(oldAsm, newAsm, manifestDir, allowInstantDrop);
 
                         Console.WriteLine($"[WF Tools] Comparison complete across {report.Items.Count} workflow(s).");
                         foreach (var item in report.Items)
@@ -94,6 +96,8 @@ namespace Workflows.Tools.CLI
             Console.WriteLine("  schema   --assembly <path> --out <dir>  Extract and emit versioned JSON schema");
             Console.WriteLine("  migrate  --workflow <name> --from <v1> --to <v2> --out <dir>  Generate C# migration boilerplate");
             Console.WriteLine("  compare  --old <path> --new <path> --out <dir>  Run pre-publish comparison & generate deployment-manifest.json");
+            Console.WriteLine("             add --allow-instant-drop (or set WORKFLOWS_ALLOW_INSTANT_DROP=true) to request Instant Drop;");
+            Console.WriteLine("             without it the supervisor keeps the old worker until its instances drain.");
             Console.WriteLine("================================================================================");
         }
     }

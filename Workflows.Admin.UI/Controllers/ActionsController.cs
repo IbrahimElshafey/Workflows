@@ -21,6 +21,8 @@ namespace Workflows.Admin.UI.Controllers
 
         private bool ActionsEnabled => _options.EnableWriteActions && _commandService.CanExecuteActions;
 
+        private bool RetryCompensationEnabled => _options.EnableWriteActions && _commandService.CanRetryCompensation;
+
         [HttpPost("Start")]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Start(string workflowName, int version, string? inputJson)
@@ -90,6 +92,26 @@ namespace Workflows.Admin.UI.Controllers
 
             await _commandService.ForceCompensateAsync(instanceId, token);
             TempData["Success"] = "Compensation triggered.";
+            return RedirectToAction("Detail", "Instances", new { id = instanceId });
+        }
+
+        [HttpPost("RetryCompensation/{instanceId:guid}")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> RetryCompensation(Guid instanceId)
+        {
+            if (!RetryCompensationEnabled) return Forbid();
+
+            var queued = await _commandService.RetryCompensationAsync(instanceId);
+
+            if (queued)
+            {
+                TempData["Success"] = "Compensation retry queued.";
+            }
+            else
+            {
+                TempData["Error"] = "Instance is not stuck in a failed compensation; nothing to retry.";
+            }
+
             return RedirectToAction("Detail", "Instances", new { id = instanceId });
         }
 

@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Workflows.Abstraction.Orchestrator;
+using Workflows.Abstraction.Runner;
 using Workflows.Admin.UI.Services;
 using Workflows.Storage.EntityFrameworkCore;
 
@@ -52,6 +54,9 @@ namespace Workflows.Admin.UI.Extensions
                         throw new NotSupportedException($"Provider '{options.Provider}' is not supported.");
                 }
             });
+
+            // The instance detail page reports how close an instance is to MaxSubWorkflowDepth.
+            services.TryAddSingleton(new WorkflowRunnerOptions());
 
             // Admin services
             services.AddScoped<IAdminQueryService, AdminQueryService>();

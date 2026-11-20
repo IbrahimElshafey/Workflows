@@ -1,18 +1,23 @@
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Orchestrator;
+using Workflows.Abstraction.Persistence;
 
 namespace Workflows.Admin.UI.Services
 {
     public class AdminCommandService : IAdminCommandService
     {
         private readonly IOrchestrator? _orchestrator;
+        private readonly IWorkflowStore? _store;
 
-        public AdminCommandService(IOrchestrator? orchestrator = null)
+        public AdminCommandService(IOrchestrator? orchestrator = null, IWorkflowStore? store = null)
         {
             _orchestrator = orchestrator;
+            _store = store;
         }
 
         public bool CanExecuteActions => _orchestrator != null;
+
+        public bool CanRetryCompensation => _store != null;
 
         public Task<Guid> StartInstanceAsync(string workflowName, int version, object? input, CancellationToken ct = default)
         {
@@ -54,6 +59,19 @@ namespace Workflows.Admin.UI.Services
             EnsureActionsEnabled();
             // Termination is implemented as a forced cancellation using a reserved admin token.
             await _orchestrator!.CancelWorkflowAsync(instanceId, "admin-terminate", "Instance terminated from admin UI");
+        }
+
+        public async Task<bool> RetryCompensationAsync(Guid instanceId, CancellationToken ct = default)
+        {
+            if (_store == null)
+            {
+                throw new InvalidOperationException(
+                    "Compensation retries are disabled because no IWorkflowStore is registered.");
+            }
+
+            // The store side is idempotent: only instances stuck in CompensationFailed are reset, and the
+            // transition back to InError is what requeues compensation (sweeper and/or outbox notification).
+            return await _store.ResetCompensationAsync(instanceId, ct);
         }
 
         private void EnsureActionsEnabled()

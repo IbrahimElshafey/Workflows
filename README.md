@@ -6,7 +6,7 @@
 
 A high-performance, lightweight, snapshot-serialized workflow engine for **.NET 10**.
 
-Unlike traditional workflow engines (e.g., Temporal or Durable Functions) that rely on event-sourcing and expensive replay mechanisms to rebuild execution state, this engine directly serializes compiler-generated C# state machine states and container properties into JSON. This results in sub-millisecond execution ticks, minimal database overhead, and instant workflow resumption.
+Unlike traditional workflow engines (e.g., Temporal or Durable Functions) that rely on event-sourcing and expensive replay mechanisms to rebuild execution state, this engine directly serializes compiler-generated C# state machine states and container properties into JSON. This results in fast execution ticks, minimal database overhead, and instant workflow resumption.
 
 ---
 
@@ -15,7 +15,7 @@ Unlike traditional workflow engines (e.g., Temporal or Durable Functions) that r
 * **No Replay Overhead:** Workflows are suspended and serialized as complete execution snapshots. Resuming execution requires a single key-value database lookup and instant deserialization—no event replay necessary.
 * **Pure C# Domain DSL:** Author workflows using standard C# control flow and native `IAsyncEnumerable<Wait>` generators with `yield return` statements. Workflow definitions remain 100% database and infrastructure-agnostic.
 * **Stateless Compute (Runner):** The **Runner** contains zero database/I/O connections. It acts as a pure in-memory compute brain, executing in-process via high-performance `System.Threading.Channels` (`WorkflowExecutionChannel`), or out-of-process via IPC. Dynamic delegate compilation eliminates reflection bottlenecks.
-* **ACID Persistence (Orchestrator):** The **Orchestrator** manages all state persistence using a **Hybrid Document-Relational Model**. Relational tables index active waits for sub-millisecond signal routing, while execution context blobs are saved in a single document column.
+* **ACID Persistence (Orchestrator):** The **Orchestrator** manages all state persistence using a **Hybrid Document-Relational Model**. Relational tables index active waits for fast signal routing, while execution context blobs are saved in a single document column.
 * **Out-of-Process Worker Supervision:** Multi-version Side-by-Side (SxS) execution support via `WorkerProcessSupervisor`, launching isolated worker sub-processes managed via high-performance Named Pipe IPC.
 * **Roslyn Static Analysis (`Workflows.Analyzers`):** Compilation-time diagnostics enforcing engine constraints—preventing scope closure variable captures, unsealed workflow containers, and unsafe runtime references.
 * **CLI Tooling Suite (`dotnet-wf`):** Command-line utility for offline contract schema extraction, automated breaking change verification gates, pre-publish deployment manifests, and C# migration boilerplate generation.

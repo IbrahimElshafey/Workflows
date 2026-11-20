@@ -252,6 +252,19 @@ namespace Workflows.Runner.Migration
             v2State.WorkflowType = attr.WorkflowName;
             v2State.WorkflowVersion = attr.ToVersion;
 
+            // Snapshot the V1 state before anything is written. If the migration throws, the instance is
+            // parked on its original version with this snapshot as the recovery point.
+            await _store.SaveInstanceSnapshotAsync(new WorkflowInstanceSnapshot
+            {
+                InstanceId = workflowInstanceId,
+                WorkflowType = v1State.WorkflowType,
+                FromVersion = v1State.WorkflowVersion,
+                ToVersion = attr.ToVersion,
+                Reason = typeof(TMigration).Name,
+                StateJson = _serializer.Serialize(v1State, SerializationScope.CompilerGeneratedClass) as string ?? string.Empty,
+                CreatedAt = DateTime.UtcNow
+            }, ct);
+
             var v2Wrapper = (TNew)Activator.CreateInstance(typeof(TNew), v2State, v2Instance)!;
 
             // ── 3. Phase 1 — MigrateInstance ─────────────────────────────────────
@@ -355,6 +368,35 @@ namespace Workflows.Runner.Migration
                     v1State.Waits,
                     newVersion: v1State.WorkflowVersion,
                     ct);
+            }
+            catch (Exception ex)
+            {
+                // The migration is atomic per instance (ReplaceMigratedStateAsync runs in its own
+                // transaction), so V1 is still intact. Park the instance with a dedicated status instead of
+                // letting it be retried forever; the pre-migration snapshot records where it started.
+                v1State.Status = WorkflowInstanceStatus.MigrationFailed;
+                v1State.CancellationHistory.Add(new CancellationHistoryEntry
+                {
+                    Token = "MigrationFailed",
+                    CancelledAt = DateTime.UtcNow,
+                    Reason = $"Migration to {attr.WorkflowName} v{attr.ToVersion} failed: {ex.Message}"
+                });
+
+                try
+                {
+                    await _store.ReplaceMigratedStateAsync(
+                        workflowInstanceId,
+                        v1State,
+                        v1State.Waits,
+                        newVersion: v1State.WorkflowVersion,
+                        ct);
+                }
+                catch
+                {
+                    // Recording the failure must not mask the original exception.
+                }
+
+                throw;
             }
         }
 

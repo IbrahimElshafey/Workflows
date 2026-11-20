@@ -36,6 +36,8 @@ namespace Workflows.Admin.UI.Controllers
             var canExecuteActions = _options.EnableWriteActions && _commandService.CanExecuteActions;
             var model = await _queryService.GetInstanceDetailAsync(id, canExecuteActions, ct);
             if (model == null) return NotFound();
+
+            model.CanRetryCompensation = _options.EnableWriteActions && _commandService.CanRetryCompensation;
             return View(model);
         }
     }

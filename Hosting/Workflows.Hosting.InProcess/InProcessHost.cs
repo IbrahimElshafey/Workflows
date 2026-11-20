@@ -1,6 +1,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Workflows.Abstraction.DTOs;
 using Workflows.Abstraction.Orchestrator;
@@ -17,11 +18,24 @@ namespace Workflows.Hosting.InProcess
     {
         public static IServiceCollection AddWorkflowsInProcessHost(this IServiceCollection services, string connectionString)
         {
+            return services.AddWorkflowsInProcessHost(connectionString, static (s, cs) => s.AddWorkflowsSqlite(cs));
+        }
+
+        /// <summary>
+        /// Same as <see cref="AddWorkflowsInProcessHost(IServiceCollection, string)"/> but lets the caller pick
+        /// the store adapter, e.g. <c>AddWorkflowsPostgres</c> for a Postgres-backed host.
+        /// </summary>
+        public static IServiceCollection AddWorkflowsInProcessHost(
+            this IServiceCollection services,
+            string connectionString,
+            Action<IServiceCollection, string> registerStore)
+        {
             if (services == null) throw new ArgumentNullException(nameof(services));
             if (string.IsNullOrEmpty(connectionString)) throw new ArgumentNullException(nameof(connectionString));
+            if (registerStore == null) throw new ArgumentNullException(nameof(registerStore));
 
-            // 1. EF Core Database Context & Persistence Store Registrations (using new Sqlite adapter)
-            services.AddWorkflowsSqlite(connectionString);
+            // 1. EF Core Database Context & Persistence Store Registrations
+            registerStore(services, connectionString);
 
             // 3. Orchestrator & Background Scheduler
             services.AddSingleton<Scheduler>();
@@ -30,6 +44,14 @@ namespace Workflows.Hosting.InProcess
 
             services.AddSingleton<IWorkflowInstanceCache, WorkflowInstanceCache>();
             services.AddSingleton<BackgroundWorkerChannel>();
+
+            // Compensation retry/backoff defaults. Callers may override by registering their own
+            // CompensationWorkerOptions singleton before calling AddWorkflowsInProcessHost.
+            services.TryAddSingleton<CompensationWorkerOptions>();
+
+            // Default no-op DLQ publisher so CompensationWorker can always resolve one. A publisher
+            // registered earlier by the host application wins over this default.
+            services.TryAddSingleton<IDlqPublisher, NoOpDlqPublisher>();
             services.AddSingleton<IOutboxNotificationDispatcher, OutboxNotificationDispatcher>();
 
             services.AddSingleton<WorkflowExecutionChannel>();

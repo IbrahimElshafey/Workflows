@@ -18,10 +18,12 @@ using System.Runtime.InteropServices;
 [assembly: Guid("6c1ef3e5-25cf-467d-93cc-eef24f7820ce")]
 [assembly: InternalsVisibleTo("Workflows.Definition")]
 [assembly: InternalsVisibleTo("Workflows.Runner")]
-[assembly: InternalsVisibleTo("TestSomething")]
+[assembly: InternalsVisibleTo("Workflows.Hosting.InProcess")]
+[assembly: InternalsVisibleTo("Workflows.Storage.Tests")]
 [assembly: InternalsVisibleTo("Workflows.Runner.Tests")]
 [assembly: InternalsVisibleTo("Workflows.Orchestrator")]
 [assembly: InternalsVisibleTo("Workflows.Orchestrator.Data.EF")]
 [assembly: InternalsVisibleTo("Workflows.Storage.EntityFrameworkCore")]
 [assembly: InternalsVisibleTo("Workflows.TestShell")]
+[assembly: InternalsVisibleTo("Workflows.OutOfProcess.Tests")]
 

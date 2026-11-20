@@ -10,8 +10,6 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)AI-Prompts\Prompt1.md" />
-    <None Include="$(MSBuildThisFileDirectory)Architecture\~Architectural Reference Guide.md" />
-    <None Include="$(MSBuildThisFileDirectory)Architecture\~Command Execution Modes.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Distributed Lock Registry.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Granular State Hydration and Wait Tree Lazy-Loading.md" />
     <None Include="$(MSBuildThisFileDirectory)Architecture\Idempotent Signal Processing.md" />
@@ -58,6 +56,9 @@
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Workflow Logic.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Versioning\Versioning - Workflow Migration.md" />
     <None Include="$(MSBuildThisFileDirectory)Roadmap\Workflows_Versioning_Design.docx" />
+    <None Include="$(MSBuildThisFileDirectory)Todo\Chek-Refernces.md" />
+    <None Include="$(MSBuildThisFileDirectory)Todo\Fix-Plan-Claude.md" />
+    <None Include="$(MSBuildThisFileDirectory)Todo\Fix-Plan-Next-Steps.md" />
     <None Include="$(MSBuildThisFileDirectory)_todo.md" />
   </ItemGroup>
   <ItemGroup>

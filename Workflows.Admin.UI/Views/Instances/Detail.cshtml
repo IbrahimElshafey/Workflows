@@ -23,6 +23,21 @@
                 <li class="list-group-item"><strong>Modified:</strong> @(Model.Modified?.ToString("g") ?? "-")</li>
                 <li class="list-group-item"><strong>Completed:</strong> @(Model.CompletedAt?.ToString("g") ?? "-")</li>
                 <li class="list-group-item"><strong>Last Advance:</strong> @(Model.LastAdvanceReason ?? "-")</li>
+                <li class="list-group-item"><strong>Sub-workflow depth:</strong>
+                    <span>@Model.SubWorkflowDepth</span>
+                    @if (Model.IsSubWorkflowDepthGuardDisabled)
+                    {
+                        <span class="text-muted">(limit disabled)</span>
+                    }
+                    else if (Model.IsSubWorkflowDepthAtLimit)
+                    {
+                        <span class="text-danger">of @Model.MaxSubWorkflowDepth — at the limit, the next nested call throws</span>
+                    }
+                    else
+                    {
+                        <span class="text-muted">of @Model.MaxSubWorkflowDepth</span>
+                    }
+                </li>
                 <li class="list-group-item"><strong>Lock:</strong>
                     @if (!string.IsNullOrEmpty(Model.LockedBy))
                     {
@@ -40,6 +55,18 @@
         <div class="card h-100">
             <div class="card-header">Actions</div>
             <div class="card-body">
+                @if (Model.CanRetryCompensation && Model.Status == WorkflowInstanceStatus.CompensationFailed)
+                {
+                    <div class="alert alert-warning py-2">
+                        <strong>Stuck rollback.</strong> Compensation exhausted its retries. Retrying resets the
+                        compensation attempts and requeues rollback; a second failure produces one more DLQ entry.
+                    </div>
+                    <form method="post" action="/admin/Actions/RetryCompensation/@Model.Id" class="mb-3">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Retry compensation for this instance?');">Retry Compensation</button>
+                    </form>
+                }
+
                 @if (Model.CanExecuteActions)
                 {
                     <form method="post" action="/admin/Actions/Signal/@Model.Id" class="mb-3">
@@ -73,7 +100,7 @@
                         <button type="submit" class="btn btn-dark btn-sm" onclick="return confirm('Are you sure you want to terminate this instance?');">Terminate</button>
                     </form>
                 }
-                else
+                else if (!Model.CanRetryCompensation)
                 {
                     <div class="alert alert-info">Write actions are disabled. Register <code>IOrchestrator</code> in DI to enable actions.</div>
                 }
